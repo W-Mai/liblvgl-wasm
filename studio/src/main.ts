@@ -460,21 +460,42 @@ async function openCDemo(): Promise<void> {
   }
 }
 async function loadSource(name: string, path: string, code: HTMLElement, errorMessage: HTMLElement,
-                          signal: AbortSignal): Promise<void> {
-  code.textContent = "Loading…";
+                          signal: AbortSignal, refresh = false): Promise<void> {
+  if (!refresh) code.textContent = "Loading…";
   errorMessage.hidden = true;
   errorMessage.textContent = "";
   try {
-    const response = await fetch(path, { signal });
+    const response = await fetch(path, { signal, cache: "no-store" });
     if (!response.ok) throw new Error(`Could not load ${name} (${response.status})`);
     const source = await response.text();
-    if (!signal.aborted) renderHighlighted(code, source, name);
+    if (!signal.aborted && code.textContent !== source) renderHighlighted(code, source, name);
   } catch (error) {
     if (signal.aborted) return;
-    code.textContent = "";
+    if (!refresh) code.textContent = "";
     errorMessage.textContent = error instanceof Error ? error.message : String(error);
     errorMessage.hidden = false;
   }
+}
+function refreshVisibleSource(): void {
+  if (document.hidden) return;
+  if (document.body.classList.contains("nested-source-open")) {
+    nestedSourceAbort?.abort();
+    const abort = new AbortController();
+    nestedSourceAbort = abort;
+    void loadSource("direct_api.c", "/examples/c/direct_api.c",
+      nestedSourceCode, nestedSourceError, abort.signal, true);
+  } else if (document.body.classList.contains("panel-open") && !panelSource.hidden) {
+    sourceAbort?.abort();
+    const abort = new AbortController();
+    sourceAbort = abort;
+    void loadSource(panelTitle.textContent || "source", `/${sourcePath.textContent}`,
+      sourceCode, sourceError, abort.signal, true);
+  }
+}
+if (location.hostname === "localhost" || location.hostname === "127.0.0.1") {
+  setInterval(refreshVisibleSource, 3000);
+  window.addEventListener("focus", refreshVisibleSource);
+  document.addEventListener("visibilitychange", refreshVisibleSource);
 }
 async function openSource(name: string, path: string): Promise<void> {
   stopPanelContent();

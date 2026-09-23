@@ -39,7 +39,7 @@ Custom cores must implement bridge ABI 1 and the exports used by Studio. An arbi
 
 ### Application toolchains
 
-The toolchain panel shows sample source files with syntax highlighting in a side panel and provides build commands. Build from the repository root, then upload the output shown below. `scripts/build.sh` builds all included samples; individual commands rebuild one sample.
+The toolchain panel shows sample source files with syntax highlighting in a side panel and provides build commands. On localhost, an open source panel refreshes when its file changes. Build from the repository root, then upload the output shown below. `scripts/build.sh` builds all included samples; individual commands rebuild one sample.
 
 | Language | Build command | Upload |
 | --- | --- | --- |
