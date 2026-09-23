@@ -6,7 +6,9 @@
   "scripts": {
     "build:ts": "bun build bindings/typescript/src/index.ts --target browser --outdir target/typescript",
     "build:browser": "bun build examples/browser/main.ts --target browser --outfile target/browser/main.js",
+    "build:studio-worker": "bun build studio/src/worker.ts --target browser --format iife --outfile target/studio/worker.js",
+    "build:studio-runtime": "bun run build:studio-worker && bun build studio/src/controller.ts --target browser --outfile target/studio/controller.js",
     "test": "bun test",
-    "quality": "bun run build:ts && bun run test"
+    "quality": "bun run build:ts && bun run build:studio-runtime && bun run test"
   }
 }
