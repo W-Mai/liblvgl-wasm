@@ -14,3 +14,4 @@
 - Preview frame resizing with animation and aspect-correct display for each resolution preset.
 - C demo linked with LVGL that calls native `lv_*` APIs for UI creation and events in a Studio side panel.
 - Toolchain source files and build scripts open in the Studio side panel; C demo source opens in a second panel that pushes the preview left.
+- Syntax highlighting for source files in both Studio side panels, with light and dark color palettes.

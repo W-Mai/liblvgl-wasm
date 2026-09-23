@@ -30,6 +30,13 @@
   --status: #526b55;
   --error: #a95748;
   --code: #3a3b36;
+  --syntax-comment: #707069;
+  --syntax-directive: #795f45;
+  --syntax-function: #556453;
+  --syntax-keyword: #8c583e;
+  --syntax-number: #80634e;
+  --syntax-string: #466b50;
+  --syntax-type: #6c5c76;
   background: var(--page);
   color: var(--ink);
 }
@@ -63,6 +70,13 @@
   --status: #9eb3a0;
   --error: #e1a092;
   --code: #e0dfd9;
+  --syntax-comment: #a09f96;
+  --syntax-directive: #d4b27d;
+  --syntax-function: #b7c8a8;
+  --syntax-keyword: #dfa484;
+  --syntax-number: #d6b18b;
+  --syntax-string: #a3c6a4;
+  --syntax-type: #c2b4ce;
 }
 
 * { box-sizing: border-box; }
@@ -218,6 +232,13 @@ body.nested-source-open #nested-source-panel { visibility: visible; transform: t
 .source-view { flex: 1; min-height: 0; display: flex; flex-direction: column; background: var(--console); }
 .source-path { padding: 12px 20px; border-bottom: 1px solid var(--line); color: var(--muted); font: 10px var(--mono); overflow-wrap: anywhere; }
 .source-view pre { flex: 1; min-height: 0; margin: 0; padding: 20px; overflow: auto; color: var(--code); font: 11px/1.65 var(--mono); tab-size: 2; }
+.syntax-comment { color: var(--syntax-comment); }
+.syntax-directive { color: var(--syntax-directive); }
+.syntax-function { color: var(--syntax-function); }
+.syntax-keyword { color: var(--syntax-keyword); }
+.syntax-number { color: var(--syntax-number); }
+.syntax-string { color: var(--syntax-string); }
+.syntax-type { color: var(--syntax-type); }
 .source-view .demo-error { padding: 20px; }
 .demo-error { margin: 12px 0 0; color: var(--error); font: 11px var(--mono); overflow-wrap: anywhere; }
 

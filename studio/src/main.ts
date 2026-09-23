@@ -1,6 +1,7 @@
 import { StudioController } from "./controller.ts";
 import { startCDemo } from "./c-demo.ts";
 import { inspectCore } from "./core.ts";
+import { renderHighlighted } from "./highlight.ts";
 import { readResources } from "./resources.ts";
 import type { AppSource, RunnerOutput } from "./protocol.ts";
 
@@ -467,7 +468,7 @@ async function loadSource(name: string, path: string, code: HTMLElement, errorMe
     const response = await fetch(path, { signal });
     if (!response.ok) throw new Error(`Could not load ${name} (${response.status})`);
     const source = await response.text();
-    if (!signal.aborted) code.textContent = source;
+    if (!signal.aborted) renderHighlighted(code, source, name);
   } catch (error) {
     if (signal.aborted) return;
     code.textContent = "";
