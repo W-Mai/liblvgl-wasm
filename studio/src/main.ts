@@ -68,6 +68,8 @@ const appFile = element<HTMLInputElement>("#app-file");
 const resourceFiles = element<HTMLInputElement>("#resource-files");
 const resourceList = element<HTMLUListElement>("#resource-list");
 const viewportSelect = element<HTMLSelectElement>("#viewport-select");
+const stage = element<HTMLElement>(".stage");
+const device = element<HTMLElement>(".device-wrap");
 
 function setTheme(theme: "light" | "dark"): void {
   document.documentElement.dataset.theme = theme;
@@ -94,6 +96,29 @@ let width = 320;
 let height = 240;
 let generation = 0;
 let running = false;
+
+function fitDevice(): void {
+  const stageStyle = getComputedStyle(stage);
+  const deviceStyle = getComputedStyle(device);
+  const screenStyle = getComputedStyle(element<HTMLElement>(".device-screen"));
+  const pixels = (value: string): number => Number.parseFloat(value) || 0;
+  const available = stage.clientWidth - pixels(stageStyle.paddingLeft) - pixels(stageStyle.paddingRight);
+  const maxWidth = Math.min(820, available);
+  const fractions = maxWidth < 500 ? [0.78, 0.89, 1] : [0.7, 0.85, 1];
+  const index = width === 320 ? 0 : width === 480 ? 1 : 2;
+  const shellWidth = Math.floor(maxWidth * fractions[index]);
+  const frameWidth = [deviceStyle.paddingLeft, deviceStyle.paddingRight,
+    deviceStyle.borderLeftWidth, deviceStyle.borderRightWidth,
+    screenStyle.borderLeftWidth, screenStyle.borderRightWidth].reduce((sum, value) => sum + pixels(value), 0);
+  const frameHeight = [deviceStyle.paddingTop, deviceStyle.paddingBottom,
+    deviceStyle.borderTopWidth, deviceStyle.borderBottomWidth,
+    screenStyle.borderTopWidth, screenStyle.borderBottomWidth].reduce((sum, value) => sum + pixels(value), 0)
+    + element<HTMLElement>(".device-top").offsetHeight + element<HTMLElement>(".device-bottom").offsetHeight;
+  const shellHeight = Math.round((shellWidth - frameWidth) * height / width + frameHeight);
+  device.style.width = `${shellWidth}px`;
+  device.style.height = `${shellHeight}px`;
+  stage.style.setProperty("--shell-height", `${shellHeight}px`);
+}
 
 function appendLog(message: string, kind: "normal" | "success" | "error" = "normal"): void {
   const line = document.createElement("div");
@@ -353,10 +378,12 @@ element<HTMLButtonElement>("#clear-log").addEventListener("click", () => console
 viewportSelect.addEventListener("change", () => {
   [width, height] = viewportSelect.value.split("x").map(Number) as [number, number];
   element<HTMLElement>(".viewport-ratio").textContent = width === 320 ? "4:3" : width === 480 ? "3:2" : "5:3";
+  fitDevice();
   canvas.width = width;
   canvas.height = height;
   if (running) controller.resize(width, height);
 });
+window.addEventListener("resize", fitDevice);
 for (const button of document.querySelectorAll<HTMLButtonElement>("[data-language]")) {
   button.addEventListener("click", () => showToolchain(button.dataset.language as Language));
 }
@@ -397,4 +424,6 @@ canvas.addEventListener("pointercancel", (event) => {
 });
 
 showToolchain("js");
+fitDevice();
+requestAnimationFrame(() => device.classList.add("resizable"));
 void run();
