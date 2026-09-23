@@ -397,20 +397,24 @@ for (const button of document.querySelectorAll<HTMLButtonElement>("[data-languag
 }
 element<HTMLButtonElement>("#sample-button").addEventListener("click", () => { void chooseSample(selectedLanguage); });
 const sidePanel = element<HTMLElement>("#side-panel");
+const nestedSourcePanel = element<HTMLElement>("#nested-source-panel");
 const appShell = element<HTMLElement>(".app-shell");
 const panelTitle = element<HTMLElement>("#panel-title");
-const panelBack = element<HTMLButtonElement>("#panel-back");
 const panelDemo = element<HTMLElement>("#panel-demo");
 const panelDemoFooter = element<HTMLElement>("#panel-demo-footer");
 const panelSource = element<HTMLElement>("#panel-source");
 const sourcePath = element<HTMLElement>("#source-path");
 const sourceCode = element<HTMLElement>("#source-code");
 const sourceError = element<HTMLElement>("#source-error");
+const nestedSourceCode = element<HTMLElement>("#nested-source-code");
+const nestedSourceError = element<HTMLElement>("#nested-source-error");
 const demoError = element<HTMLElement>("#c-demo-error");
 let demoAbort: AbortController | undefined;
 let stopDemo: (() => void) | undefined;
 let sourceAbort: AbortController | undefined;
+let nestedSourceAbort: AbortController | undefined;
 let closeTimer: ReturnType<typeof setTimeout> | undefined;
+let nestedCloseTimer: ReturnType<typeof setTimeout> | undefined;
 let panelTrigger: HTMLElement | undefined;
 function showPanel(): void {
   if (document.body.classList.contains("panel-open")) return;
@@ -439,7 +443,6 @@ async function openCDemo(): Promise<void> {
   stopPanelContent();
   showPanel();
   panelTitle.textContent = "C API demo";
-  panelBack.hidden = true;
   panelSource.hidden = true;
   panelDemo.hidden = false;
   panelDemoFooter.hidden = false;
@@ -455,34 +458,65 @@ async function openCDemo(): Promise<void> {
     if (!abort.signal.aborted) showDemoError(error);
   }
 }
-async function openSource(name: string, path: string, fromDemo = false): Promise<void> {
+async function loadSource(name: string, path: string, code: HTMLElement, errorMessage: HTMLElement,
+                          signal: AbortSignal): Promise<void> {
+  code.textContent = "Loading…";
+  errorMessage.hidden = true;
+  errorMessage.textContent = "";
+  try {
+    const response = await fetch(path, { signal });
+    if (!response.ok) throw new Error(`Could not load ${name} (${response.status})`);
+    const source = await response.text();
+    if (!signal.aborted) code.textContent = source;
+  } catch (error) {
+    if (signal.aborted) return;
+    code.textContent = "";
+    errorMessage.textContent = error instanceof Error ? error.message : String(error);
+    errorMessage.hidden = false;
+  }
+}
+async function openSource(name: string, path: string): Promise<void> {
   stopPanelContent();
   showPanel();
   panelTitle.textContent = name;
-  panelBack.hidden = !fromDemo;
   panelDemo.hidden = true;
   panelDemoFooter.hidden = true;
   panelSource.hidden = false;
   sourcePath.textContent = path.slice(1);
-  sourceCode.textContent = "Loading…";
-  sourceError.hidden = true;
-  sourceError.textContent = "";
   const abort = new AbortController();
   sourceAbort = abort;
-  try {
-    const response = await fetch(path, { signal: abort.signal });
-    if (!response.ok) throw new Error(`Could not load ${name} (${response.status})`);
-    const source = await response.text();
-    if (!abort.signal.aborted) sourceCode.textContent = source;
-  } catch (error) {
-    if (abort.signal.aborted) return;
-    sourceCode.textContent = "";
-    sourceError.textContent = error instanceof Error ? error.message : String(error);
-    sourceError.hidden = false;
-  }
+  await loadSource(name, path, sourceCode, sourceError, abort.signal);
+}
+async function openNestedSource(): Promise<void> {
+  if (document.body.classList.contains("nested-source-open")) return;
+  if (nestedCloseTimer) clearTimeout(nestedCloseTimer);
+  sidePanel.inert = true;
+  nestedSourcePanel.inert = false;
+  nestedSourcePanel.setAttribute("aria-hidden", "false");
+  document.body.classList.add("nested-source-open");
+  element<HTMLButtonElement>("#nested-source-close").focus();
+  const abort = new AbortController();
+  nestedSourceAbort = abort;
+  await loadSource("direct_api.c", "/examples/c/direct_api.c",
+    nestedSourceCode, nestedSourceError, abort.signal);
+}
+function closeNestedSource(): void {
+  if (!document.body.classList.contains("nested-source-open")) return;
+  document.body.classList.remove("nested-source-open");
+  nestedSourceAbort?.abort();
+  nestedSourceAbort = undefined;
+  nestedCloseTimer = setTimeout(() => {
+    nestedSourcePanel.inert = true;
+    nestedSourcePanel.setAttribute("aria-hidden", "true");
+    sidePanel.inert = false;
+    element<HTMLButtonElement>("#panel-demo-source").focus();
+    nestedCloseTimer = undefined;
+  }, 360);
 }
 function closePanel(): void {
   if (!document.body.classList.contains("panel-open")) return;
+  if (document.body.classList.contains("nested-source-open")) return closeNestedSource();
+  if (nestedCloseTimer) return;
   document.body.classList.remove("panel-open");
   stopPanelContent();
   closeTimer = setTimeout(() => {
@@ -495,10 +529,8 @@ function closePanel(): void {
   }, 360);
 }
 element<HTMLButtonElement>("#panel-close").addEventListener("click", closePanel);
-panelBack.addEventListener("click", () => { void openCDemo(); });
-element<HTMLButtonElement>("#panel-demo-source").addEventListener("click", () => {
-  void openSource("direct_api.c", "/examples/c/direct_api.c", true);
-});
+element<HTMLButtonElement>("#nested-source-close").addEventListener("click", closeNestedSource);
+element<HTMLButtonElement>("#panel-demo-source").addEventListener("click", () => { void openNestedSource(); });
 window.addEventListener("keydown", (event) => {
   if (event.key === "Escape" && document.body.classList.contains("panel-open")) closePanel();
 });

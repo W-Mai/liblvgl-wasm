@@ -143,7 +143,6 @@
     </div>
     <aside id="side-panel" class="side-panel" aria-labelledby="panel-title" aria-hidden="true" inert>
       <div class="side-panel-head">
-        <button id="panel-back" class="panel-back" type="button" hidden>← Preview</button>
         <h2 id="panel-title">C API demo</h2>
         <button id="panel-close" class="icon-button" type="button" aria-label="Close panel">×</button>
       </div>
@@ -163,6 +162,17 @@
         <div id="source-path" class="source-path"></div>
         <pre><code id="source-code"></code></pre>
         <p id="source-error" class="demo-error" role="alert" hidden></p>
+      </div>
+    </aside>
+    <aside id="nested-source-panel" class="side-panel nested-source-panel" aria-labelledby="nested-source-title" aria-hidden="true" inert>
+      <div class="side-panel-head">
+        <h2 id="nested-source-title">direct_api.c</h2>
+        <button id="nested-source-close" class="icon-button" type="button" aria-label="Close source and return to C API demo">×</button>
+      </div>
+      <div class="source-view">
+        <div class="source-path">examples/c/direct_api.c</div>
+        <pre><code id="nested-source-code"></code></pre>
+        <p id="nested-source-error" class="demo-error" role="alert" hidden></p>
       </div>
     </aside>
     <script type="module" src="/target/studio/main.js"></script>

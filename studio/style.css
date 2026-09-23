@@ -199,13 +199,15 @@ button:focus-visible, a:focus-visible, select:focus-visible, label[tabindex]:foc
 .template-links button:hover { background: var(--surface-hover); }
 .app-shell { transition: transform .36s cubic-bezier(.22, 1, .36, 1); }
 body.panel-open .app-shell { transform: translateX(calc(-1 * min(520px, 100%))); }
+body.nested-source-open .app-shell { transform: translateX(calc(-2 * min(520px, 100%))); }
 .side-panel { position: fixed; z-index: 10; top: 0; right: 0; width: min(520px, 100%); height: 100dvh; display: flex; flex-direction: column; border-left: 1px solid var(--line-strong); background: var(--panel); color: var(--ink); visibility: hidden; transform: translateX(100%); transition: transform .36s cubic-bezier(.22, 1, .36, 1), visibility 0s .36s; }
-body.panel-open .side-panel { visibility: visible; transform: translateX(0); transition: transform .36s cubic-bezier(.22, 1, .36, 1), visibility 0s; }
+body.panel-open #side-panel { visibility: visible; transform: translateX(0); transition: transform .36s cubic-bezier(.22, 1, .36, 1), visibility 0s; }
+body.nested-source-open #side-panel { transform: translateX(calc(-1 * min(520px, 100%))); }
+body.nested-source-open #nested-source-panel { visibility: visible; transform: translateX(0); transition: transform .36s cubic-bezier(.22, 1, .36, 1), visibility 0s; }
+.nested-source-panel { z-index: 11; }
 .side-panel [hidden] { display: none; }
 .side-panel-head { display: flex; align-items: center; gap: 12px; padding: 16px 20px; border-bottom: 1px solid var(--line); }
 .side-panel-head h2 { flex: 1; min-width: 0; margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 20px; letter-spacing: -.04em; }
-.panel-back { padding: 0; border: 0; background: transparent; color: var(--muted); font: 11px var(--mono); }
-.panel-back:hover { color: var(--ink); }
 .c-demo-stage { flex: 1; min-height: 0; overflow: auto; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; padding: 24px 16px; background: var(--stage); background-image: linear-gradient(var(--grid) 1px, transparent 1px), linear-gradient(90deg, var(--grid) 1px, transparent 1px); background-size: 22px 22px; }
 .side-panel .demo-device { width: min(100%, 480px); height: auto; flex: none; }
 .side-panel .device-screen { flex: none; aspect-ratio: 4 / 3; }
