@@ -43,6 +43,7 @@ python3 "$root/generator/api.py" \
     --exports "$root/target/wasm/api-exports.txt"
 cmake -S "$root" -B "$root/target/wasm"
 cmake --build "$root/target/wasm" -j 4
+cmake --build "$root/target/wasm" --target liblvgl_c_demo -j 4
 cd "$root"
 bun run build:ts
 bun run build:browser

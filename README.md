@@ -17,6 +17,7 @@ Generated files stay under `target/`:
 | `target/wasm/liblvgl.wasm` | WASIp1 library module |
 | `target/wasm/api.json` | Enabled public declarations and binding status |
 | `target/wasm/api-exports.txt` | Generated linker export flags |
+| `target/wasm/examples/c/liblvgl-c-demo.wasm` | C demo linked with LVGL |
 | `target/browser/main.js` | Browser example bundle |
 | `target/typescript/index.js` | TypeScript host adapter bundle |
 | `target/studio/{main,worker}.js` | Studio page and isolated runner bundles |
@@ -59,6 +60,8 @@ python3 -m http.server 8765
 ```
 
 Open `http://127.0.0.1:8765/examples/browser/` after starting the server. The browser example renders a button and a BMP resource; pointer input changes the button label. The Rust example checks rendering, resource pixels, input, callbacks, and shutdown. `bun run quality` builds all browser bundles and application samples, then runs the test suite.
+
+Open `http://127.0.0.1:8765/examples/c/` for the C API demo. [`examples/c/direct_api.c`](examples/c/direct_api.c) creates the button and handles its click with native `lv_*` calls. `scripts/build.sh` links that C source and LVGL into a separate Wasm module at `target/wasm/examples/c/liblvgl-c-demo.wasm`. The browser script only loads the module, passes pointer input, and draws its frames. This linked module is separate from Studio's uploaded application ABI, which uses `lvw_app` imports.
 
 ## Interface
 

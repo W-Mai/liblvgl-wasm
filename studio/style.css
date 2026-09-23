@@ -197,11 +197,13 @@ button:focus-visible, a:focus-visible, select:focus-visible, label[tabindex]:foc
 .toolchain-tip { display: flex; align-items: flex-start; gap: 9px; margin: 19px 2px; color: var(--muted); font-size: 11px; line-height: 1.6; }
 .toolchain-tip > span { color: var(--mark); font-size: 16px; line-height: 1; }
 .toolchain-tip p { margin: 0; }
+.direct-demo-link { display: flex; justify-content: space-between; margin: 0 2px; padding: 10px 0; border-top: 1px solid var(--line); color: var(--ink); text-decoration: none; font: 11px var(--mono); }
+.direct-demo-link:hover { color: var(--mark); }
 
 @media (max-width: 1180px) {
   .workspace { grid-template-columns: 280px minmax(0, 1fr); }
   .toolchain-panel { grid-column: 1 / -1; border-left: 0; border-top: 1px solid var(--line); display: grid; grid-template-columns: 1fr 1.4fr; gap: 0 30px; }
-  .toolchain-panel > h2, .toolchain-panel > .toolchain-intro, .toolchain-panel > .language-picker, .toolchain-panel > .toolchain-tip { grid-column: 1; }
+  .toolchain-panel > h2, .toolchain-panel > .toolchain-intro, .toolchain-panel > .language-picker, .toolchain-panel > .toolchain-tip, .toolchain-panel > .direct-demo-link { grid-column: 1; }
   .toolchain-detail { grid-column: 2; grid-row: 1 / 5; margin: 0; }
 }
 @media (max-width: 760px) {
