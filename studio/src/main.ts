@@ -327,11 +327,11 @@ function showToolchain(language: Language): void {
   const links = element<HTMLElement>("#template-links");
   links.replaceChildren();
   for (const [name, path] of tool.links) {
-    const link = document.createElement("a");
-    link.href = path;
-    link.download = name;
-    link.textContent = `↓ ${name}`;
-    links.append(link);
+    const button = document.createElement("button");
+    button.type = "button";
+    button.textContent = `${name} →`;
+    button.addEventListener("click", () => { void openSource(name, path); });
+    links.append(button);
   }
   if (language === "c") {
     const preview = document.createElement("button");
@@ -396,28 +396,55 @@ for (const button of document.querySelectorAll<HTMLButtonElement>("[data-languag
   button.addEventListener("click", () => showToolchain(button.dataset.language as Language));
 }
 element<HTMLButtonElement>("#sample-button").addEventListener("click", () => { void chooseSample(selectedLanguage); });
-const demoPanel = element<HTMLElement>("#c-demo-panel");
+const sidePanel = element<HTMLElement>("#side-panel");
 const appShell = element<HTMLElement>(".app-shell");
+const panelTitle = element<HTMLElement>("#panel-title");
+const panelBack = element<HTMLButtonElement>("#panel-back");
+const panelDemo = element<HTMLElement>("#panel-demo");
+const panelDemoFooter = element<HTMLElement>("#panel-demo-footer");
+const panelSource = element<HTMLElement>("#panel-source");
+const sourcePath = element<HTMLElement>("#source-path");
+const sourceCode = element<HTMLElement>("#source-code");
+const sourceError = element<HTMLElement>("#source-error");
 const demoError = element<HTMLElement>("#c-demo-error");
 let demoAbort: AbortController | undefined;
 let stopDemo: (() => void) | undefined;
+let sourceAbort: AbortController | undefined;
 let closeTimer: ReturnType<typeof setTimeout> | undefined;
-let demoTrigger: HTMLElement | undefined;
+let panelTrigger: HTMLElement | undefined;
+function showPanel(): void {
+  if (document.body.classList.contains("panel-open")) return;
+  if (closeTimer) clearTimeout(closeTimer);
+  panelTrigger = document.activeElement instanceof HTMLElement ? document.activeElement : undefined;
+  sidePanel.inert = false;
+  sidePanel.setAttribute("aria-hidden", "false");
+  appShell.inert = true;
+  document.body.classList.add("panel-open");
+  element<HTMLButtonElement>("#panel-close").focus();
+}
+function stopPanelContent(): void {
+  sourceAbort?.abort();
+  sourceAbort = undefined;
+  demoAbort?.abort();
+  demoAbort = undefined;
+  stopDemo?.();
+  stopDemo = undefined;
+}
 function showDemoError(error: unknown): void {
   demoError.textContent = error instanceof Error ? error.message : String(error);
   demoError.hidden = false;
 }
 async function openCDemo(): Promise<void> {
-  if (document.body.classList.contains("c-demo-open")) return;
-  if (closeTimer) clearTimeout(closeTimer);
-  demoTrigger = document.activeElement instanceof HTMLElement ? document.activeElement : undefined;
+  if (!panelDemo.hidden && document.body.classList.contains("panel-open")) return;
+  stopPanelContent();
+  showPanel();
+  panelTitle.textContent = "C API demo";
+  panelBack.hidden = true;
+  panelSource.hidden = true;
+  panelDemo.hidden = false;
+  panelDemoFooter.hidden = false;
   demoError.hidden = true;
   demoError.textContent = "";
-  demoPanel.inert = false;
-  demoPanel.setAttribute("aria-hidden", "false");
-  appShell.inert = true;
-  document.body.classList.add("c-demo-open");
-  element<HTMLButtonElement>("#c-demo-close").focus();
   const abort = new AbortController();
   demoAbort = abort;
   try {
@@ -428,25 +455,52 @@ async function openCDemo(): Promise<void> {
     if (!abort.signal.aborted) showDemoError(error);
   }
 }
-function closeCDemo(): void {
-  if (!document.body.classList.contains("c-demo-open")) return;
-  document.body.classList.remove("c-demo-open");
-  demoAbort?.abort();
-  demoAbort = undefined;
-  stopDemo?.();
-  stopDemo = undefined;
+async function openSource(name: string, path: string, fromDemo = false): Promise<void> {
+  stopPanelContent();
+  showPanel();
+  panelTitle.textContent = name;
+  panelBack.hidden = !fromDemo;
+  panelDemo.hidden = true;
+  panelDemoFooter.hidden = true;
+  panelSource.hidden = false;
+  sourcePath.textContent = path.slice(1);
+  sourceCode.textContent = "Loading…";
+  sourceError.hidden = true;
+  sourceError.textContent = "";
+  const abort = new AbortController();
+  sourceAbort = abort;
+  try {
+    const response = await fetch(path, { signal: abort.signal });
+    if (!response.ok) throw new Error(`Could not load ${name} (${response.status})`);
+    const source = await response.text();
+    if (!abort.signal.aborted) sourceCode.textContent = source;
+  } catch (error) {
+    if (abort.signal.aborted) return;
+    sourceCode.textContent = "";
+    sourceError.textContent = error instanceof Error ? error.message : String(error);
+    sourceError.hidden = false;
+  }
+}
+function closePanel(): void {
+  if (!document.body.classList.contains("panel-open")) return;
+  document.body.classList.remove("panel-open");
+  stopPanelContent();
   closeTimer = setTimeout(() => {
-    demoPanel.inert = true;
-    demoPanel.setAttribute("aria-hidden", "true");
+    sidePanel.inert = true;
+    sidePanel.setAttribute("aria-hidden", "true");
     appShell.inert = false;
-    if (demoTrigger?.isConnected) demoTrigger.focus();
-    else document.querySelector<HTMLButtonElement>('[data-language="c"]')?.focus();
+    if (panelTrigger?.isConnected) panelTrigger.focus();
+    else document.querySelector<HTMLButtonElement>(`[data-language="${selectedLanguage}"]`)?.focus();
     closeTimer = undefined;
   }, 360);
 }
-element<HTMLButtonElement>("#c-demo-close").addEventListener("click", closeCDemo);
+element<HTMLButtonElement>("#panel-close").addEventListener("click", closePanel);
+panelBack.addEventListener("click", () => { void openCDemo(); });
+element<HTMLButtonElement>("#panel-demo-source").addEventListener("click", () => {
+  void openSource("direct_api.c", "/examples/c/direct_api.c", true);
+});
 window.addEventListener("keydown", (event) => {
-  if (event.key === "Escape" && document.body.classList.contains("c-demo-open")) closeCDemo();
+  if (event.key === "Escape" && document.body.classList.contains("panel-open")) closePanel();
 });
 element<HTMLButtonElement>("#copy-command").addEventListener("click", async () => {
   try {

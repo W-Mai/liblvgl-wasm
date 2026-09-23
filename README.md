@@ -39,7 +39,7 @@ Custom cores must implement bridge ABI 1 and the exports used by Studio. An arbi
 
 ### Application toolchains
 
-The toolchain panel provides sample source files and build commands. Build from the repository root, then upload the output shown below. `scripts/build.sh` builds all included samples; individual commands rebuild one sample.
+The toolchain panel shows sample source files in a side panel and provides build commands. Build from the repository root, then upload the output shown below. `scripts/build.sh` builds all included samples; individual commands rebuild one sample.
 
 | Language | Build command | Upload |
 | --- | --- | --- |
@@ -61,7 +61,7 @@ python3 -m http.server 8765
 
 Open `http://127.0.0.1:8765/examples/browser/` after starting the server. The browser example renders a button and a BMP resource; pointer input changes the button label. The Rust example checks rendering, resource pixels, input, callbacks, and shutdown. `bun run quality` builds all browser bundles and application samples, then runs the test suite.
 
-Select the C toolchain in Studio and open **C API preview** from its file links. The Studio workspace shifts left to show the preview panel. [`examples/c/direct_api.c`](examples/c/direct_api.c) creates the button and handles its click with native `lv_*` calls. `scripts/build.sh` links that C source and LVGL into a separate Wasm module at `target/wasm/examples/c/liblvgl-c-demo.wasm`. This linked module is separate from Studio's uploaded application ABI, which uses `lvw_app` imports.
+Select the C toolchain in Studio and open **C API preview**. The Studio workspace shifts left to show the preview panel. Its `direct_api.c` control displays the source in the same panel. [`examples/c/direct_api.c`](examples/c/direct_api.c) creates the button and handles its click with native `lv_*` calls. `scripts/build.sh` links that C source and LVGL into a separate Wasm module at `target/wasm/examples/c/liblvgl-c-demo.wasm`. This linked module is separate from Studio's uploaded application ABI, which uses `lvw_app` imports.
 
 ## Interface
 

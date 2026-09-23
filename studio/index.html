@@ -121,7 +121,7 @@
 
         <aside class="toolchain-panel" aria-labelledby="toolchain-title">
           <h2 id="toolchain-title">Application toolchains</h2>
-          <p class="toolchain-intro">Download starter files, copy a build command, or load a sample. Upload the resulting <code>.js</code> or <code>.wasm</code> file on the left.</p>
+          <p class="toolchain-intro">View starter files, copy a build command, or load a sample. Upload the resulting <code>.js</code> or <code>.wasm</code> file on the left.</p>
           <div class="language-picker" role="group" aria-label="Choose a toolchain">
             <button class="active" data-language="js" type="button" aria-pressed="true">JS</button>
             <button data-language="ts" type="button" aria-pressed="false">TS</button>
@@ -141,12 +141,13 @@
         </aside>
       </div>
     </div>
-    <aside id="c-demo-panel" class="c-demo-panel" aria-labelledby="c-demo-title" aria-hidden="true" inert>
-      <div class="c-demo-head">
-        <h2 id="c-demo-title">C API demo</h2>
-        <button id="c-demo-close" class="icon-button" type="button" aria-label="Close C API demo">×</button>
+    <aside id="side-panel" class="side-panel" aria-labelledby="panel-title" aria-hidden="true" inert>
+      <div class="side-panel-head">
+        <button id="panel-back" class="panel-back" type="button" hidden>← Preview</button>
+        <h2 id="panel-title">C API demo</h2>
+        <button id="panel-close" class="icon-button" type="button" aria-label="Close panel">×</button>
       </div>
-      <div class="c-demo-stage">
+      <div id="panel-demo" class="c-demo-stage" hidden>
         <div class="device-wrap demo-device">
           <div class="device-top"><span class="device-sensor"></span><span class="device-sensor small"></span></div>
           <div class="device-screen"><canvas id="c-demo-screen" width="320" height="240" aria-label="Interactive LVGL C demo"></canvas></div>
@@ -154,9 +155,14 @@
         </div>
         <p id="c-demo-error" class="demo-error" role="alert" hidden></p>
       </div>
-      <div class="c-demo-footer">
-        <a href="/examples/c/direct_api.c" download="direct_api.c">↓ direct_api.c</a>
+      <div id="panel-demo-footer" class="c-demo-footer" hidden>
+        <button id="panel-demo-source" type="button">direct_api.c →</button>
         <code>./scripts/build.sh</code>
+      </div>
+      <div id="panel-source" class="source-view" hidden>
+        <div id="source-path" class="source-path"></div>
+        <pre><code id="source-code"></code></pre>
+        <p id="source-error" class="demo-error" role="alert" hidden></p>
       </div>
     </aside>
     <script type="module" src="/target/studio/main.js"></script>
