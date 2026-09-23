@@ -200,6 +200,16 @@ button:focus-visible, a:focus-visible, select:focus-visible, label[tabindex]:foc
 .direct-demo-link { display: flex; justify-content: space-between; margin: 0 2px; padding: 10px 0; border-top: 1px solid var(--line); color: var(--ink); text-decoration: none; font: 11px var(--mono); }
 .direct-demo-link:hover { color: var(--mark); }
 
+.demo-workspace { grid-template-columns: 310px minmax(0, 1fr); }
+.demo-source { display: flex; justify-content: space-between; border: 1px solid var(--line-strong); padding: 10px; color: var(--ink); text-decoration: none; font: 11px var(--mono); }
+.demo-source:hover { background: var(--surface-hover); }
+.demo-info .command-block { min-height: 0; }
+.demo-info .card-note { overflow-wrap: anywhere; }
+.demo-stage { min-height: 540px; }
+.demo-device { width: min(100%, 533px); height: auto; }
+.demo-device .device-screen { flex: none; aspect-ratio: 4 / 3; }
+.demo-error { color: var(--error); font: 11px var(--mono); overflow-wrap: anywhere; }
+
 @media (max-width: 1180px) {
   .workspace { grid-template-columns: 280px minmax(0, 1fr); }
   .toolchain-panel { grid-column: 1 / -1; border-left: 0; border-top: 1px solid var(--line); display: grid; grid-template-columns: 1fr 1.4fr; gap: 0 30px; }
@@ -219,6 +229,7 @@ button:focus-visible, a:focus-visible, select:focus-visible, label[tabindex]:foc
   .icon-button { width: 34px; height: 34px; }
   .viewport-toolbar { padding: 0 18px; }
   .stage { min-height: max(350px, calc(var(--shell-height, 350px) + 100px)); padding: 28px 17px; }
+  .demo-stage { min-height: 420px; }
   .console-panel { height: 154px; }
   .setup-panel, .toolchain-panel { padding: 24px 18px; }
   .setup-panel { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
@@ -245,6 +256,7 @@ button:focus-visible, a:focus-visible, select:focus-visible, label[tabindex]:foc
   .viewport-controls label, .viewport-ratio { display: none; }
   .viewport-label { font-size: 9px; }
   .stage { min-height: max(300px, calc(var(--shell-height, 300px) + 100px)); }
+  .demo-stage { min-height: 360px; }
   .device-wrap { padding: 13px 13px 8px; }
   .stage-hint { font-size: 10px; }
 }

@@ -1,6 +1,26 @@
 const canvas = document.querySelector("#screen");
 const context = canvas.getContext("2d");
 const status = document.querySelector("#status");
+let lastFrame;
+
+function redraw() {
+  if (lastFrame) context.putImageData(lastFrame, 0, 0);
+}
+
+function setTheme(theme) {
+  document.documentElement.dataset.theme = theme;
+  document.querySelector('meta[name="theme-color"]').content = theme === "dark" ? "#20201e" : "#efeeeb";
+  for (const button of document.querySelectorAll("[data-theme-choice]")) {
+    button.setAttribute("aria-pressed", String(button.dataset.themeChoice === theme));
+  }
+  try { localStorage.setItem("lvgl-studio-theme", theme); } catch { /* Storage may be unavailable. */ }
+  requestAnimationFrame(() => requestAnimationFrame(redraw));
+}
+
+for (const button of document.querySelectorAll("[data-theme-choice]")) {
+  button.addEventListener("click", () => setTheme(button.dataset.themeChoice));
+}
+setTheme(document.documentElement.dataset.theme === "dark" ? "dark" : "light");
 
 try {
   const response = await fetch("/target/wasm/examples/c/liblvgl-c-demo.wasm");
@@ -80,12 +100,14 @@ try {
         pixels[index + 2] = source[index];
         pixels[index + 3] = 255;
       }
-      context.putImageData(new ImageData(pixels, canvas.width, canvas.height), 0, 0);
+      lastFrame = new ImageData(pixels, canvas.width, canvas.height);
+      redraw();
     }
     requestAnimationFrame(tick);
   }
-  status.textContent = "Click the button";
+  status.textContent = "Ready";
   requestAnimationFrame(tick);
 } catch (error) {
+  status.className = "demo-error";
   status.textContent = error instanceof Error ? error.message : String(error);
 }

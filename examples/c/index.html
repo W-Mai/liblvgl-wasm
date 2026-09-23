@@ -3,25 +3,63 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>LVGL C API demo</title>
-    <style>
-      :root { color-scheme: light dark; font: 14px system-ui, sans-serif; background: light-dark(#efeeeb, #20201e); color: light-dark(#262625, #e9e8e5); }
-      body { max-width: 760px; margin: 0 auto; padding: 32px 20px; }
-      header { display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid light-dark(#c9c8c4, #4a4a47); padding-bottom: 18px; }
-      h1 { font-size: 22px; font-weight: 600; margin: 0; }
-      a { color: inherit; text-underline-offset: 3px; }
-      p { line-height: 1.5; }
-      code { font-family: ui-monospace, monospace; }
-      .screen-frame { display: inline-block; max-width: 100%; box-sizing: border-box; padding: 10px; background: light-dark(#d5d4d0, #3b3b39); }
-      canvas { display: block; max-width: 100%; height: auto; touch-action: none; background: #fff; }
-      #status { color: light-dark(#595955, #b5b4b0); }
-    </style>
+    <meta name="theme-color" content="#efeeeb">
+    <link rel="icon" href="/studio/favicon.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="/studio/style.css">
+    <title>C Demo — LVGL Studio</title>
+    <script>
+      try {
+        document.documentElement.dataset.theme = localStorage.getItem("lvgl-studio-theme") ||
+          (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+      } catch {
+        document.documentElement.dataset.theme = "light";
+      }
+    </script>
   </head>
   <body>
-    <header><h1>LVGL C API demo</h1><a href="/studio/">Studio</a></header>
-    <p>The UI and click handler use LVGL functions in <a href="/examples/c/direct_api.c"><code>direct_api.c</code></a>.</p>
-    <div class="screen-frame"><canvas id="screen" width="320" height="240" aria-label="Interactive LVGL C API demo"></canvas></div>
-    <p id="status" role="status">Loading LVGL…</p>
+    <div class="app-shell">
+      <header class="topbar">
+        <a class="brand" href="/studio/" aria-label="LVGL Studio home">
+          <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
+          <span class="brand-name">LVGL<span>Studio</span></span>
+        </a>
+        <div class="topbar-actions">
+          <div class="theme-switch" role="group" aria-label="Color theme">
+            <button type="button" data-theme-choice="light" aria-pressed="false">Light</button>
+            <button type="button" data-theme-choice="dark" aria-pressed="false">Dark</button>
+          </div>
+          <a class="topbar-link" href="/studio/">Studio <span aria-hidden="true">↗</span></a>
+        </div>
+      </header>
+      <div class="workspace demo-workspace">
+        <aside class="setup-panel demo-info">
+          <div class="panel-heading"><h1>C Demo</h1></div>
+          <section class="setup-card">
+            <div class="card-top"><h2>Source</h2></div>
+            <a class="demo-source" href="/examples/c/direct_api.c">direct_api.c <span aria-hidden="true">↗</span></a>
+          </section>
+          <section class="setup-card">
+            <div class="card-top"><h2>Build</h2></div>
+            <pre class="command-block"><code>./scripts/build.sh</code></pre>
+            <p class="card-note"><code>target/wasm/examples/c/liblvgl-c-demo.wasm</code></p>
+          </section>
+        </aside>
+        <main class="preview-panel">
+          <div class="preview-toolbar"><div class="preview-title-row"><h2>Preview</h2><span id="status" class="sr-only" role="status">Loading…</span></div></div>
+          <div class="viewport-toolbar">
+            <div class="viewport-label"><span class="mini-grid" aria-hidden="true">▦</span> C / LVGL</div>
+            <div class="viewport-controls">320 × 240</div>
+          </div>
+          <div class="stage demo-stage">
+            <div class="device-wrap demo-device">
+              <div class="device-top"><span class="device-sensor"></span><span class="device-sensor small"></span></div>
+              <div class="device-screen"><canvas id="screen" width="320" height="240" aria-label="Interactive LVGL C demo"></canvas></div>
+              <div class="device-bottom"><span></span><span></span><span></span><span></span><span></span><span></span></div>
+            </div>
+          </div>
+        </main>
+      </div>
+    </div>
     <script type="module" src="/examples/c/host.js"></script>
   </body>
 </html>
