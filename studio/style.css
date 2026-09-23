@@ -197,18 +197,23 @@ button:focus-visible, a:focus-visible, select:focus-visible, label[tabindex]:foc
 .toolchain-tip { display: flex; align-items: flex-start; gap: 9px; margin: 19px 2px; color: var(--muted); font-size: 11px; line-height: 1.6; }
 .toolchain-tip > span { color: var(--mark); font-size: 16px; line-height: 1; }
 .toolchain-tip p { margin: 0; }
-.direct-demo-link { display: flex; justify-content: space-between; margin: 0 2px; padding: 10px 0; border-top: 1px solid var(--line); color: var(--ink); text-decoration: none; font: 11px var(--mono); }
+.direct-demo-link { display: flex; justify-content: space-between; width: calc(100% - 4px); margin: 0 2px; padding: 10px 0; border: 0; border-top: 1px solid var(--line); background: transparent; color: var(--ink); text-align: left; font: 11px var(--mono); }
 .direct-demo-link:hover { color: var(--mark); }
 
-.demo-workspace { grid-template-columns: 310px minmax(0, 1fr); }
-.demo-source { display: flex; justify-content: space-between; border: 1px solid var(--line-strong); padding: 10px; color: var(--ink); text-decoration: none; font: 11px var(--mono); }
-.demo-source:hover { background: var(--surface-hover); }
-.demo-info .command-block { min-height: 0; }
-.demo-info .card-note { overflow-wrap: anywhere; }
-.demo-stage { min-height: 540px; }
-.demo-device { width: min(100%, 533px); height: auto; }
-.demo-device .device-screen { flex: none; aspect-ratio: 4 / 3; }
-.demo-error { color: var(--error); font: 11px var(--mono); overflow-wrap: anywhere; }
+.demo-dialog { width: min(720px, calc(100vw - 24px)); max-height: calc(100vh - 24px); padding: 0; border: 1px solid var(--line-strong); background: var(--panel); color: var(--ink); overflow: auto; }
+.demo-dialog::backdrop { background: rgba(0, 0, 0, .6); }
+.demo-dialog[open] { animation: demo-enter .2s ease-out; }
+@keyframes demo-enter { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
+.demo-dialog-head { display: flex; align-items: center; justify-content: space-between; padding: 16px 20px; border-bottom: 1px solid var(--line); }
+.demo-dialog-head h2 { margin: 0; font-size: 20px; letter-spacing: -.04em; }
+.demo-dialog-stage { display: grid; place-items: center; padding: 32px 22px; background: var(--stage); background-image: linear-gradient(var(--grid) 1px, transparent 1px), linear-gradient(90deg, var(--grid) 1px, transparent 1px); background-size: 22px 22px; }
+.demo-dialog .demo-device { width: min(100%, 533px); height: auto; }
+.demo-dialog .device-screen { flex: none; aspect-ratio: 4 / 3; }
+.demo-dialog-footer { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 15px 20px; border-top: 1px solid var(--line); font: 11px var(--mono); }
+.demo-dialog-footer a { text-decoration: none; }
+.demo-dialog-footer a:hover { text-decoration: underline; }
+.demo-dialog-footer code { color: var(--muted); }
+.demo-error { margin: 12px 0 0; color: var(--error); font: 11px var(--mono); overflow-wrap: anywhere; }
 
 @media (max-width: 1180px) {
   .workspace { grid-template-columns: 280px minmax(0, 1fr); }
@@ -229,7 +234,6 @@ button:focus-visible, a:focus-visible, select:focus-visible, label[tabindex]:foc
   .icon-button { width: 34px; height: 34px; }
   .viewport-toolbar { padding: 0 18px; }
   .stage { min-height: max(350px, calc(var(--shell-height, 350px) + 100px)); padding: 28px 17px; }
-  .demo-stage { min-height: 420px; }
   .console-panel { height: 154px; }
   .setup-panel, .toolchain-panel { padding: 24px 18px; }
   .setup-panel { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
@@ -256,7 +260,6 @@ button:focus-visible, a:focus-visible, select:focus-visible, label[tabindex]:foc
   .viewport-controls label, .viewport-ratio { display: none; }
   .viewport-label { font-size: 9px; }
   .stage { min-height: max(300px, calc(var(--shell-height, 300px) + 100px)); }
-  .demo-stage { min-height: 360px; }
   .device-wrap { padding: 13px 13px 8px; }
   .stage-hint { font-size: 10px; }
 }

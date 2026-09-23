@@ -1,4 +1,5 @@
 import { StudioController } from "./controller.ts";
+import { startCDemo } from "./c-demo.ts";
 import { inspectCore } from "./core.ts";
 import { readResources } from "./resources.ts";
 import type { AppSource, RunnerOutput } from "./protocol.ts";
@@ -388,6 +389,36 @@ for (const button of document.querySelectorAll<HTMLButtonElement>("[data-languag
   button.addEventListener("click", () => showToolchain(button.dataset.language as Language));
 }
 element<HTMLButtonElement>("#sample-button").addEventListener("click", () => { void chooseSample(selectedLanguage); });
+const demoDialog = element<HTMLDialogElement>("#c-demo-dialog");
+const demoError = element<HTMLElement>("#c-demo-error");
+let demoAbort: AbortController | undefined;
+let stopDemo: (() => void) | undefined;
+function showDemoError(error: unknown): void {
+  demoError.textContent = error instanceof Error ? error.message : String(error);
+  demoError.hidden = false;
+}
+element<HTMLButtonElement>("#c-demo-button").addEventListener("click", async () => {
+  if (demoDialog.open) return;
+  demoError.hidden = true;
+  demoError.textContent = "";
+  demoDialog.showModal();
+  const abort = new AbortController();
+  demoAbort = abort;
+  try {
+    const stop = await startCDemo(element<HTMLCanvasElement>("#c-demo-screen"), abort.signal, showDemoError);
+    if (abort.signal.aborted) stop();
+    else stopDemo = stop;
+  } catch (error) {
+    if (!abort.signal.aborted) showDemoError(error);
+  }
+});
+element<HTMLButtonElement>("#c-demo-close").addEventListener("click", () => demoDialog.close());
+demoDialog.addEventListener("close", () => {
+  demoAbort?.abort();
+  demoAbort = undefined;
+  stopDemo?.();
+  stopDemo = undefined;
+});
 element<HTMLButtonElement>("#copy-command").addEventListener("click", async () => {
   try {
     await navigator.clipboard.writeText(toolchains[selectedLanguage].command);

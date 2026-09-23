@@ -12,4 +12,4 @@
 - Light and dark gray Studio themes with square controls and persistent theme selection.
 - Native LVGL application colors and styles in the Studio preview, with a multicolor Studio mark in the header and favicon.
 - Preview frame resizing with animation and aspect-correct display for each resolution preset.
-- C demo linked with LVGL that calls native `lv_*` APIs for UI creation and events.
+- C demo linked with LVGL that calls native `lv_*` APIs for UI creation and events in a Studio dialog.

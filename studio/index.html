@@ -138,9 +138,27 @@
             <button id="sample-button" class="sample-button" type="button"><span aria-hidden="true">◈</span> Load JS sample <span aria-hidden="true">→</span></button>
           </div>
           <div class="toolchain-tip"><span aria-hidden="true">ⓘ</span><p>C, C++ and Rust apps use a small, versioned application ABI. Build locally, then drop the resulting Wasm here.</p></div>
-          <a class="direct-demo-link" href="/examples/c/" target="_blank" rel="noopener noreferrer">Run C API demo (linked core) <span aria-hidden="true">↗</span></a>
+          <button id="c-demo-button" class="direct-demo-link" type="button">Run C API demo <span aria-hidden="true">↗</span></button>
         </aside>
       </div>
+      <dialog id="c-demo-dialog" class="demo-dialog" aria-labelledby="c-demo-title">
+        <div class="demo-dialog-head">
+          <h2 id="c-demo-title">C API demo</h2>
+          <button id="c-demo-close" class="icon-button" type="button" aria-label="Close C API demo">×</button>
+        </div>
+        <div class="demo-dialog-stage">
+          <div class="device-wrap demo-device">
+            <div class="device-top"><span class="device-sensor"></span><span class="device-sensor small"></span></div>
+            <div class="device-screen"><canvas id="c-demo-screen" width="320" height="240" aria-label="Interactive LVGL C demo"></canvas></div>
+            <div class="device-bottom"><span></span><span></span><span></span><span></span><span></span><span></span></div>
+          </div>
+          <p id="c-demo-error" class="demo-error" role="alert" hidden></p>
+        </div>
+        <div class="demo-dialog-footer">
+          <a href="/examples/c/direct_api.c" download="direct_api.c">↓ direct_api.c</a>
+          <code>./scripts/build.sh</code>
+        </div>
+      </dialog>
     </div>
     <script type="module" src="/target/studio/main.js"></script>
   </body>
