@@ -49,11 +49,10 @@ function tick(): void {
 }
 
 function runJavaScript(source: string, api: AppApi): void {
-  const entry = new Function("api", `${source}\nreturn typeof main === "function" ? main(api) : globalThis.main?.(api);`);
-  const result = entry(api);
-  if (result === undefined && !/\bmain\b/.test(source)) {
-    throw new Error("Application must define main(api)");
-  }
+  const entry = new Function("api", `${source}\nconst fn = typeof main === "function" ? main : globalThis.main;
+    if (typeof fn !== "function") throw new Error("Application must define main(api)");
+    return fn(api);`);
+  entry(api);
 }
 
 const appImports = new Set([

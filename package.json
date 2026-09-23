@@ -9,7 +9,8 @@
     "build:studio-worker": "bun build studio/src/worker.ts --target browser --format iife --outfile target/studio/worker.js",
     "build:studio-runtime": "bun run build:studio-worker && bun build studio/src/controller.ts --target browser --outfile target/studio/controller.js",
     "build:apps": "./toolchains/c/build.sh && ./toolchains/cpp/build.sh && ./toolchains/rust/build.sh",
+    "build:ts-app": "bun build toolchains/ts/app.ts --target browser --format iife --outfile target/apps/ts/app.js",
     "test": "bun test",
-    "quality": "bun run build:ts && bun run build:studio-runtime && bun run build:apps && bun run test"
+    "quality": "bun run build:ts && bun run build:studio-runtime && bun run build:apps && bun run build:ts-app && bun run test"
   }
 }
