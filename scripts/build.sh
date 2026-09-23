@@ -31,7 +31,10 @@ cmake --build "$root/target/wasm" --target lvgl -j 4
 if [ -n "${LVGL_SOURCE_DIR:-}" ]; then
     source_dir=$LVGL_SOURCE_DIR
 else
-    source_dir="$root/target/wasm/_deps/lvgl-src"
+    source_dir=$(sed -n 's/^FETCHCONTENT_SOURCE_DIR_LVGL:PATH=//p' "$root/target/wasm/CMakeCache.txt")
+    if [ -z "$source_dir" ]; then
+        source_dir="$root/target/wasm/_deps/lvgl-src"
+    fi
 fi
 python3 "$root/generator/api.py" \
     --source "$source_dir" --sdk "$sdk" \
