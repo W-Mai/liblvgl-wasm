@@ -333,6 +333,13 @@ function showToolchain(language: Language): void {
     link.textContent = `↓ ${name}`;
     links.append(link);
   }
+  if (language === "c") {
+    const preview = document.createElement("button");
+    preview.type = "button";
+    preview.textContent = "C API preview →";
+    preview.addEventListener("click", () => { void openCDemo(); });
+    links.append(preview);
+  }
 }
 
 async function chooseSample(language: Language): Promise<void> {
@@ -389,19 +396,28 @@ for (const button of document.querySelectorAll<HTMLButtonElement>("[data-languag
   button.addEventListener("click", () => showToolchain(button.dataset.language as Language));
 }
 element<HTMLButtonElement>("#sample-button").addEventListener("click", () => { void chooseSample(selectedLanguage); });
-const demoDialog = element<HTMLDialogElement>("#c-demo-dialog");
+const demoPanel = element<HTMLElement>("#c-demo-panel");
+const appShell = element<HTMLElement>(".app-shell");
 const demoError = element<HTMLElement>("#c-demo-error");
 let demoAbort: AbortController | undefined;
 let stopDemo: (() => void) | undefined;
+let closeTimer: ReturnType<typeof setTimeout> | undefined;
+let demoTrigger: HTMLElement | undefined;
 function showDemoError(error: unknown): void {
   demoError.textContent = error instanceof Error ? error.message : String(error);
   demoError.hidden = false;
 }
-element<HTMLButtonElement>("#c-demo-button").addEventListener("click", async () => {
-  if (demoDialog.open) return;
+async function openCDemo(): Promise<void> {
+  if (document.body.classList.contains("c-demo-open")) return;
+  if (closeTimer) clearTimeout(closeTimer);
+  demoTrigger = document.activeElement instanceof HTMLElement ? document.activeElement : undefined;
   demoError.hidden = true;
   demoError.textContent = "";
-  demoDialog.showModal();
+  demoPanel.inert = false;
+  demoPanel.setAttribute("aria-hidden", "false");
+  appShell.inert = true;
+  document.body.classList.add("c-demo-open");
+  element<HTMLButtonElement>("#c-demo-close").focus();
   const abort = new AbortController();
   demoAbort = abort;
   try {
@@ -411,13 +427,26 @@ element<HTMLButtonElement>("#c-demo-button").addEventListener("click", async () 
   } catch (error) {
     if (!abort.signal.aborted) showDemoError(error);
   }
-});
-element<HTMLButtonElement>("#c-demo-close").addEventListener("click", () => demoDialog.close());
-demoDialog.addEventListener("close", () => {
+}
+function closeCDemo(): void {
+  if (!document.body.classList.contains("c-demo-open")) return;
+  document.body.classList.remove("c-demo-open");
   demoAbort?.abort();
   demoAbort = undefined;
   stopDemo?.();
   stopDemo = undefined;
+  closeTimer = setTimeout(() => {
+    demoPanel.inert = true;
+    demoPanel.setAttribute("aria-hidden", "true");
+    appShell.inert = false;
+    if (demoTrigger?.isConnected) demoTrigger.focus();
+    else document.querySelector<HTMLButtonElement>('[data-language="c"]')?.focus();
+    closeTimer = undefined;
+  }, 360);
+}
+element<HTMLButtonElement>("#c-demo-close").addEventListener("click", closeCDemo);
+window.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && document.body.classList.contains("c-demo-open")) closeCDemo();
 });
 element<HTMLButtonElement>("#copy-command").addEventListener("click", async () => {
   try {
