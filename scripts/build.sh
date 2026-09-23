@@ -43,3 +43,6 @@ cmake --build "$root/target/wasm" -j 4
 cd "$root"
 bun run build:ts
 bun run build:browser
+bun run build:studio
+bun run build:apps
+bun run build:ts-app

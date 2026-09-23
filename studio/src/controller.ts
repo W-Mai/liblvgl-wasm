@@ -16,14 +16,18 @@ export class StudioController {
   private frame?: HTMLIFrameElement;
   private token = "";
   private onMessage?: (event: MessageEvent<FrameMessage>) => void;
+  private generation = 0;
+  private rejectStart?: (error: Error) => void;
 
   constructor(private readonly onOutput: (output: RunnerOutput) => void) {}
 
   async start(config: RunConfig): Promise<void> {
     this.stop();
+    const generation = this.generation;
     const response = await fetch("/target/studio/worker.js");
     if (!response.ok) throw new Error(`Unable to load runner (${response.status})`);
     const workerSource = await response.text();
+    if (generation !== this.generation) throw new DOMException("Run cancelled", "AbortError");
     const token = crypto.randomUUID();
     this.token = token;
 
@@ -58,6 +62,7 @@ export class StudioController {
 
     const startMessage: RunnerInput = { type: "start", ...config };
     return new Promise<void>((resolve, reject) => {
+      this.rejectStart = reject;
       this.onMessage = (event) => {
         if (event.source !== frame.contentWindow || event.data?.token !== token) return;
         if (event.data.type === "frame-ready") {
@@ -65,8 +70,14 @@ export class StudioController {
         } else if (event.data.type === "runner") {
           const output = event.data.data;
           this.onOutput(output);
-          if (output.type === "ready") resolve();
-          if (output.type === "error") reject(new Error(output.message));
+          if (output.type === "ready") {
+            this.rejectStart = undefined;
+            resolve();
+          }
+          if (output.type === "error") {
+            this.rejectStart = undefined;
+            reject(new Error(output.message));
+          }
         }
       };
       window.addEventListener("message", this.onMessage);
@@ -87,6 +98,9 @@ export class StudioController {
   }
 
   stop(): void {
+    this.generation++;
+    this.rejectStart?.(new DOMException("Run cancelled", "AbortError"));
+    this.rejectStart = undefined;
     if (this.onMessage) window.removeEventListener("message", this.onMessage);
     this.onMessage = undefined;
     this.frame?.remove();
