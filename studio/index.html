@@ -23,9 +23,7 @@
         <a class="brand" href="/studio/" aria-label="LVGL Studio home">
           <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
           <span class="brand-name">LVGL<span>Studio</span></span>
-          <span class="brand-beta">BETA</span>
         </a>
-        <div class="topbar-center"><span class="pulse"></span> Local browser workspace <span class="topbar-divider"></span> No compile server required</div>
         <div class="topbar-actions">
           <div class="theme-switch" role="group" aria-label="Color theme">
             <button type="button" data-theme-choice="light" aria-pressed="false">Light</button>
@@ -38,9 +36,8 @@
       <div class="workspace">
         <aside class="setup-panel" aria-label="Project setup">
           <div class="panel-heading">
-            <span class="eyebrow">WORKSPACE / 01</span>
-            <h1>Build something<br><em>that moves.</em></h1>
-            <p>Bring your own library and application, or start with the included samples.</p>
+            <h1>Project files</h1>
+            <p>Choose the LVGL library, application, and resource files.</p>
           </div>
 
           <section class="setup-card" aria-labelledby="core-title">
@@ -78,14 +75,12 @@
             <input id="resource-files" class="sr-only" type="file" multiple aria-label="Choose resource files">
             <ul id="resource-list" class="resource-list" aria-label="Selected resources"><li class="empty-resource">No assets added</li></ul>
           </section>
-          <div class="sidebar-foot"><span class="secure-icon" aria-hidden="true">✳</span> Loaded in your browser. No upload server.</div>
         </aside>
 
         <main class="preview-panel">
           <div class="preview-toolbar">
             <div>
-              <span class="eyebrow">LIVE CANVAS / 02</span>
-              <div class="preview-title-row"><h2>Preview</h2><span id="run-status" class="status-pill" role="status" aria-live="polite"><span></span> Starting</span></div>
+              <div class="preview-title-row"><h2>Preview</h2><span id="run-status" class="sr-only" role="status" aria-live="polite">Loading application</span></div>
             </div>
             <div class="run-actions">
               <button id="run-button" class="run-button" type="button"><span aria-hidden="true">▶</span> Run app</button>
@@ -97,6 +92,7 @@
           <div class="viewport-toolbar">
             <div class="viewport-label"><span class="mini-grid" aria-hidden="true">▦</span> DEVICE VIEWPORT</div>
             <div class="viewport-controls">
+              <span id="frame-count" class="frame-count">Frame 0</span>
               <label for="viewport-select">Resolution</label>
               <select id="viewport-select" aria-label="Preview resolution">
                 <option value="320x240">320 × 240</option>
@@ -114,21 +110,18 @@
               <div class="device-screen"><canvas id="screen" width="320" height="240" aria-label="Interactive LVGL application preview"></canvas></div>
               <div class="device-bottom"><span></span><span></span><span></span><span></span><span></span><span></span></div>
             </div>
-            <div class="stage-hint"><span class="hint-spark">✳</span> Click and drag to interact with your UI</div>
+            <div class="stage-hint">Click or drag to send pointer input</div>
           </div>
-
-          <div class="preview-footer"><span><i class="connection-dot"></i> <span id="connection-text">Initializing runtime</span></span><span id="frame-count">FRAME 0000</span></div>
 
           <section class="console-panel" aria-labelledby="console-title">
             <div class="console-heading"><h3 id="console-title"><span class="console-chevron">&gt;_</span> Runtime console</h3><button id="clear-log" type="button">Clear</button></div>
-            <div id="console-output" class="console-output" role="log" aria-live="polite"><div class="log-line"><span>00:00:00</span><p>Preparing LVGL Studio…</p></div></div>
+            <div id="console-output" class="console-output" role="log" aria-live="polite"></div>
           </section>
         </main>
 
         <aside class="toolchain-panel" aria-labelledby="toolchain-title">
-          <span class="eyebrow">DEVELOPER TOOLS / 03</span>
-          <h2 id="toolchain-title">Your language.<br><em>Same canvas.</em></h2>
-          <p class="toolchain-intro">Build an application, then load its <code>.js</code> or <code>.wasm</code> output into the workspace.</p>
+          <h2 id="toolchain-title">Application toolchains</h2>
+          <p class="toolchain-intro">Download starter files, copy a build command, or load a sample. Upload the resulting <code>.js</code> or <code>.wasm</code> file on the left.</p>
           <div class="language-picker" role="group" aria-label="Choose a toolchain">
             <button class="active" data-language="js" type="button" aria-pressed="true">JS</button>
             <button data-language="ts" type="button" aria-pressed="false">TS</button>

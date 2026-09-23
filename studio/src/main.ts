@@ -110,15 +110,13 @@ function appendLog(message: string, kind: "normal" | "success" | "error" = "norm
 
 function setStatus(value: "starting" | "running" | "stopped" | "error", label: string): void {
   status.dataset.state = value;
-  status.innerHTML = "<span></span>";
-  status.append(document.createTextNode(` ${label}`));
-  element<HTMLElement>("#connection-text").textContent = label;
+  status.textContent = label;
 }
 
 function onOutput(message: RunnerOutput): void {
   if (message.type === "ready") {
     running = true;
-    setStatus("running", "Running");
+    setStatus("running", "Application running");
     appendLog(`Core ABI 1 ready · ${message.coreExports} exports · ${message.width} × ${message.height}`, "success");
   } else if (message.type === "frame") {
     if (canvas.width !== message.width || canvas.height !== message.height) {
@@ -126,12 +124,12 @@ function onOutput(message: RunnerOutput): void {
       canvas.height = message.height;
     }
     context!.putImageData(new ImageData(new Uint8ClampedArray(message.pixels), message.width, message.height), 0, 0);
-    element<HTMLElement>("#frame-count").textContent = `FRAME ${String(message.frameId).padStart(4, "0")}`;
+    element<HTMLElement>("#frame-count").textContent = `Frame ${message.frameId}`;
   } else if (message.type === "log") {
     appendLog(message.message);
   } else if (message.type === "error") {
     running = false;
-    setStatus("error", "Runtime error");
+    setStatus("error", "Application error");
     appendLog(message.message, "error");
   }
 }
@@ -153,13 +151,13 @@ function stop(): void {
   generation++;
   controller.stop();
   running = false;
-  setStatus("stopped", "Stopped");
+  setStatus("stopped", "Application stopped");
 }
 
 async function run(): Promise<boolean> {
   stop();
   const runId = generation;
-  setStatus("starting", "Starting");
+  setStatus("starting", "Loading application");
   appendLog(`Starting ${selectedApp.name} with ${selectedCore?.name || "default liblvgl.wasm"}…`);
   try {
     const [core, app, assets] = await Promise.all([
@@ -172,7 +170,7 @@ async function run(): Promise<boolean> {
   } catch (error) {
     if (runId !== generation) return false;
     controller.stop();
-    setStatus("error", "Could not start");
+    setStatus("error", "Application failed to start");
     appendLog(error instanceof Error ? error.message : String(error), "error");
     return false;
   }
