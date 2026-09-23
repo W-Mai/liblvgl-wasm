@@ -3,11 +3,19 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <meta name="theme-color" content="#0b1422">
+    <meta name="theme-color" content="#efeeeb">
     <meta name="description" content="Run your LVGL WebAssembly library and applications in a local browser workspace.">
     <link rel="icon" href="/studio/favicon.svg" type="image/svg+xml">
     <link rel="stylesheet" href="/studio/style.css">
     <title>LVGL Studio — run your interface</title>
+    <script>
+      try {
+        document.documentElement.dataset.theme = localStorage.getItem("lvgl-studio-theme") ||
+          (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+      } catch {
+        document.documentElement.dataset.theme = "light";
+      }
+    </script>
   </head>
   <body>
     <div class="app-shell">
@@ -18,7 +26,13 @@
           <span class="brand-beta">BETA</span>
         </a>
         <div class="topbar-center"><span class="pulse"></span> Local browser workspace <span class="topbar-divider"></span> No compile server required</div>
-        <a class="topbar-link" href="https://github.com/lvgl/lvgl" target="_blank" rel="noopener noreferrer">LVGL <span aria-hidden="true">↗</span></a>
+        <div class="topbar-actions">
+          <div class="theme-switch" role="group" aria-label="Color theme">
+            <button type="button" data-theme-choice="light" aria-pressed="false">Light</button>
+            <button type="button" data-theme-choice="dark" aria-pressed="false">Dark</button>
+          </div>
+          <a class="topbar-link" href="https://github.com/lvgl/lvgl" target="_blank" rel="noopener noreferrer">LVGL <span aria-hidden="true">↗</span></a>
+        </div>
       </header>
 
       <div class="workspace">

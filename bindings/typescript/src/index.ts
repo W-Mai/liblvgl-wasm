@@ -29,6 +29,7 @@ interface RawExports {
   lv_label_set_text(object: number, text: number): void;
   lv_obj_set_size(object: number, width: number, height: number): void;
   lv_obj_set_pos(object: number, x: number, y: number): void;
+  lv_obj_set_style_radius(object: number, radius: number, selector: number): void;
   lv_obj_delete(object: number): void;
 }
 
@@ -269,6 +270,11 @@ export class LvglRuntime {
     this.raw.lv_obj_set_pos(object.handle, x, y);
   }
 
+  setObjectRadius(object: ObjectRef, radius: number): void {
+    object.assertOwner(this);
+    this.raw.lv_obj_set_style_radius(object.handle, radius, 0);
+  }
+
   deleteObject(object: ObjectRef): void {
     object.assertOwner(this);
     this.raw.lv_obj_delete(object.handle);
@@ -347,6 +353,7 @@ export class ObjectRef {
 
   setSize(width: number, height: number): void { this.runtime.setObjectSize(this, width, height); }
   setPosition(x: number, y: number): void { this.runtime.setObjectPosition(this, x, y); }
+  setRadius(radius: number): void { this.runtime.setObjectRadius(this, radius); }
   on(code: number, callback: (code: number) => void): void { this.runtime.onEvent(this, code, callback); }
   delete(): void { this.runtime.deleteObject(this); }
 }

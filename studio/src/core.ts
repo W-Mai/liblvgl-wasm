@@ -10,7 +10,7 @@ const requiredExports = [
   "lvw_indev_create", "lvw_indev_push", "lvw_step", "lvw_frame_get",
   "lvw_resource_put", "lvw_event_add", "lvw_event_clicked", "lvw_event_delete",
   "lv_display_get_screen_active", "lv_button_create", "lv_label_create",
-  "lv_label_set_text", "lv_obj_set_size", "lv_obj_set_pos",
+  "lv_label_set_text", "lv_obj_set_size", "lv_obj_set_pos", "lv_obj_set_style_radius",
 ];
 
 export interface CoreInfo {

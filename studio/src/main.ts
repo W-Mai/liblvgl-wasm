@@ -69,6 +69,20 @@ const resourceFiles = element<HTMLInputElement>("#resource-files");
 const resourceList = element<HTMLUListElement>("#resource-list");
 const viewportSelect = element<HTMLSelectElement>("#viewport-select");
 
+function setTheme(theme: "light" | "dark"): void {
+  document.documentElement.dataset.theme = theme;
+  document.querySelector<HTMLMetaElement>('meta[name="theme-color"]')?.setAttribute("content", theme === "dark" ? "#20201e" : "#efeeeb");
+  for (const button of document.querySelectorAll<HTMLButtonElement>("[data-theme-choice]")) {
+    button.setAttribute("aria-pressed", String(button.dataset.themeChoice === theme));
+  }
+  try { localStorage.setItem("lvgl-studio-theme", theme); } catch { /* Storage may be unavailable. */ }
+}
+
+for (const button of document.querySelectorAll<HTMLButtonElement>("[data-theme-choice]")) {
+  button.addEventListener("click", () => setTheme(button.dataset.themeChoice as "light" | "dark"));
+}
+setTheme(document.documentElement.dataset.theme === "dark" ? "dark" : "light");
+
 let selectedCore: File | undefined;
 let selectedApp: Source = {
   name: "JS sample application", origin: "SAMPLE",
@@ -144,6 +158,7 @@ function stop(): void {
 
 async function run(): Promise<boolean> {
   stop();
+  canvas.classList.toggle("sample-preview", selectedApp.origin === "SAMPLE");
   const runId = generation;
   setStatus("starting", "Starting");
   appendLog(`Starting ${selectedApp.name} with ${selectedCore?.name || "default liblvgl.wasm"}…`);
