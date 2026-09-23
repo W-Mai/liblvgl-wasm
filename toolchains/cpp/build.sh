@@ -2,7 +2,7 @@
 set -eu
 
 root=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
-sdk=${WASI_SDK_PATH:-"$root/.local/wasi-sdk-34.0-arm64-macos"}
+sdk=$(sh "$root/scripts/resolve-wasi-sdk.sh" "$root")
 source_file=${1:-"$root/toolchains/cpp/app.cpp"}
 output_file=${2:-"$root/target/apps/cpp/app.wasm"}
 mkdir -p "$(dirname -- "$output_file")"

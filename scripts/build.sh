@@ -2,17 +2,8 @@
 set -eu
 
 root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
-sdk=${WASI_SDK_PATH:-"$root/.local/wasi-sdk-34.0-arm64-macos"}
+sdk=$(sh "$root/scripts/resolve-wasi-sdk.sh" "$root")
 ninja=${NINJA_BIN:-ninja}
-
-if [ -z "${NINJA_BIN:-}" ] && [ -x /opt/homebrew/bin/ninja ]; then
-    ninja=/opt/homebrew/bin/ninja
-fi
-
-if [ ! -f "$sdk/share/cmake/wasi-sdk-p1.cmake" ]; then
-    printf 'wasi-sdk p1 toolchain not found: %s\n' "$sdk" >&2
-    exit 1
-fi
 
 if [ -n "${LVGL_SOURCE_DIR:-}" ]; then
     cmake -S "$root" -B "$root/target/wasm" -G Ninja \

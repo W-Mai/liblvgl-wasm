@@ -4,7 +4,7 @@
 
 ## Build
 
-Requires CMake 3.25+, Ninja, Python 3, Bun, Rust with the `wasm32-unknown-unknown` target, and wasi-sdk 34. `scripts/build.sh` uses `.local/wasi-sdk-34.0-arm64-macos` by default. Set `WASI_SDK_PATH` for another installation. LVGL is fetched at the commit pinned in `CMakeLists.txt`; set `LVGL_SOURCE_DIR` to use an existing checkout.
+Requires CMake 3.25+, Ninja, Python 3, Bun, Rust with the `wasm32-unknown-unknown` target, and wasi-sdk 34. Set `WASI_SDK_PATH` to the SDK root or add its `bin` directory to `PATH`. Existing builds can reuse the SDK path recorded in `target/wasm/CMakeCache.txt`. LVGL is fetched at the commit pinned in `CMakeLists.txt`; set `LVGL_SOURCE_DIR` to use an existing checkout.
 
 ```sh
 WASI_SDK_PATH=/path/to/wasi-sdk ./scripts/build.sh
