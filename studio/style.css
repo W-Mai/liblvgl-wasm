@@ -77,9 +77,7 @@ button:focus-visible, a:focus-visible, select:focus-visible, label[tabindex]:foc
 
 .topbar { height: 72px; padding: 0 28px; display: flex; align-items: center; justify-content: space-between; gap: 24px; border-bottom: 1px solid var(--line); background: var(--topbar); }
 .brand { display: inline-flex; align-items: center; gap: 10px; text-decoration: none; white-space: nowrap; }
-.brand-mark { display: grid; grid-template-columns: repeat(2, 9px); gap: 3px; transform: rotate(-8deg); margin-right: 3px; }
-.brand-mark i { display: block; width: 9px; height: 9px; background: var(--ink); }
-.brand-mark i:last-child { background: var(--line-strong); }
+.brand-mark { display: block; width: 28px; height: 28px; object-fit: contain; margin-right: 3px; }
 .brand-name { font-weight: 700; font-size: 21px; letter-spacing: -.07em; }
 .brand-name span { color: var(--quiet); letter-spacing: -.07em; }
 .brand-beta { font: 500 9px var(--mono); letter-spacing: .16em; color: var(--muted); border: 1px solid var(--line-strong); padding: 4px 5px 3px; margin-left: 5px; }
@@ -168,7 +166,6 @@ button:focus-visible, a:focus-visible, select:focus-visible, label[tabindex]:foc
 .device-sensor.small { width: 4px; height: 4px; }
 .device-screen { overflow: hidden; border: 3px solid var(--screen-edge); background: var(--screen); }
 .device-screen canvas { display: block; width: 100%; height: auto; background: var(--screen); touch-action: none; cursor: crosshair; }
-.device-screen canvas.sample-preview { filter: grayscale(1); }
 .device-bottom { height: 13px; display: flex; align-items: flex-end; justify-content: center; gap: 4px; }
 .device-bottom span { width: 14px; height: 2px; background: var(--device-detail); }
 .stage-hint { z-index: 1; color: var(--muted); font-size: 11px; }

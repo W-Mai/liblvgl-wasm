@@ -158,7 +158,6 @@ function stop(): void {
 
 async function run(): Promise<boolean> {
   stop();
-  canvas.classList.toggle("sample-preview", selectedApp.origin === "SAMPLE");
   const runId = generation;
   setStatus("starting", "Starting");
   appendLog(`Starting ${selectedApp.name} with ${selectedCore?.name || "default liblvgl.wasm"}…`);
