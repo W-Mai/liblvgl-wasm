@@ -1,0 +1,12 @@
+{
+  "name": "liblvgl-wasm",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build:ts": "bun build bindings/typescript/src/index.ts --target browser --outdir target/typescript",
+    "build:browser": "bun build examples/browser/main.ts --target browser --outfile target/browser/main.js",
+    "test": "bun test",
+    "quality": "bun run build:ts && bun run test"
+  }
+}
