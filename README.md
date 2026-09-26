@@ -17,6 +17,7 @@ Generated files stay under `target/`:
 | `target/wasm/liblvgl.wasm` | WASIp1 library module |
 | `target/wasm/api.json` | Enabled public declarations and binding status |
 | `target/wasm/api-exports.txt` | Generated linker export flags |
+| `target/wasm/api-shims.c` | Generated wrappers for aggregate values and inline functions |
 | `target/wasm/examples/c/liblvgl-c-demo.wasm` | C demo linked with LVGL |
 | `target/browser/main.js` | Browser example bundle |
 | `target/typescript/index.js` | TypeScript host adapter bundle |
@@ -67,6 +68,6 @@ Select the C toolchain in Studio and open **C API preview**. The Studio workspac
 
 The bridge ABI version is `1`. A Wasm instance owns one LVGL runtime and may create multiple displays. `lvw_step(elapsed_ms)` advances LVGL time and returns the next timer interval and frame count. Frames use XRGB8888 bytes in blue, green, red, unused order. Hosts must read or copy frame data before a call that can change the framebuffer. Each host must call `_initialize` before `lvw_init`.
 
-The generated API inventory classifies declarations as `direct_export`, `compile_disabled`, or `unsupported`. `direct_export` functions are included in the Wasm export list. Unsupported entries retain a reason in `target/wasm/api.json`; function pointer callbacks and aggregate value ABI require dedicated wrappers. The TypeScript adapter provides a typed interface for the bridge and the APIs used by its example.
+The generated API report classifies declarations as `direct_export`, `abi_shim`, `compile_disabled`, or `unsupported`. Direct functions keep their `lv_*` export names. Aggregate values and inline functions use generated `lvw_api_lv_*` wrappers: aggregate arguments are pointers into Wasm memory, and aggregate returns use an output pointer. `target/wasm/api.json` records each export name, wrapper signature, and unsupported reason. Function pointer callbacks and variadic functions remain unsupported by the raw API generator. The TypeScript adapter provides a typed interface for the bridge and the APIs used by its example.
 
 The software configuration enables PNG, BMP, GIF, and TinyTTF. ThorVG, FreeType, SVG, Lottie, native windows, and hardware drawing backends are disabled. The Wasm linear memory maximum is 256 MiB.

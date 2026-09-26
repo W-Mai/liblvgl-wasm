@@ -67,23 +67,52 @@ def definitions(nm: Path, archive: Path):
             if (match := re.match(r"^(lv_[A-Za-z0-9_]+) [TW] ", line))}
 
 
+def value_type(type_name, typedefs):
+    underlying = typedefs.get(type_name, type_name)
+    return underlying.startswith(("struct ", "union ")) and "*" not in type_name
+
+
 def classify(declaration, symbols, typedefs):
     name = declaration["name"]
-    if declaration["static"]:
-        return "unsupported", "static inline requires an ABI wrapper"
-    if name not in symbols:
+    if not declaration["static"] and name not in symbols:
         return "compile_disabled", "no definition in the configured LVGL archive"
     signature = declaration["signature"]
+    if "..." in signature:
+        return "unsupported", "variadic function requires a fixed-argument wrapper"
     if "(*" in signature or any("(*" in item for item in declaration["parameter_types"]):
         return "unsupported", "function pointer callback requires a synchronous trampoline"
-    result_type = signature.split(" (", 1)[0]
-    result_underlying = typedefs.get(result_type, result_type)
-    if result_underlying.startswith(("struct ", "union ")) and "*" not in result_type:
-        return "unsupported", "value return requires a target ABI audit or wrapper"
-    if any(item.startswith(("struct ", "union ")) and "*" not in item
-           for item in declaration["parameter_types"]):
-        return "unsupported", "value parameter requires a target ABI audit or wrapper"
+    result_type = signature.split("(", 1)[0].strip()
+    if declaration["static"] or value_type(result_type, typedefs) or any(
+            value_type(item, typedefs) for item in declaration["parameter_types"]):
+        return "abi_shim", None
     return "direct_export", None
+
+
+def shim(declaration, typedefs):
+    name = declaration["name"]
+    export_name = f"lvw_api_{name}"
+    result_type = declaration["signature"].split("(", 1)[0].strip()
+    value_result = value_type(result_type, typedefs)
+    parameters = []
+    arguments = []
+    for index, (type_name, underlying) in enumerate(zip(
+            declaration["parameters"], declaration["parameter_types"])):
+        if value_type(underlying, typedefs):
+            parameters.append(f"const {type_name} *arg{index}")
+            arguments.append(f"*arg{index}")
+        else:
+            parameters.append(f"{type_name} arg{index}")
+            arguments.append(f"arg{index}")
+    if value_result:
+        parameters.insert(0, f"{result_type} *out")
+    return_type = "void" if value_result else result_type
+    call = f"{name}({', '.join(arguments)})"
+    statement = f"*out = {call};" if value_result else (
+        f"{call};" if result_type == "void" else f"return {call};")
+    parameter_list = ", ".join(parameters) or "void"
+    signature = f"{return_type} ({parameter_list})"
+    source = f"{return_type} {export_name}({parameter_list}) {{\n    {statement}\n}}"
+    return export_name, signature, source
 
 
 def main():
@@ -93,19 +122,33 @@ def main():
     parser.add_argument("--archive", required=True, type=Path)
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--exports", required=True, type=Path)
+    parser.add_argument("--shims", required=True, type=Path)
     args = parser.parse_args()
     found, typedefs = declarations(args.sdk / "bin" / "clang", args.source, Path("config").resolve())
     symbols = definitions(args.sdk / "bin" / "llvm-nm", args.archive)
     entries = []
+    shims = []
     for name, declaration in sorted(found.items()):
         category, reason = classify(declaration, symbols, typedefs)
-        entries.append({**declaration, "category": category, "reason": reason})
-    args.output.parent.mkdir(parents=True, exist_ok=True)
-    args.output.write_text(json.dumps({"declarations": entries}, indent=2) + "\n")
-    exports = [item["name"] for item in entries if item["category"] == "direct_export"]
-    args.exports.write_text("\n".join(f"-Wl,--export={name}" for name in exports) + "\n")
+        export_name = name if category == "direct_export" else None
+        abi_signature = None
+        if category == "abi_shim":
+            export_name, abi_signature, source = shim(declaration, typedefs)
+            shims.append(source)
+        entries.append({**declaration, "category": category, "reason": reason,
+                        "export_name": export_name, "abi_signature": abi_signature})
     counts = {category: sum(item["category"] == category for item in entries)
-              for category in ("direct_export", "compile_disabled", "unsupported")}
+              for category in ("direct_export", "abi_shim", "compile_disabled", "unsupported")}
+    args.output.parent.mkdir(parents=True, exist_ok=True)
+    args.output.write_text(json.dumps({"summary": {"total": len(entries), **counts},
+                                       "declarations": entries}, indent=2) + "\n")
+    args.shims.write_text('#include "lvgl/lvgl.h"\n\n'
+                          '#pragma clang diagnostic push\n'
+                          '#pragma clang diagnostic ignored "-Wdeprecated-declarations"\n\n'
+                          + "\n\n".join(shims) +
+                          '\n\n#pragma clang diagnostic pop\n')
+    exports = [item["export_name"] for item in entries if item["export_name"]]
+    args.exports.write_text("\n".join(f"-Wl,--export={name}" for name in exports) + "\n")
     print(f"API inventory: {len(entries)} declarations, {counts}")
 
 

@@ -20,6 +20,9 @@ FetchContent_Declare(lvgl
 FetchContent_MakeAvailable(lvgl)
 
 add_executable(liblvgl bridge/lvw.c)
+if(EXISTS "${CMAKE_BINARY_DIR}/api-shims.c")
+    target_sources(liblvgl PRIVATE "${CMAKE_BINARY_DIR}/api-shims.c")
+endif()
 target_compile_features(liblvgl PRIVATE c_std_11)
 target_include_directories(liblvgl PUBLIC bridge)
 target_link_libraries(liblvgl PRIVATE lvgl::lvgl)

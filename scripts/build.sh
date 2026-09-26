@@ -31,7 +31,8 @@ python3 "$root/generator/api.py" \
     --source "$source_dir" --sdk "$sdk" \
     --archive "$root/target/wasm/_deps/lvgl-build/liblvgl.a" \
     --output "$root/target/wasm/api.json" \
-    --exports "$root/target/wasm/api-exports.txt"
+    --exports "$root/target/wasm/api-exports.txt" \
+    --shims "$root/target/wasm/api-shims.c"
 cmake -S "$root" -B "$root/target/wasm"
 cmake --build "$root/target/wasm" -j 4
 cmake --build "$root/target/wasm" --target liblvgl_c_demo -j 4
