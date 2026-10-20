@@ -13,6 +13,7 @@
 - Compiler-derived Wasm signatures for public callback typedefs, with type-graph references and engine-checked probe imports.
 - Managed native animations in TypeScript and Rust with synchronous path and get-value queries, native timing, completion notifications, and precise cancellation.
 - Reusable animation exec table slots that preserve native `var` and release application callbacks on deletion, shutdown, or failure.
+- Managed native observers in TypeScript and Rust with immediate synchronous notification, ordinary and object-bound registrations, native deletion tracking, and shared lifetime invalidation.
 - Generated TypeScript `lv_*` calls with aggregate pointer semantics, bigint arguments and results, exact-core identity checks, and guards after runtime shutdown.
 - Shared TypeScript guest-call failure guards, explicit closing state, and lifecycle reentry checks in the host and event bridge.
 - Idempotent event unsubscription, automatic host callback release on deletion, shared object lifetimes, and input references tied to their owning display. TypeScript and Studio require the `lvw_event_remove` core export.

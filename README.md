@@ -15,6 +15,8 @@ WASI_SDK_PATH=/path/to/wasi-sdk ./scripts/build.sh
 
 The build script can be invoked from another working directory. Relative SDK and source paths resolve from the caller's directory. A valid cached source override is reused; a missing cached source falls back to the pinned archive. An invalid explicit `LVGL_SOURCE_DIR` stops the build with an error.
 
+CMake compiles an adapted copy of the pinned `lv_observer.c` with a bridge notification at its native deletion point. The original source tree stays unchanged; a different observer source hash is rejected. The adapted `liblvgl.a` requires the `lvw_observer_release_native` implementation from the bridge.
+
 Generated files stay under `target/`:
 
 | Path | Content |
@@ -24,6 +26,7 @@ Generated files stay under `target/`:
 | `target/wasm/api-verification.json` | API/core hashes and verified function signature counts |
 | `target/wasm/api-exports.txt` | Generated linker export flags |
 | `target/wasm/api-shims.c` | Generated wrappers for aggregate values and inline functions |
+| `target/wasm/lvgl-adapted/lv_observer.c` | Observer deletion notification added to the pinned source |
 | `target/wasm/examples/c/liblvgl-c-demo.wasm` | C demo linked with LVGL |
 | `target/browser/main.js` | Browser example bundle |
 | `target/typescript/index.js` | TypeScript host adapter bundle |
@@ -239,6 +242,48 @@ Each active animation owns a distinct exec table slot, so cancellation affects o
 Native query, start, and early exec code continues reading the current animation after the callback returns. Managed cancellation of active animations is rejected during those phases and terminal notifications; cancelling the already finishing animation is harmless. Ordinary tick exec callbacks can cancel themselves or other animations. The SDK rejects `lv_anim_refr_now` and `lv_anim_delete_all` inside animation callbacks. Raw callers must not delete the current animation, its `var` object or ancestors during query/start/early exec, or mutate animation lists from terminal notifications. Raw callbacks, EXT_DATA, and exec pointers on a managed animation belong to the bridge and must not be replaced or copied into another descriptor.
 
 Animation creation requires `lvw_anim_start`, `lvw_anim_delete`, `lvw_anim_exec`, and the exported growable `__indirect_function_table`. Missing capabilities are reported before registration. The core imports `lvw.anim_exec(id, animation, value)`, `lvw.anim_query(id, animation, kind)`, `lvw.anim_notify(id, animation, kind)`, and `lvw.anim_release(id)`. Query kinds are 1 for path and 2 for get-value; notification kinds are 1 for start, 2 for completed, and 3 for deleted. The bridge keeps ABI 1 and existing signatures. Exporting the table also retains libc's WASI `fd_seek` import; browser hosts report unseekable standard streams, and the Rust host uses its WASI implementation.
+
+### Native observers
+
+`observe` subscribes to a native subject and invokes its handler synchronously before returning. Subject creation, values, previous values, buffers, and groups use the generated `lv_subject_*` functions. Observer `user_data` remains available through the native getter and setter.
+
+```ts
+import { LV_SUBJECT_TYPE_INT } from "./target/typescript/index.js";
+
+const api = runtime.unsafe;
+const subject = api.lv_subject_create(LV_SUBJECT_TYPE_INT);
+if (!subject) throw new Error("subject allocation failed");
+const observer = runtime.observe(subject, (_current, source) => {
+  api.lv_obj_set_x(button.handle, api.lv_subject_get_int(source));
+});
+api.lv_subject_set_int(subject, 40);
+observer.cancel();
+api.lv_subject_delete(subject);
+```
+
+```rust
+use liblvgl_wasm_host::{UnsafePointer, values};
+
+let subject = runtime.raw()?.lv_subject_create(values::LV_SUBJECT_TYPE_INT)?;
+let observer = runtime.observe(subject, UnsafePointer(0), move |context, _current, source| {
+    let mut api = context.raw()?;
+    let x = api.lv_subject_get_int(source)?;
+    api.lv_obj_set_x(button, x)
+})?;
+runtime.raw()?.lv_subject_set_int(subject, 40)?;
+runtime.cancel_observer(&observer)?;
+runtime.raw()?.lv_subject_delete(subject)?;
+```
+
+TypeScript handlers receive `(observer, subject)`; Rust handlers receive `(context, observer, subject)` and return `Result<()>`. `Observer.handle` / `pointer()` is available during the initial callback. Ordinary observers can cancel themselves during that callback; the registration call then returns an already invalid handle. Value changes retain native notification rules. Creating another observer on the same subject and updating a different subject can invoke handlers on the same stack. TypeScript rejects thenables; Rust handlers must release application locks before guest calls.
+
+`observeTarget` / `observe_target` stores an arbitrary target pointer without tying the registration to an object. `observeObject` / `observe_object` ties it to native object cleanup. TypeScript requires a live `ObjectRef` from the same runtime; Rust object pointers retain the raw caller's ownership obligations.
+
+Individual cancellation of a non-null object-bound observer is rejected with a recoverable error because native deletion removes shared widget event bindings. Delete the object or subject, or call `lv_obj_remove_from_subject` to remove all bindings for that pair. Raw `lv_observer_delete` retains that native side effect. Ordinary cancellation is idempotent; native observer deletion, subject cleanup, shutdown, failure, and Rust runtime drop invalidate managed handles and release handlers.
+
+Raw calls must not recursively notify a subject already being notified, including indirect cycles, or delete, deinitialize, or reinitialize its storage during notification. Subject, target, and user-data pointers must remain valid for their native uses. The observer adapter does not replace these raw preconditions. Closing suppresses observer user notifications; cancellation while closing releases only host records.
+
+The core imports `lvw.observer(id, observer, subject)` and `lvw.observer_release(id)`. Registration requires `lvw_observer_create` and `lvw_observer_delete`; older bridge-compatible cores can still load, but missing observer capabilities are reported before registration. ABI 1 and existing signatures are unchanged. Native function-pointer entry points, `lv_obj_bind_*` setter callbacks, subject destructor callbacks, and variadic functions retain their reported binding status.
 
 ### Constants and layouts
 

@@ -13,6 +13,8 @@
 #define LVW_ANIM_START 4u
 #define LVW_ANIM_COMPLETED 8u
 #define LVW_ANIM_DELETED 16u
+#define LVW_OBSERVER_MODE_TARGET 0u
+#define LVW_OBSERVER_MODE_OBJECT 1u
 
 typedef struct {
     uint32_t struct_size;
@@ -77,5 +79,8 @@ uint32_t lvw_anim_start(uint32_t descriptor, uint32_t callback_id, uint32_t exec
                         uint32_t flags);
 int32_t lvw_anim_delete(uint32_t animation, uint32_t callback_id);
 void lvw_anim_exec(uint32_t exec_slot, uint32_t var, int32_t value);
+uint32_t lvw_observer_create(uint32_t subject, uint32_t target, uint32_t user_data,
+                             uint32_t callback_id, uint32_t mode);
+int32_t lvw_observer_delete(uint32_t observer, uint32_t callback_id);
 
 #endif

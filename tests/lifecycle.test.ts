@@ -165,6 +165,8 @@ test("the bridge rejects step and shutdown inside raw event and DELETE callbacks
         anim_query() { return 0; },
         anim_notify() {},
         anim_release() {},
+        observer() {},
+        observer_release() {},
         event(id: number) {
           notifications.push(id);
           expect(core.lvw_step(1, result)).toBe(-1);

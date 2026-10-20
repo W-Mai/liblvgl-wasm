@@ -24,6 +24,7 @@ export async function startCDemo(canvas: HTMLCanvasElement, signal: AbortSignal,
     lvw: {
       event() {}, timer() {}, timer_release() {},
       anim_exec() {}, anim_query() { return 0; }, anim_notify() {}, anim_release() {},
+      observer() {}, observer_release() {},
     },
     wasi_snapshot_preview1: {
       fd_close: () => 0,

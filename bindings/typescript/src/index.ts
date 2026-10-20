@@ -5,9 +5,10 @@ import {
 } from "../../../target/typescript/raw.ts";
 import { valuesIdentity } from "../../../target/typescript/values.ts";
 import { Animation, AnimationRegistry, type AnimationCallbacks, type AnimationExports } from "./animation.ts";
+import { Observer, ObserverRegistry, type ObserverCallback, type ObserverExports } from "./observer.ts";
 
-export { bindingIdentity, Animation };
-export type { AnimationCallbacks };
+export { bindingIdentity, Animation, Observer };
+export type { AnimationCallbacks, ObserverCallback };
 export type { UnsafeFunctionPointer, UnsafeLvglApi, UnsafePointer };
 export * from "../../../target/typescript/values.ts";
 
@@ -15,7 +16,7 @@ const ABI_VERSION = 1;
 const PIXEL_XRGB8888 = 1;
 const INPUT_POINTER = 1;
 
-interface RawExports extends AnimationExports {
+interface RawExports extends AnimationExports, ObserverExports {
   memory: WebAssembly.Memory;
   _initialize(): void;
   lvw_abi_version(): number;
@@ -107,6 +108,7 @@ export class LvglRuntime {
   private guestDepth = 0;
   private readonly raw: RawExports;
   private readonly animations: AnimationRegistry;
+  private readonly observers: ObserverRegistry;
   private unsafeApi?: UnsafeLvgl;
 
   private constructor(exports: RawExports, private readonly coreHash: string) {
@@ -122,6 +124,14 @@ export class LvglRuntime {
       ready: () => this.state === "ready",
       closing: () => this.state === "closing",
       inGuest: () => this.guestDepth !== 0,
+      allocateId: () => this.allocateCallbackId(),
+    });
+    this.observers = new ObserverRegistry(this.raw, {
+      ensureActive: () => this.ensureActive(),
+      rethrowFailure: () => this.rethrowFailure(),
+      poison: (error) => this.poison(error),
+      ready: () => this.state === "ready",
+      closing: () => this.state === "closing",
       allocateId: () => this.allocateCallbackId(),
     });
   }
@@ -155,6 +165,7 @@ export class LvglRuntime {
 
   private clearCallbacks(): void {
     this.animations.clear();
+    this.observers.clear();
     for (const { owner } of this.callbacks.values()) owner.ids.clear();
     for (const { owner } of this.timers.values()) owner.alive = false;
     this.timers.clear();
@@ -194,6 +205,7 @@ export class LvglRuntime {
     const expected = new Set([
       "lvw.event", "lvw.timer", "lvw.timer_release",
       "lvw.anim_exec", "lvw.anim_query", "lvw.anim_notify", "lvw.anim_release",
+      "lvw.observer", "lvw.observer_release",
       "wasi_snapshot_preview1.fd_close", "wasi_snapshot_preview1.fd_write",
       "wasi_snapshot_preview1.fd_seek",
     ]);
@@ -226,6 +238,13 @@ export class LvglRuntime {
         },
         anim_release(id: number) {
           runtime?.animations.release(id);
+        },
+        observer(id: number, pointer: number, subject: number) {
+          if (!runtime) throw new Error("LVGL observer callback before runtime initialization");
+          runtime.observers.dispatch(id, pointer, subject);
+        },
+        observer_release(id: number) {
+          runtime?.observers.release(id);
         },
       },
       wasi_snapshot_preview1: {
@@ -353,6 +372,29 @@ export class LvglRuntime {
   /** Cancel an animation from this runtime. Cancellation during unsafe native callback phases is rejected without invalidating the animation. */
   cancelAnimation(animation: Animation): void {
     this.animations.cancel(animation);
+  }
+
+  /** Observe an initialized subject. The synchronous callback runs once during registration and on native notifications. */
+  observe(subject: UnsafePointer, callback: ObserverCallback, userData: UnsafePointer = 0): Observer {
+    return this.observers.create(subject, 0, callback, userData, 0);
+  }
+
+  /** Observe a subject with an independent native target pointer and user data. The caller owns these guest pointers. */
+  observeTarget(subject: UnsafePointer, target: UnsafePointer, callback: ObserverCallback,
+                userData: UnsafePointer = 0): Observer {
+    return this.observers.create(subject, target, callback, userData, 0);
+  }
+
+  /** Observe a subject until the object or subject is cleaned up. Individual cancellation is rejected for object-bound observers. */
+  observeObject(subject: UnsafePointer, object: ObjectRef, callback: ObserverCallback,
+                userData: UnsafePointer = 0): Observer {
+    object.assertOwner(this);
+    return this.observers.create(subject, object.handle, callback, userData, 1);
+  }
+
+  /** Cancel an observer from this runtime. Repeated cancellation after deletion, shutdown, or failure does not enter the guest. */
+  cancelObserver(observer: Observer): void {
+    this.observers.cancel(observer);
   }
 
   /** Create a timer driven by step(). The callback must finish synchronously; userData remains available through the native LVGL API. */

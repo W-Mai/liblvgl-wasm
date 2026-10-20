@@ -23,6 +23,7 @@ FetchContent_Declare(lvgl
     TLS_VERIFY ON
 )
 FetchContent_MakeAvailable(lvgl)
+include(cmake/observer.cmake)
 
 add_executable(liblvgl bridge/lvw.c)
 if(EXISTS "${CMAKE_BINARY_DIR}/api-shims.c")

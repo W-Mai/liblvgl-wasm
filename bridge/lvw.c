@@ -54,6 +54,19 @@ typedef struct lvw_anim_node {
     struct lvw_anim_node *next;
 } lvw_anim_node_t;
 
+typedef struct lvw_observer_node {
+    lv_observer_t *lvgl;
+    lv_subject_t *subject;
+    uint32_t callback_id;
+    bool object_bound;
+    struct lvw_observer_node *next;
+} lvw_observer_node_t;
+
+typedef struct lvw_observer_creation {
+    lvw_observer_node_t *node;
+    struct lvw_observer_creation *previous;
+} lvw_observer_creation_t;
+
 typedef struct lvw_resource {
     char name[LVW_RESOURCE_NAME_LEN + 1u];
     uint8_t *data;
@@ -70,6 +83,8 @@ static lvw_display_node_t *displays;
 static lvw_indev_node_t *indevs;
 static lvw_timer_node_t *timers;
 static lvw_anim_node_t *animations;
+static lvw_observer_node_t *observers;
+static lvw_observer_creation_t *observer_creation;
 static lvw_resource_t *resources;
 static lv_fs_drv_t resource_driver;
 static uint32_t initialized;
@@ -97,6 +112,12 @@ extern void lvw_host_anim_notify(uint32_t callback_id, uint32_t animation, uint3
 
 __attribute__((import_module("lvw"), import_name("anim_release")))
 extern void lvw_host_anim_release(uint32_t callback_id);
+
+__attribute__((import_module("lvw"), import_name("observer")))
+extern void lvw_host_observer(uint32_t callback_id, uint32_t observer, uint32_t subject);
+
+__attribute__((import_module("lvw"), import_name("observer_release")))
+extern void lvw_host_observer_release(uint32_t callback_id);
 
 static uint32_t pointer_value(const void *pointer) {
     return (uint32_t)(uintptr_t)pointer;
@@ -272,6 +293,40 @@ static void animation_release(void *data) {
     anim_restricted_depth--;
 }
 
+static void observer_callback(lv_observer_t *observer, lv_subject_t *subject) {
+    lvw_observer_node_t *node = observers;
+    while (node && node->lvgl != observer) node = node->next;
+    if (!node) {
+        node = observer_creation ? observer_creation->node : NULL;
+        if (!node || node->lvgl || node->subject != subject) __builtin_trap();
+        node->lvgl = observer;
+    }
+    if (node->subject != subject) __builtin_trap();
+    uint32_t callback_id = node->callback_id;
+    uint32_t handle = pointer_value(observer);
+    uint32_t subject_handle = pointer_value(subject);
+    callback_depth++;
+    lvw_host_observer(callback_id, handle, subject_handle);
+    callback_depth--;
+}
+
+// Called by the adapted native deletion path after unlinking the observer.
+void lvw_observer_release_native(lv_observer_t *observer) {
+    lvw_observer_node_t **cursor = &observers;
+    while (*cursor && (*cursor)->lvgl != observer) cursor = &(*cursor)->next;
+    if (!*cursor) return;
+    lvw_observer_node_t *node = *cursor;
+    *cursor = node->next;
+    for (lvw_observer_creation_t *frame = observer_creation; frame; frame = frame->previous) {
+        if (frame->node == node) frame->node = NULL;
+    }
+    uint32_t callback_id = node->callback_id;
+    free(node);
+    callback_depth++;
+    lvw_host_observer_release(callback_id);
+    callback_depth--;
+}
+
 static void *resource_open(lv_fs_drv_t *driver, const char *path, lv_fs_mode_t mode) {
     (void)driver;
     if (mode != LV_FS_MODE_RD || !path) return NULL;
@@ -359,6 +414,7 @@ LVW_EXPORT(lvw_shutdown) int32_t lvw_shutdown(void) {
         free(node);
     }
     while (timers) lv_timer_delete(timers->lvgl);
+    while (observers) lv_observer_delete(observers->lvgl);
     lv_deinit();
     while (resources) {
         lvw_resource_t *resource = resources;
@@ -680,4 +736,51 @@ LVW_EXPORT(lvw_anim_exec) void lvw_anim_exec(uint32_t exec_slot, uint32_t var, i
         return;
     }
     __builtin_trap();
+}
+
+LVW_EXPORT(lvw_observer_create) uint32_t lvw_observer_create(uint32_t subject, uint32_t target,
+                                                            uint32_t user_data, uint32_t callback_id,
+                                                            uint32_t mode) {
+    if (!initialized || !subject || !callback_id || mode > LVW_OBSERVER_MODE_OBJECT) return 0;
+    for (lvw_observer_node_t *node = observers; node; node = node->next) {
+        if (node->callback_id == callback_id) return 0;
+    }
+    lvw_observer_node_t *node = calloc(1, sizeof(*node));
+    if (!node) return 0;
+    node->subject = (lv_subject_t *)(uintptr_t)subject;
+    node->callback_id = callback_id;
+    node->object_bound = mode == LVW_OBSERVER_MODE_OBJECT && target != 0;
+    node->next = observers;
+    observers = node;
+
+    lvw_observer_creation_t frame = {node, observer_creation};
+    observer_creation = &frame;
+    lv_observer_t *created = mode == LVW_OBSERVER_MODE_OBJECT
+        ? lv_subject_add_observer_obj(node->subject, observer_callback,
+                                      (lv_obj_t *)(uintptr_t)target, (void *)(uintptr_t)user_data)
+        : lv_subject_add_observer_with_target(node->subject, observer_callback,
+                                              (void *)(uintptr_t)target, (void *)(uintptr_t)user_data);
+    observer_creation = frame.previous;
+    if (!created) {
+        // A failed native allocation has not invoked the initial callback.
+        if (!frame.node || frame.node->lvgl || observers != frame.node) __builtin_trap();
+        observers = frame.node->next;
+        free(frame.node);
+        return 0;
+    }
+    if (frame.node && frame.node->lvgl != created) __builtin_trap();
+    // Initial notification may have released this registration; never revive it.
+    return pointer_value(created);
+}
+
+LVW_EXPORT(lvw_observer_delete) int32_t lvw_observer_delete(uint32_t observer, uint32_t callback_id) {
+    if (!initialized) return -1;
+    if (!observer || !callback_id) return -2;
+    for (lvw_observer_node_t *node = observers; node; node = node->next) {
+        if (pointer_value(node->lvgl) != observer || node->callback_id != callback_id) continue;
+        if (node->object_bound) return -3;
+        lv_observer_delete(node->lvgl);
+        return 0;
+    }
+    return 0;
 }

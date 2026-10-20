@@ -23,6 +23,8 @@ mod timer;
 pub use timer::Timer;
 mod animation;
 pub use animation::{Animation, AnimationCallbacks};
+mod observer;
+pub use observer::Observer;
 
 mod generated {
     include!(concat!(env!("OUT_DIR"), "/raw.rs"));
@@ -68,6 +70,8 @@ struct Host {
     timers: HashMap<u32, timer::Registration>,
     next_timer_id: u64,
     animations: animation::Registry,
+    observers: HashMap<u32, observer::Registration>,
+    next_observer_id: u64,
 }
 
 #[derive(Clone, Copy)]
@@ -108,6 +112,8 @@ impl Host {
         self.invalidate_timers();
         self.timers.clear();
         self.animations.clear();
+        self.invalidate_observers();
+        self.observers.clear();
         self.handler = None;
     }
 
@@ -124,6 +130,7 @@ impl Drop for Host {
         self.lifetime.store(false, Ordering::SeqCst);
         self.invalidate_timers();
         self.animations.invalidate();
+        self.invalidate_observers();
     }
 }
 
@@ -158,6 +165,8 @@ impl Runtime {
                         | "anim_query"
                         | "anim_notify"
                         | "anim_release"
+                        | "observer"
+                        | "observer_release"
                 ) | (
                     "wasi_snapshot_preview1",
                     "fd_close" | "fd_write" | "fd_seek"
@@ -214,6 +223,7 @@ impl Runtime {
         )?;
         timer::add_to_linker(&mut linker)?;
         animation::add_to_linker(&mut linker)?;
+        observer::add_to_linker(&mut linker)?;
         let mut store = Store::new(
             &engine,
             Host {
@@ -228,6 +238,8 @@ impl Runtime {
                 timers: HashMap::new(),
                 next_timer_id: 1,
                 animations: animation::Registry::default(),
+                observers: HashMap::new(),
+                next_observer_id: 1,
             },
         );
         let instance = linker.instantiate(&mut store, &module)?;

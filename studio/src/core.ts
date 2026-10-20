@@ -6,6 +6,8 @@ const requiredImports = new Set([
   "lvw.anim_query",
   "lvw.anim_notify",
   "lvw.anim_release",
+  "lvw.observer",
+  "lvw.observer_release",
   "wasi_snapshot_preview1.fd_close",
   "wasi_snapshot_preview1.fd_seek",
   "wasi_snapshot_preview1.fd_write",
