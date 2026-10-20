@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Inventory configured LVGL functions and constants for WASIp1."""
+"""Inventory configured LVGL functions, constants, and target types for WASIp1."""
 
 import argparse
 import json
@@ -9,6 +9,7 @@ from pathlib import Path
 
 from constants import collect_constants, json_nodes
 from layouts import collect_layouts
+from signatures import collect_signatures
 
 
 def compiler_command(clang: Path, source: Path, config: Path):
@@ -112,8 +113,9 @@ def shim(declaration, typedefs):
         f"{call};" if result_type == "void" else f"return {call};")
     parameter_list = ", ".join(parameters) or "void"
     signature = f"{return_type} ({parameter_list})"
-    source = f"{return_type} {export_name}({parameter_list}) {{\n    {statement}\n}}"
-    return export_name, signature, source
+    prototype = f"{return_type} {export_name}({parameter_list})"
+    source = f"{prototype} {{\n    {statement}\n}}"
+    return export_name, signature, source, prototype
 
 
 def main():
@@ -136,20 +138,27 @@ def main():
     symbols = definitions(args.sdk / "bin" / "llvm-nm", args.archive)
     entries = []
     shims = []
+    prototypes = []
     for name, declaration in sorted(found.items()):
         category, reason = classify(declaration, symbols, typedefs)
         export_name = name if category == "direct_export" else None
         abi_signature = None
         if category == "abi_shim":
-            export_name, abi_signature, source = shim(declaration, typedefs)
+            export_name, abi_signature, source, prototype = shim(declaration, typedefs)
             shims.append(source)
+            prototypes.append(prototype)
         entries.append({**declaration, "category": category, "reason": reason,
                         "export_name": export_name, "abi_signature": abi_signature})
     counts = {category: sum(item["category"] == category for item in entries)
               for category in ("direct_export", "abi_shim", "compile_disabled", "unsupported")}
     args.output.parent.mkdir(parents=True, exist_ok=True)
-    args.output.write_text(json.dumps({**type_report, **constant_report, "summary": {"total": len(entries), **counts},
-                                       "declarations": entries}, indent=2) + "\n")
+    signatures = collect_signatures(command, entries, prototypes, args.output.parent)
+    for entry in entries:
+        entry["wasm_signature"] = signatures.get(entry["export_name"])
+    args.output.write_text(json.dumps({
+        **type_report, **constant_report, "summary": {"total": len(entries), **counts},
+        "wasm_summary": {"expected_functions": len(signatures)}, "declarations": entries,
+    }, indent=2) + "\n")
     args.shims.write_text('#include "lvgl/lvgl.h"\n\n'
                           '#pragma clang diagnostic push\n'
                           '#pragma clang diagnostic ignored "-Wdeprecated-declarations"\n\n'

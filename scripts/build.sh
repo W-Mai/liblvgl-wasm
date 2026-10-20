@@ -2,6 +2,7 @@
 set -eu
 
 root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+rm -f "$root/target/wasm/api-verification.json"
 sdk=$(sh "$root/scripts/resolve-wasi-sdk.sh" "$root")
 ninja=${NINJA_BIN:-ninja}
 
@@ -41,6 +42,10 @@ python3 -B "$root/generator/api.py" \
     --shims "$root/target/wasm/api-shims.c"
 cmake -S "$root" -B "$root/target/wasm"
 cmake --build "$root/target/wasm" -j 4
+python3 -B "$root/generator/signatures.py" \
+    --api "$root/target/wasm/api.json" \
+    --wasm "$root/target/wasm/liblvgl.wasm" \
+    --output "$root/target/wasm/api-verification.json"
 cmake --build "$root/target/wasm" --target liblvgl_c_demo -j 4
 cd "$root"
 bun run build:ts
