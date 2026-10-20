@@ -12,6 +12,7 @@
 - Compiler-derived Wasm function signatures, linked-core signature checks, and verification records tied to API and core hashes.
 - Generated TypeScript `lv_*` calls with aggregate pointer semantics, bigint arguments and results, exact-core identity checks, and guards after runtime shutdown.
 - Shared TypeScript guest-call failure guards, explicit closing state, and lifecycle reentry checks in the host and event bridge.
+- Idempotent event unsubscription, automatic host callback release on deletion, shared object lifetimes, and input references tied to their owning display. TypeScript and Studio require the `lvw_event_remove` core export.
 - Strict TypeScript checks for generated bindings and the runtime, with locked JavaScript dependencies.
 - Browser/Bun and Rust hosts using the same Wasm module, with resource and pointer interaction checks.
 - Reusable Rust host library with checked memory copies, synchronous event handlers, and runtime shutdown and failure guards.

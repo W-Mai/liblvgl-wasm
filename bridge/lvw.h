@@ -63,6 +63,7 @@ int32_t lvw_step(uint32_t elapsed_ms, uint32_t out_result_ptr);
 int32_t lvw_frame_get(uint32_t display, uint32_t out_frame_ptr);
 int32_t lvw_resource_put(uint32_t name_ptr, uint32_t name_len, uint32_t data_ptr, uint32_t data_len);
 int32_t lvw_event_add(uint32_t object, uint32_t event_code, uint32_t callback_id);
+int32_t lvw_event_remove(uint32_t object, uint32_t callback_id);
 uint32_t lvw_event_clicked(void);
 uint32_t lvw_event_delete(void);
 

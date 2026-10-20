@@ -30,6 +30,7 @@ interface RawExports {
   lvw_frame_get(display: number, frame: number): number;
   lvw_resource_put(name: number, nameLength: number, bytes: number, byteLength: number): number;
   lvw_event_add(object: number, code: number, callbackId: number): number;
+  lvw_event_remove(object: number, callbackId: number): number;
   lvw_event_clicked(): number;
   lvw_event_delete(): number;
   lv_display_get_screen_active(display: number): number;
@@ -74,8 +75,18 @@ function check(status: number, operation: string): void {
   if (status !== 0) throw new Error(`${operation} failed (${status})`);
 }
 
+interface ObjectLifetime {
+  handle: number;
+  alive: boolean;
+  ids: Set<number>;
+}
+
 export class LvglRuntime {
-  private readonly callbacks = new Map<number, (object: number, code: number) => void>();
+  private readonly callbacks = new Map<number, { owner: ObjectLifetime; callback: (code: number) => void }>();
+  private readonly objects = new WeakMap<ObjectRef, ObjectLifetime>();
+  private readonly objectLifetimes = new Map<number, ObjectLifetime>();
+  private readonly deletedObjects = new Set<ObjectLifetime>();
+  private readonly displays = new Map<number, { alive: boolean }>();
   private nextCallbackId = 1;
   private state: "ready" | "closing" | "poisoned" | "closed" = "ready";
   private failure: unknown;
@@ -104,12 +115,27 @@ export class LvglRuntime {
       if (this.state !== "poisoned") {
         this.failure = error;
         this.state = "poisoned";
-        this.callbacks.clear();
+        this.clearCallbacks();
       }
       throw this.failure;
     } finally {
       this.guestDepth--;
+      if (this.guestDepth === 0) {
+        for (const owner of this.deletedObjects) {
+          for (const id of owner.ids) this.callbacks.delete(id);
+          owner.ids.clear();
+        }
+        this.deletedObjects.clear();
+      }
     }
+  }
+
+  private clearCallbacks(): void {
+    for (const { owner } of this.callbacks.values()) owner.ids.clear();
+    this.callbacks.clear();
+    this.deletedObjects.clear();
+    this.objectLifetimes.clear();
+    this.displays.clear();
   }
 
   private rethrowFailure(): void {
@@ -161,6 +187,9 @@ export class LvglRuntime {
       },
     });
     const raw = instance.exports as unknown as RawExports;
+    if (typeof raw.lvw_event_remove !== "function") {
+      throw new Error("missing Wasm function: lvw_event_remove (required for event subscriptions)");
+    }
     memory = raw.memory;
     raw._initialize();
     if (raw.lvw_abi_version() !== ABI_VERSION) throw new Error("unsupported bridge ABI");
@@ -248,7 +277,7 @@ export class LvglRuntime {
     display.assertOwner(this);
     const handle = this.raw.lvw_indev_create(display.handle, INPUT_POINTER);
     if (!handle) throw new Error("lvw_indev_create failed");
-    return new PointerInput(this, handle);
+    return new PointerInput(this, handle, display);
   }
 
   screen(display: Display): ObjectRef {
@@ -333,17 +362,79 @@ export class LvglRuntime {
     });
   }
 
-  onEvent(object: ObjectRef, code: number, callback: (code: number) => void): void {
+  /** @internal */
+  trackObject(object: ObjectRef): () => void {
     this.ensureActive();
-    object.assertOwner(this);
-    const id = this.nextCallbackId++;
-    this.callbacks.set(id, (_object, eventCode) => callback(eventCode));
-    check(this.raw.lvw_event_add(object.handle, code, id), "lvw_event_add");
+    if (this.objects.has(object)) throw new Error("LVGL object reference is already tracked");
+    let owner = this.objectLifetimes.get(object.handle);
+    if (!owner) {
+      owner = { handle: object.handle, alive: true, ids: new Set() };
+      const tracked = owner;
+      this.addEvent(tracked, this.deleteEvent, () => {
+        tracked.alive = false;
+        if (this.objectLifetimes.get(tracked.handle) === tracked) this.objectLifetimes.delete(tracked.handle);
+        this.deletedObjects.add(tracked);
+      });
+      this.objectLifetimes.set(object.handle, tracked);
+    }
+    this.objects.set(object, owner);
+    return () => {
+      this.ensureActive();
+      if (!owner.alive) throw new Error("invalid LVGL object reference");
+    };
   }
 
-  private dispatch(callbackId: number, object: number, code: number): void {
+  /** @internal */
+  trackDisplay(handle: number): () => void {
+    this.ensureActive();
+    if (!handle) throw new Error("invalid display reference");
+    let lifetime = this.displays.get(handle);
+    if (!lifetime) {
+      lifetime = { alive: true };
+      this.displays.set(handle, lifetime);
+    }
+    return () => {
+      this.ensureActive();
+      if (!lifetime.alive) throw new Error("invalid display reference");
+    };
+  }
+
+  private addEvent(owner: ObjectLifetime, code: number, callback: (code: number) => void): number {
+    this.ensureActive();
+    if (this.nextCallbackId > 0xffffffff) throw new Error("LVGL callback IDs exhausted");
+    const id = this.nextCallbackId++;
+    this.callbacks.set(id, { owner, callback });
+    owner.ids.add(id);
+    try {
+      check(this.raw.lvw_event_add(owner.handle, code, id), "lvw_event_add");
+    } catch (error) {
+      this.callbacks.delete(id);
+      owner.ids.delete(id);
+      throw error;
+    }
+    return id;
+  }
+
+  onEvent(object: ObjectRef, code: number, callback: (code: number) => void): () => void {
+    this.ensureActive();
+    object.assertOwner(this);
+    const owner = this.objects.get(object)!;
+    const id = this.addEvent(owner, code, callback);
+    return this.removeEvent.bind(this, owner, id);
+  }
+
+  private removeEvent(owner: ObjectLifetime, id: number): void {
+    if (!this.callbacks.has(id)) return;
+    if (this.state === "ready" && owner.alive) {
+      check(this.raw.lvw_event_remove(owner.handle, id), "lvw_event_remove");
+    }
+    this.callbacks.delete(id);
+    owner.ids.delete(id);
+  }
+
+  private dispatch(callbackId: number, _object: number, code: number): void {
     this.rethrowFailure();
-    this.callbacks.get(callbackId)?.(object, code);
+    this.callbacks.get(callbackId >>> 0)?.callback(code);
     this.rethrowFailure();
   }
 
@@ -385,6 +476,9 @@ export class LvglRuntime {
   destroyDisplay(handle: number): void {
     this.ensureActive();
     check(this.raw.lvw_display_destroy(handle), "lvw_display_destroy");
+    const lifetime = this.displays.get(handle);
+    if (lifetime) lifetime.alive = false;
+    this.displays.delete(handle);
   }
 
   shutdown(): void {
@@ -396,18 +490,21 @@ export class LvglRuntime {
       this.state = "closed";
       check(status, "lvw_shutdown");
     } finally {
-      this.callbacks.clear();
+      this.clearCallbacks();
     }
   }
 }
 
 export class Display {
-  private alive = true;
+  private readonly check: () => void;
 
-  constructor(private readonly runtime: LvglRuntime, readonly handle: number) {}
+  constructor(private readonly runtime: LvglRuntime, readonly handle: number) {
+    this.check = runtime.trackDisplay(handle);
+  }
 
   assertOwner(runtime: LvglRuntime): void {
-    if (runtime !== this.runtime || !this.alive) throw new Error("invalid display reference");
+    if (runtime !== this.runtime) throw new Error("invalid display reference");
+    this.check();
   }
 
   resize(width: number, height: number): void {
@@ -418,32 +515,39 @@ export class Display {
   destroy(): void {
     this.assertOwner(this.runtime);
     this.runtime.destroyDisplay(this.handle);
-    this.alive = false;
   }
 }
 
 export class PointerInput {
-  constructor(private readonly runtime: LvglRuntime, private readonly handle: number) {}
+  constructor(
+    private readonly runtime: LvglRuntime,
+    private readonly handle: number,
+    private readonly display: Display,
+  ) {}
 
   push(x: number, y: number, pressed: boolean): void {
+    this.display.assertOwner(this.runtime);
     this.runtime.pushPointer(this.handle, x, y, pressed);
   }
 }
 
 export class ObjectRef {
-  private alive = true;
+  private readonly check: () => void;
 
   constructor(private readonly runtime: LvglRuntime, readonly handle: number) {
     if (!handle) throw new Error("LVGL object creation failed");
-    runtime.onEvent(this, runtime.deleteEvent, () => { this.alive = false; });
+    this.check = runtime.trackObject(this);
   }
 
   assertOwner(runtime: LvglRuntime): void {
-    if (runtime !== this.runtime || !this.alive) throw new Error("invalid LVGL object reference");
+    if (runtime !== this.runtime) throw new Error("invalid LVGL object reference");
+    this.check();
   }
 
   setSize(width: number, height: number): void { this.runtime.setObjectSize(this, width, height); }
   setPosition(x: number, y: number): void { this.runtime.setObjectPosition(this, x, y); }
-  on(code: number, callback: (code: number) => void): void { this.runtime.onEvent(this, code, callback); }
+  on(code: number, callback: (code: number) => void): () => void {
+    return this.runtime.onEvent(this, code, callback);
+  }
   delete(): void { this.runtime.deleteObject(this); }
 }

@@ -422,5 +422,13 @@ LVW_EXPORT(lvw_event_add) int32_t lvw_event_add(uint32_t object, uint32_t event_
     return descriptor ? 0 : -3;
 }
 
+LVW_EXPORT(lvw_event_remove) int32_t lvw_event_remove(uint32_t object, uint32_t callback_id) {
+    if (!initialized) return -1;
+    if (!object || !callback_id) return -2;
+    lv_obj_remove_event_cb_with_user_data((lv_obj_t *)(uintptr_t)object, event_callback,
+                                            (void *)(uintptr_t)callback_id);
+    return 0;
+}
+
 LVW_EXPORT(lvw_event_clicked) uint32_t lvw_event_clicked(void) { return LV_EVENT_CLICKED; }
 LVW_EXPORT(lvw_event_delete) uint32_t lvw_event_delete(void) { return LV_EVENT_DELETE; }
