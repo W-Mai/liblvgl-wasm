@@ -4,6 +4,7 @@
 
 ### Added
 
+- PNG rendering checks for RGB8, RGBA8, indexed transparency, and Adam7 input in both hosts, including malformed-image recovery and shared resource lifetimes.
 - Native image decoder callbacks in TypeScript and Rust, with synchronous session access, complete and incremental pixel buffers, managed cancellation, and native deletion tracking.
 - Native event parameters in TypeScript and Rust callbacks for synchronous drawing, draw-task changes, and event propagation control, with nested event context and synchronous TypeScript handler checks.
 - LVGL 9.6.0 WASIp1 reactor with a versioned host bridge for display, input, time, resources, events, and frame output.

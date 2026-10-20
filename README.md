@@ -392,4 +392,21 @@ Each supported declaration has a `wasm_signature` with the parameter and result 
 
 `callback_types` records the target Wasm signature of each function-pointer typedef reachable in the type graph, keyed by its alias type ID. Each entry includes a `function_type` reference and a compiler-derived `wasm_signature`; `callback_summary` counts typedefs, C function types, and distinct Wasm signatures. The generator compiles typedef address probes with the configured SDK and validates their complete import inventory. Quality checks link typed Wasm functions against that compiler output. Anonymous function pointers are outside this typedef inventory. A recorded signature describes the calling convention; it does not install host callbacks or change the corresponding API's support classification.
 
+## Software rendering
+
 The software configuration enables PNG, BMP, GIF, and TinyTTF. ThorVG, FreeType, SVG, Lottie, native windows, and hardware drawing backends are disabled. The Wasm linear memory maximum is 256 MiB.
+
+### PNG resources
+
+The built-in LodePNG decoder reads uploaded `W:` resources. TypeScript and Rust checks use the same PNG files and source pixels in `tests/fixtures/png/`: RGB8, RGBA8, packed indexed color with `tRNS` transparency, and Adam7 interlacing. Rendering preserves opaque pixels and composites transparent pixels onto the display background; the XRGB8888 display output is opaque.
+
+```ts
+runtime.putResource("icon.png", pngBytes);
+const image = runtime.createImage(runtime.screen(display));
+runtime.setImageSource(image, "W:icon.png");
+runtime.step(33);
+```
+
+Upload copies the supplied bytes. Resource names cannot be replaced, resources can be shared by multiple images, and deleting an image does not remove its resource. Uploaded resources remain available until runtime shutdown. Rust uses `lvw_resource_put` and the generated `lv_image_create` / `lv_image_set_src` methods for the same path.
+
+This decoder rejects 16-bit-per-channel PNG. Decoding reads the complete file and allocates the complete pixel buffer, so compressed file size does not describe its memory cost. PNG profiles and gamma metadata do not apply color correction. Setting a source or reading its header only establishes the initial format and dimensions; corrupt CRCs or truncated pixel data can fail later during rendering. Failed decoding leaves the image undrawn, and assigning a valid source restores rendering without recreating the runtime.
