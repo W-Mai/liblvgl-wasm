@@ -48,6 +48,8 @@ test("aggregate value shims pass color values through Wasm memory", async () => 
       event() {}, timer() {}, timer_release() {},
       anim_exec() {}, anim_query() { return 0; }, anim_notify() {}, anim_release() {},
       observer() {}, observer_release() {},
+      decoder_info() { return 0; }, decoder_open() { return 0; }, decoder_area() { return 0; },
+      decoder_close() {}, decoder_release() {},
     },
     wasi_snapshot_preview1: { fd_close() { return 0; }, fd_seek() { return 70; }, fd_write() { return 0; } },
   });

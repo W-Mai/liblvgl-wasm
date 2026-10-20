@@ -15,6 +15,12 @@
 #define LVW_ANIM_DELETED 16u
 #define LVW_OBSERVER_MODE_TARGET 0u
 #define LVW_OBSERVER_MODE_OBJECT 1u
+#define LVW_DECODER_GET_AREA 1u
+#define LVW_DECODER_CLOSE 2u
+#define LVW_DECODER_PHASE_INFO 1u
+#define LVW_DECODER_PHASE_OPEN 2u
+#define LVW_DECODER_PHASE_AREA 3u
+#define LVW_DECODER_PHASE_CLOSE 4u
 
 typedef struct {
     uint32_t struct_size;
@@ -56,6 +62,25 @@ typedef struct {
     uint32_t frame_id;
 } lvw_frame_t;
 
+typedef struct {
+    uint32_t struct_size;
+    uint32_t version;
+    uint32_t src;
+    uint32_t src_type;
+    uint32_t header;
+    uint32_t decoded;
+    uint32_t palette;
+    uint32_t palette_size;
+    uint32_t user_data;
+    uint32_t decoder_user_data;
+    uint32_t file;
+    uint32_t args_flags;
+    uint32_t time_to_open;
+    uint32_t error_msg;
+    uint32_t phase;
+    uint32_t reserved;
+} lvw_decoder_view_t;
+
 uint32_t lvw_abi_version(void);
 int32_t lvw_init(void);
 int32_t lvw_shutdown(void);
@@ -84,5 +109,11 @@ void lvw_anim_exec(uint32_t exec_slot, uint32_t var, int32_t value);
 uint32_t lvw_observer_create(uint32_t subject, uint32_t target, uint32_t user_data,
                              uint32_t callback_id, uint32_t mode);
 int32_t lvw_observer_delete(uint32_t observer, uint32_t callback_id);
+uint32_t lvw_decoder_create(uint32_t user_data, uint32_t callback_id, uint32_t flags);
+int32_t lvw_decoder_delete(uint32_t decoder, uint32_t callback_id);
+int32_t lvw_decoder_read(uint32_t decoder, uint32_t dsc, uint32_t output, uint32_t size);
+int32_t lvw_decoder_write(uint32_t decoder, uint32_t dsc, uint32_t decoded,
+                          uint32_t palette, uint32_t palette_size, uint32_t user_data,
+                          uint32_t time_to_open, uint32_t error_msg);
 
 #endif

@@ -15,7 +15,7 @@ WASI_SDK_PATH=/path/to/wasi-sdk ./scripts/build.sh
 
 The build script can be invoked from another working directory. Relative SDK and source paths resolve from the caller's directory. A valid cached source override is reused; a missing cached source falls back to the pinned archive. An invalid explicit `LVGL_SOURCE_DIR` stops the build with an error.
 
-CMake compiles an adapted copy of the pinned `lv_observer.c` with a bridge notification at its native deletion point. The original source tree stays unchanged; a different observer source hash is rejected. The adapted `liblvgl.a` requires the `lvw_observer_release_native` implementation from the bridge.
+CMake compiles adapted copies of the pinned `lv_observer.c` and `lv_image_decoder.c` with bridge notifications at native deletion points. Decoder deinitialization deletes individual decoders to deliver those notifications. The original source tree stays unchanged; different source hashes are rejected. The adapted `liblvgl.a` requires the bridge's `lvw_observer_release_native` and `lvw_decoder_release_native` implementations.
 
 Generated files stay under `target/`:
 
@@ -27,6 +27,7 @@ Generated files stay under `target/`:
 | `target/wasm/api-exports.txt` | Generated linker export flags |
 | `target/wasm/api-shims.c` | Generated wrappers for aggregate values and inline functions |
 | `target/wasm/lvgl-adapted/lv_observer.c` | Observer deletion notification added to the pinned source |
+| `target/wasm/lvgl-adapted/lv_image_decoder.c` | Decoder deletion notifications and deinitialization cleanup |
 | `target/wasm/examples/c/liblvgl-c-demo.wasm` | C demo linked with LVGL |
 | `target/browser/main.js` | Browser example bundle |
 | `target/typescript/index.js` | TypeScript host adapter bundle |
@@ -316,6 +317,31 @@ Individual cancellation of a non-null object-bound observer is rejected with a r
 Raw calls must not recursively notify a subject already being notified, including indirect cycles, or delete, deinitialize, or reinitialize its storage during notification. Subject, target, and user-data pointers must remain valid for their native uses. The observer adapter does not replace these raw preconditions. Closing suppresses observer user notifications; cancellation while closing releases only host records.
 
 The core imports `lvw.observer(id, observer, subject)` and `lvw.observer_release(id)`. Registration requires `lvw_observer_create` and `lvw_observer_delete`; older bridge-compatible cores can still load, but missing observer capabilities are reported before registration. ABI 1 and existing signatures are unchanged. Native function-pointer entry points, `lv_obj_bind_*` setter callbacks, subject destructor callbacks, and variadic functions retain their reported binding status.
+
+### Native image decoders
+
+TypeScript `runtime.createImageDecoder(callbacks, userData = 0)` and Rust `create_image_decoder(user_data, ImageDecoderCallbacks)` register a native image decoder. `info` and `open` are required; `getArea` / `get_area` and `close` are optional. `ImageDecoder.handle` / `pointer()` returns its native pointer. Cancellation uses `decoder.cancel()` or `runtime.cancelImageDecoder(decoder)` in TypeScript and `cancel_image_decoder(&decoder)` in Rust.
+
+| Callback | Arguments after the Rust execution context | Result |
+| --- | --- | --- |
+| `info` | Borrowed session, writable image header pointer | `LV_RESULT_OK` to accept the format, `LV_RESULT_INVALID` to try another decoder |
+| `open` | Borrowed session | `LV_RESULT_OK` after preparing complete or incremental decoding; `LV_RESULT_INVALID` on failure |
+| `getArea` / `get_area` | Borrowed session, full area pointer, writable decoded area pointer | `LV_RESULT_OK` for a decoded area; `LV_RESULT_INVALID` when finished |
+| `close` | Borrowed session | No value; Rust returns `Result<()>` |
+
+Rust handlers receive `&mut CallbackContext` before these arguments and return `Result<i32>` for the three queries. Build their callbacks with `ImageDecoderCallbacks::new(info, open).get_area(handler).close(handler)`. `LV_RESULT_OK` is `1` and `LV_RESULT_INVALID` is `0`. A rejected format is normal control flow. An accepted format whose `open` fails does not fall back to another decoder and does not receive an automatic `close`; the open handler must release its partial allocations.
+
+`DecoderSession.read()` in TypeScript and `read(context)` in Rust return a `DecoderView` snapshot containing the source/type, header pointer, decoded draw buffer, palette, session and decoder user data, file pointer, decoding argument flags, timing, error message pointer, and phase. `write(output)` / `write(context, output)` publish a `DecoderOutput` during open, area, or close. Set `decoded` to a native `lv_draw_buf_t` created or initialized with the generated draw-buffer API. Output fields also include palette/count, session user data, open time, and error message; omitted TypeScript fields and Rust `Default` fields are zero. Writes replace those output fields rather than merging them.
+
+The session is borrowed only during its callback. Reads and writes require the current innermost session and the owning runtime; nested callbacks restore the outer session when they return. Pointer values in a copied view do not extend guest storage lifetimes. The info callback's header is its actual output argument, which can differ from the session's internal header. Its file pointer is usable only during file info; open the source separately for later reads. Info runs before the requested decoding arguments are copied. Argument bits are `1` for stride alignment, `2` for premultiplication, `4` for no decoded cache, `8` for indexed pixels, and `16` for cache flushing.
+
+For complete images, open publishes a draw buffer containing the decoded pixels. For incremental images, open leaves `decoded` zero; each area callback publishes the buffer for its returned rectangle. The first decoded-area input contains `LV_COORD_MIN` coordinates. Native incremental drawing does not support scaling or rotation. `info` must not retain resources expecting a later close. Buffers, palettes, and session-owned allocations remain the application's responsibility: release them in close after a successful open, or before returning failure from open. Reusable application-owned buffers can outlive individual sessions.
+
+Managed decoders do not insert their buffers into LVGL's decoded-image cache. Native decoders retain their own cache behavior. File header caching is supported; managed cancellation invalidates header entries before deleting a decoder. Cancellation is idempotent and rejects foreign handles, any active decoder callback, and a decoder with an open session. Native deletion, shutdown, failure, and Rust runtime drop invalidate managed handles and release handlers. Raw callers must close externally opened sessions before shutdown; shutdown does not dereference saved session pointers to run cleanup.
+
+Use managed cancellation to unregister decoders that may have cached headers. Raw deletion requires no active session or header-cache reference; its release notification only invalidates host handles and handlers. Do not replace managed callback pointers, add a managed decoder to the decoded-image cache, recursively operate on the same session, or manually deinitialize a managed runtime. Pointer bounds, image header fields, draw-buffer geometry, and palette contents retain their native preconditions. TypeScript rejects thenables and query results other than `0` or `1`; Rust rejects other query results. Callback failures poison the runtime through the existing guest-call guards.
+
+The core imports `lvw.decoder_info`, `lvw.decoder_open`, `lvw.decoder_area`, `lvw.decoder_close`, and `lvw.decoder_release`. Creating a decoder requires `lvw_decoder_create`, `lvw_decoder_delete`, `lvw_decoder_read`, and `lvw_decoder_write`; older cores can load and report missing capabilities before registration. The snapshot protocol is a 64-byte version-1 record defined in `bridge/lvw.h`. Existing ABI 1 signatures remain unchanged. Direct function-pointer setters retain their unsupported raw-binding classification.
 
 ### Constants and layouts
 

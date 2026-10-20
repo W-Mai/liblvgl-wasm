@@ -25,6 +25,10 @@ mod animation;
 pub use animation::{Animation, AnimationCallbacks};
 mod observer;
 pub use observer::Observer;
+mod decoder;
+pub use decoder::{
+    DecoderOutput, DecoderSession, DecoderView, ImageDecoder, ImageDecoderCallbacks,
+};
 
 mod generated {
     include!(concat!(env!("OUT_DIR"), "/raw.rs"));
@@ -72,6 +76,8 @@ struct Host {
     animations: animation::Registry,
     observers: HashMap<u32, observer::Registration>,
     next_observer_id: u64,
+    decoders: HashMap<u32, decoder::Registration>,
+    next_decoder_id: u64,
 }
 
 #[derive(Clone, Copy)]
@@ -114,6 +120,8 @@ impl Host {
         self.animations.clear();
         self.invalidate_observers();
         self.observers.clear();
+        self.invalidate_decoders();
+        self.decoders.clear();
         self.handler = None;
     }
 
@@ -131,6 +139,7 @@ impl Drop for Host {
         self.invalidate_timers();
         self.animations.invalidate();
         self.invalidate_observers();
+        self.invalidate_decoders();
     }
 }
 
@@ -167,6 +176,11 @@ impl Runtime {
                         | "anim_release"
                         | "observer"
                         | "observer_release"
+                        | "decoder_info"
+                        | "decoder_open"
+                        | "decoder_area"
+                        | "decoder_close"
+                        | "decoder_release"
                 ) | (
                     "wasi_snapshot_preview1",
                     "fd_close" | "fd_write" | "fd_seek"
@@ -224,6 +238,7 @@ impl Runtime {
         timer::add_to_linker(&mut linker)?;
         animation::add_to_linker(&mut linker)?;
         observer::add_to_linker(&mut linker)?;
+        decoder::add_to_linker(&mut linker)?;
         let mut store = Store::new(
             &engine,
             Host {
@@ -240,6 +255,8 @@ impl Runtime {
                 animations: animation::Registry::default(),
                 observers: HashMap::new(),
                 next_observer_id: 1,
+                decoders: HashMap::new(),
+                next_decoder_id: 1,
             },
         );
         let instance = linker.instantiate(&mut store, &module)?;

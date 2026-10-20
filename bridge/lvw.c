@@ -7,6 +7,8 @@
 #include <string.h>
 
 #include "lvgl/lvgl.h"
+#include "image/lv_image_decoder_private.h"
+#include "misc/cache/instance/lv_image_header_cache.h"
 
 #define LVW_EXPORT(name) __attribute__((export_name(#name)))
 #define LVW_MAX_FRAME_BYTES (64u * 1024u * 1024u)
@@ -67,6 +69,30 @@ typedef struct lvw_observer_creation {
     struct lvw_observer_creation *previous;
 } lvw_observer_creation_t;
 
+typedef struct lvw_decoder_node {
+    lv_image_decoder_t *lvgl;
+    uint32_t callback_id;
+    uint32_t flags;
+    struct lvw_decoder_node *next;
+} lvw_decoder_node_t;
+
+typedef struct lvw_decoder_session {
+    lv_image_decoder_t *decoder;
+    lv_image_decoder_dsc_t *dsc;
+    bool active;
+    struct lvw_decoder_session *next;
+} lvw_decoder_session_t;
+
+typedef struct lvw_decoder_frame {
+    lv_image_decoder_t *decoder;
+    lv_image_decoder_dsc_t *dsc;
+    lv_image_header_t *header;
+    uint32_t phase;
+    struct lvw_decoder_frame *previous;
+} lvw_decoder_frame_t;
+
+_Static_assert(sizeof(lvw_decoder_view_t) == 64, "decoder view ABI size");
+
 typedef struct lvw_resource {
     char name[LVW_RESOURCE_NAME_LEN + 1u];
     uint8_t *data;
@@ -85,6 +111,10 @@ static lvw_timer_node_t *timers;
 static lvw_anim_node_t *animations;
 static lvw_observer_node_t *observers;
 static lvw_observer_creation_t *observer_creation;
+static lvw_decoder_node_t *decoders;
+static lvw_decoder_session_t *decoder_sessions;
+static lvw_decoder_frame_t *decoder_frame;
+static uint32_t decoder_callback_depth;
 static lvw_resource_t *resources;
 static lv_fs_drv_t resource_driver;
 static uint32_t initialized;
@@ -119,6 +149,23 @@ extern void lvw_host_observer(uint32_t callback_id, uint32_t observer, uint32_t 
 
 __attribute__((import_module("lvw"), import_name("observer_release")))
 extern void lvw_host_observer_release(uint32_t callback_id);
+
+__attribute__((import_module("lvw"), import_name("decoder_info")))
+extern int32_t lvw_host_decoder_info(uint32_t callback_id, uint32_t decoder, uint32_t dsc,
+                                     uint32_t header);
+
+__attribute__((import_module("lvw"), import_name("decoder_open")))
+extern int32_t lvw_host_decoder_open(uint32_t callback_id, uint32_t decoder, uint32_t dsc);
+
+__attribute__((import_module("lvw"), import_name("decoder_area")))
+extern int32_t lvw_host_decoder_area(uint32_t callback_id, uint32_t decoder, uint32_t dsc,
+                                     uint32_t full_area, uint32_t decoded_area);
+
+__attribute__((import_module("lvw"), import_name("decoder_close")))
+extern void lvw_host_decoder_close(uint32_t callback_id, uint32_t decoder, uint32_t dsc);
+
+__attribute__((import_module("lvw"), import_name("decoder_release")))
+extern void lvw_host_decoder_release(uint32_t callback_id);
 
 static uint32_t pointer_value(const void *pointer) {
     return (uint32_t)(uintptr_t)pointer;
@@ -331,6 +378,134 @@ void lvw_observer_release_native(lv_observer_t *observer) {
     callback_depth--;
 }
 
+static lvw_decoder_node_t *find_decoder(lv_image_decoder_t *decoder) {
+    for (lvw_decoder_node_t *node = decoders; node; node = node->next) {
+        if (node->lvgl == decoder) return node;
+    }
+    __builtin_trap();
+}
+
+static lvw_decoder_session_t *find_decoder_session(lv_image_decoder_dsc_t *dsc) {
+    for (lvw_decoder_session_t *session = decoder_sessions; session; session = session->next) {
+        if (session->dsc == dsc) return session;
+    }
+    return NULL;
+}
+
+static void remove_decoder_session(lvw_decoder_session_t *session) {
+    lvw_decoder_session_t **cursor = &decoder_sessions;
+    while (*cursor && *cursor != session) cursor = &(*cursor)->next;
+    if (!*cursor) __builtin_trap();
+    *cursor = session->next;
+    free(session);
+}
+
+static void decoder_enter(lvw_decoder_frame_t *frame) {
+    for (lvw_decoder_frame_t *active = decoder_frame; active; active = active->previous) {
+        if (active->dsc == frame->dsc) __builtin_trap();
+    }
+    frame->previous = decoder_frame;
+    decoder_frame = frame;
+    decoder_callback_depth++;
+    callback_depth++;
+}
+
+static void decoder_leave(lvw_decoder_frame_t *frame) {
+    if (decoder_frame != frame) __builtin_trap();
+    callback_depth--;
+    decoder_callback_depth--;
+    decoder_frame = frame->previous;
+}
+
+static lv_result_t decoder_result(int32_t result) {
+    if (result != LV_RESULT_OK && result != LV_RESULT_INVALID) __builtin_trap();
+    return (lv_result_t)result;
+}
+
+static lv_result_t decoder_info(lv_image_decoder_t *decoder, lv_image_decoder_dsc_t *dsc,
+                                 lv_image_header_t *header) {
+    lvw_decoder_node_t *node = find_decoder(decoder);
+    if (find_decoder_session(dsc)) __builtin_trap();
+    lvw_decoder_frame_t frame = {decoder, dsc, header, LVW_DECODER_PHASE_INFO, NULL};
+    decoder_enter(&frame);
+    int32_t result = lvw_host_decoder_info(node->callback_id, pointer_value(decoder),
+                                          pointer_value(dsc), pointer_value(header));
+    decoder_leave(&frame);
+    return decoder_result(result);
+}
+
+static lv_result_t decoder_open(lv_image_decoder_t *decoder, lv_image_decoder_dsc_t *dsc) {
+    lvw_decoder_node_t *node = find_decoder(decoder);
+    if (find_decoder_session(dsc)) __builtin_trap();
+    lvw_decoder_session_t *session = malloc(sizeof(*session));
+    if (!session) return LV_RESULT_INVALID;
+    *session = (lvw_decoder_session_t){decoder, dsc, false, decoder_sessions};
+    decoder_sessions = session;
+    lvw_decoder_frame_t frame = {decoder, dsc, &dsc->header, LVW_DECODER_PHASE_OPEN, NULL};
+    decoder_enter(&frame);
+    int32_t result = lvw_host_decoder_open(node->callback_id, pointer_value(decoder), pointer_value(dsc));
+    decoder_leave(&frame);
+    lv_result_t status = decoder_result(result);
+    if (status == LV_RESULT_OK) session->active = true;
+    else remove_decoder_session(session);
+    return status;
+}
+
+static lv_result_t decoder_area(lv_image_decoder_t *decoder, lv_image_decoder_dsc_t *dsc,
+                                 const lv_area_t *full_area, lv_area_t *decoded_area) {
+    lvw_decoder_node_t *node = find_decoder(decoder);
+    lvw_decoder_session_t *session = find_decoder_session(dsc);
+    if (!session || session->decoder != decoder || !session->active) __builtin_trap();
+    lvw_decoder_frame_t frame = {decoder, dsc, &dsc->header, LVW_DECODER_PHASE_AREA, NULL};
+    decoder_enter(&frame);
+    int32_t result = lvw_host_decoder_area(node->callback_id, pointer_value(decoder), pointer_value(dsc),
+                                          pointer_value(full_area), pointer_value(decoded_area));
+    decoder_leave(&frame);
+    return decoder_result(result);
+}
+
+static void decoder_close(lv_image_decoder_t *decoder, lv_image_decoder_dsc_t *dsc) {
+    lvw_decoder_node_t *node = find_decoder(decoder);
+    lvw_decoder_session_t *session = find_decoder_session(dsc);
+    if (!session) return;
+    if (session->decoder != decoder || !session->active) __builtin_trap();
+    session->active = false;
+    lvw_decoder_frame_t frame = {decoder, dsc, &dsc->header, LVW_DECODER_PHASE_CLOSE, NULL};
+    decoder_enter(&frame);
+    if (node->flags & LVW_DECODER_CLOSE) {
+        lvw_host_decoder_close(node->callback_id, pointer_value(decoder), pointer_value(dsc));
+    }
+    decoder_leave(&frame);
+    // Native close still reads dsc->decoder after this callback returns.
+    remove_decoder_session(session);
+}
+
+// Native delete and deinit call this after unlinking the decoder.
+void lvw_decoder_release_native(lv_image_decoder_t *decoder) {
+    lvw_decoder_node_t **cursor = &decoders;
+    while (*cursor && (*cursor)->lvgl != decoder) cursor = &(*cursor)->next;
+    if (!*cursor) return;
+    lvw_decoder_node_t *node = *cursor;
+    *cursor = node->next;
+    lvw_decoder_session_t **session = &decoder_sessions;
+    while (*session) {
+        if ((*session)->decoder != decoder) {
+            session = &(*session)->next;
+            continue;
+        }
+        lvw_decoder_session_t *removed = *session;
+        *session = removed->next;
+        free(removed);
+    }
+    uint32_t callback_id = node->callback_id;
+    free(node);
+    decoder_callback_depth++;
+    callback_depth++;
+    lvw_host_decoder_release(callback_id);
+    callback_depth--;
+    decoder_callback_depth--;
+}
+
 static void *resource_open(lv_fs_drv_t *driver, const char *path, lv_fs_mode_t mode) {
     (void)driver;
     if (mode != LV_FS_MODE_RD || !path) return NULL;
@@ -419,6 +594,7 @@ LVW_EXPORT(lvw_shutdown) int32_t lvw_shutdown(void) {
     }
     while (timers) lv_timer_delete(timers->lvgl);
     while (observers) lv_observer_delete(observers->lvgl);
+    while (decoders) lv_image_decoder_delete(decoders->lvgl);
     lv_deinit();
     while (resources) {
         lvw_resource_t *resource = resources;
@@ -787,5 +963,85 @@ LVW_EXPORT(lvw_observer_delete) int32_t lvw_observer_delete(uint32_t observer, u
         lv_observer_delete(node->lvgl);
         return 0;
     }
+    return 0;
+}
+
+LVW_EXPORT(lvw_decoder_create) uint32_t lvw_decoder_create(uint32_t user_data, uint32_t callback_id,
+                                                          uint32_t flags) {
+    if (!initialized || !callback_id || (flags & ~(LVW_DECODER_GET_AREA | LVW_DECODER_CLOSE))) return 0;
+    for (lvw_decoder_node_t *node = decoders; node; node = node->next) {
+        if (node->callback_id == callback_id) return 0;
+    }
+    lvw_decoder_node_t *node = malloc(sizeof(*node));
+    if (!node) return 0;
+    lv_image_decoder_t *decoder = lv_image_decoder_create();
+    if (!decoder) {
+        free(node);
+        return 0;
+    }
+    *node = (lvw_decoder_node_t){decoder, callback_id, flags, decoders};
+    decoders = node;
+    decoder->user_data = (void *)(uintptr_t)user_data;
+    decoder->name = "host";
+    lv_image_decoder_set_info_cb(decoder, decoder_info);
+    lv_image_decoder_set_open_cb(decoder, decoder_open);
+    lv_image_decoder_set_get_area_cb(decoder, flags & LVW_DECODER_GET_AREA ? decoder_area : NULL);
+    lv_image_decoder_set_close_cb(decoder, decoder_close);
+    return pointer_value(decoder);
+}
+
+LVW_EXPORT(lvw_decoder_delete) int32_t lvw_decoder_delete(uint32_t decoder, uint32_t callback_id) {
+    if (!initialized) return -1;
+    if (!decoder || !callback_id) return -2;
+    for (lvw_decoder_node_t *node = decoders; node; node = node->next) {
+        if (pointer_value(node->lvgl) != decoder || node->callback_id != callback_id) continue;
+        if (decoder_callback_depth) return -3;
+        for (lvw_decoder_session_t *session = decoder_sessions; session; session = session->next) {
+            if (session->decoder == node->lvgl) return -3;
+        }
+        lv_image_header_cache_drop(NULL);
+        lv_image_decoder_delete(node->lvgl);
+        return 0;
+    }
+    return 0;
+}
+
+LVW_EXPORT(lvw_decoder_read) int32_t lvw_decoder_read(uint32_t decoder, uint32_t dsc,
+                                                     uint32_t output, uint32_t size) {
+    if (!initialized) return -1;
+    if (!decoder || !dsc || !output || size < sizeof(lvw_decoder_view_t)) return -2;
+    lvw_decoder_frame_t *frame = decoder_frame;
+    if (!frame || pointer_value(frame->decoder) != decoder || pointer_value(frame->dsc) != dsc) return -3;
+    lv_image_decoder_dsc_t *source = frame->dsc;
+    uint32_t args = (source->args.stride_align ? 1u : 0u) | (source->args.premultiply ? 2u : 0u)
+                    | (source->args.no_cache ? 4u : 0u) | (source->args.use_indexed ? 8u : 0u)
+                    | (source->args.flush_cache ? 16u : 0u);
+    lvw_decoder_view_t view = {
+        sizeof(view), 1u, pointer_value(source->src), (uint32_t)source->src_type,
+        pointer_value(frame->header), pointer_value(source->decoded), pointer_value(source->palette),
+        source->palette_size, pointer_value(source->user_data), pointer_value(frame->decoder->user_data),
+        frame->phase == LVW_DECODER_PHASE_INFO && source->src_type == LV_IMAGE_SRC_FILE
+            ? pointer_value(&source->file) : 0u,
+        args, source->time_to_open, pointer_value(source->error_msg), frame->phase, 0u,
+    };
+    memcpy((void *)(uintptr_t)output, &view, sizeof(view));
+    return 0;
+}
+
+LVW_EXPORT(lvw_decoder_write) int32_t lvw_decoder_write(uint32_t decoder, uint32_t dsc,
+                                                       uint32_t decoded, uint32_t palette,
+                                                       uint32_t palette_size, uint32_t user_data,
+                                                       uint32_t time_to_open, uint32_t error_msg) {
+    if (!initialized) return -1;
+    if (!decoder || !dsc) return -2;
+    lvw_decoder_frame_t *frame = decoder_frame;
+    if (!frame || pointer_value(frame->decoder) != decoder || pointer_value(frame->dsc) != dsc
+        || frame->phase == LVW_DECODER_PHASE_INFO) return -3;
+    frame->dsc->decoded = (const lv_draw_buf_t *)(uintptr_t)decoded;
+    frame->dsc->palette = (const lv_color32_t *)(uintptr_t)palette;
+    frame->dsc->palette_size = palette_size;
+    frame->dsc->user_data = (void *)(uintptr_t)user_data;
+    frame->dsc->time_to_open = time_to_open;
+    frame->dsc->error_msg = (const char *)(uintptr_t)error_msg;
     return 0;
 }

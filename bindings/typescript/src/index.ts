@@ -6,9 +6,11 @@ import {
 import { valuesIdentity } from "../../../target/typescript/values.ts";
 import { Animation, AnimationRegistry, type AnimationCallbacks, type AnimationExports } from "./animation.ts";
 import { Observer, ObserverRegistry, type ObserverCallback, type ObserverExports } from "./observer.ts";
+import { ImageDecoder, DecoderSession, DecoderRegistry, type ImageDecoderCallbacks, type DecoderExports } from "./decoder.ts";
 
-export { bindingIdentity, Animation, Observer };
+export { bindingIdentity, Animation, Observer, ImageDecoder, DecoderSession };
 export type { AnimationCallbacks, ObserverCallback };
+export type { ImageDecoderCallbacks, DecoderView, DecoderOutput } from "./decoder.ts";
 export type { UnsafeFunctionPointer, UnsafeLvglApi, UnsafePointer };
 export * from "../../../target/typescript/values.ts";
 
@@ -16,7 +18,7 @@ const ABI_VERSION = 1;
 const PIXEL_XRGB8888 = 1;
 const INPUT_POINTER = 1;
 
-interface RawExports extends AnimationExports, ObserverExports {
+interface RawExports extends AnimationExports, ObserverExports, DecoderExports {
   memory: WebAssembly.Memory;
   _initialize(): void;
   lvw_abi_version(): number;
@@ -110,6 +112,7 @@ export class LvglRuntime {
   private readonly raw: RawExports;
   private readonly animations: AnimationRegistry;
   private readonly observers: ObserverRegistry;
+  private readonly decoders: DecoderRegistry;
   private unsafeApi?: UnsafeLvgl;
 
   private constructor(exports: RawExports, private readonly coreHash: string) {
@@ -128,6 +131,14 @@ export class LvglRuntime {
       allocateId: () => this.allocateCallbackId(),
     });
     this.observers = new ObserverRegistry(this.raw, {
+      ensureActive: () => this.ensureActive(),
+      rethrowFailure: () => this.rethrowFailure(),
+      poison: (error) => this.poison(error),
+      ready: () => this.state === "ready",
+      closing: () => this.state === "closing",
+      allocateId: () => this.allocateCallbackId(),
+    });
+    this.decoders = new DecoderRegistry(this.raw, {
       ensureActive: () => this.ensureActive(),
       rethrowFailure: () => this.rethrowFailure(),
       poison: (error) => this.poison(error),
@@ -167,6 +178,7 @@ export class LvglRuntime {
   private clearCallbacks(): void {
     this.animations.clear();
     this.observers.clear();
+    this.decoders.clear();
     for (const { owner } of this.callbacks.values()) owner.ids.clear();
     for (const { owner } of this.timers.values()) owner.alive = false;
     this.timers.clear();
@@ -207,6 +219,7 @@ export class LvglRuntime {
       "lvw.event", "lvw.timer", "lvw.timer_release",
       "lvw.anim_exec", "lvw.anim_query", "lvw.anim_notify", "lvw.anim_release",
       "lvw.observer", "lvw.observer_release",
+      "lvw.decoder_info", "lvw.decoder_open", "lvw.decoder_area", "lvw.decoder_close", "lvw.decoder_release",
       "wasi_snapshot_preview1.fd_close", "wasi_snapshot_preview1.fd_write",
       "wasi_snapshot_preview1.fd_seek",
     ]);
@@ -246,6 +259,25 @@ export class LvglRuntime {
         },
         observer_release(id: number) {
           runtime?.observers.release(id);
+        },
+        decoder_info(id: number, pointer: number, session: number, header: number): number {
+          if (!runtime) throw new Error("LVGL image decoder callback before runtime initialization");
+          return runtime.decoders.dispatch(id, pointer, session, 1, header);
+        },
+        decoder_open(id: number, pointer: number, session: number): number {
+          if (!runtime) throw new Error("LVGL image decoder callback before runtime initialization");
+          return runtime.decoders.dispatch(id, pointer, session, 2);
+        },
+        decoder_area(id: number, pointer: number, session: number, fullArea: number, decodedArea: number): number {
+          if (!runtime) throw new Error("LVGL image decoder callback before runtime initialization");
+          return runtime.decoders.dispatch(id, pointer, session, 3, fullArea, decodedArea);
+        },
+        decoder_close(id: number, pointer: number, session: number) {
+          if (!runtime) throw new Error("LVGL image decoder callback before runtime initialization");
+          runtime.decoders.dispatch(id, pointer, session, 4);
+        },
+        decoder_release(id: number) {
+          runtime?.decoders.release(id);
         },
       },
       wasi_snapshot_preview1: {
@@ -396,6 +428,16 @@ export class LvglRuntime {
   /** Cancel an observer from this runtime. Repeated cancellation after deletion, shutdown, or failure does not enter the guest. */
   cancelObserver(observer: Observer): void {
     this.observers.cancel(observer);
+  }
+
+  /** Register a synchronous native image decoder. Successful opens own their resources until close; failed opens must clean up before returning. */
+  createImageDecoder(callbacks: ImageDecoderCallbacks, userData: UnsafePointer = 0): ImageDecoder {
+    return this.decoders.create(callbacks, userData);
+  }
+
+  /** Cancel a decoder from this runtime. Active decoder callbacks and opened sessions must finish first. */
+  cancelImageDecoder(decoder: ImageDecoder): void {
+    this.decoders.cancel(decoder);
   }
 
   /** Create a timer driven by step(). The callback must finish synchronously; userData remains available through the native LVGL API. */

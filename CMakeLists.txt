@@ -24,19 +24,20 @@ FetchContent_Declare(lvgl
 )
 FetchContent_MakeAvailable(lvgl)
 include(cmake/observer.cmake)
+include(cmake/decoder.cmake)
 
 add_executable(liblvgl bridge/lvw.c)
 if(EXISTS "${CMAKE_BINARY_DIR}/api-shims.c")
     target_sources(liblvgl PRIVATE "${CMAKE_BINARY_DIR}/api-shims.c")
 endif()
 target_compile_features(liblvgl PRIVATE c_std_11)
-target_include_directories(liblvgl PUBLIC bridge)
+target_include_directories(liblvgl PUBLIC bridge PRIVATE "${lvgl_SOURCE_DIR}/src")
 target_link_libraries(liblvgl PRIVATE lvgl::lvgl)
 target_compile_options(liblvgl PRIVATE -Wall -Wextra -Werror)
 
 add_executable(liblvgl_c_demo EXCLUDE_FROM_ALL bridge/lvw.c examples/c/direct_api.c)
 target_compile_features(liblvgl_c_demo PRIVATE c_std_11)
-target_include_directories(liblvgl_c_demo PRIVATE bridge)
+target_include_directories(liblvgl_c_demo PRIVATE bridge "${lvgl_SOURCE_DIR}/src")
 target_link_libraries(liblvgl_c_demo PRIVATE lvgl::lvgl)
 target_compile_options(liblvgl_c_demo PRIVATE -Wall -Wextra -Werror)
 
