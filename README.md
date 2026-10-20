@@ -17,6 +17,8 @@ The build script can be invoked from another working directory. Relative SDK and
 
 CMake compiles adapted copies of the pinned `lv_observer.c` and `lv_image_decoder.c` with bridge notifications at native deletion points. Decoder deinitialization deletes individual decoders to deliver those notifications. The original source tree stays unchanged; different source hashes are rejected. The adapted `liblvgl.a` requires the bridge's `lvw_observer_release_native` and `lvw_decoder_release_native` implementations.
 
+The pinned `lv_gif.c` also compiles from an adapted copy that preserves playback during frame-count queries, applies each frame's delay, stops timers before closing sources, and delivers completion events after frame processing.
+
 Generated files stay under `target/`:
 
 | Path | Content |
@@ -28,6 +30,7 @@ Generated files stay under `target/`:
 | `target/wasm/api-shims.c` | Generated wrappers for aggregate values and inline functions |
 | `target/wasm/lvgl-adapted/lv_observer.c` | Observer deletion notification added to the pinned source |
 | `target/wasm/lvgl-adapted/lv_image_decoder.c` | Decoder deletion notifications and deinitialization cleanup |
+| `target/wasm/lvgl-adapted/lv_gif.c` | GIF playback timing, queries, and callback lifetime fixes |
 | `target/wasm/examples/c/liblvgl-c-demo.wasm` | C demo linked with LVGL |
 | `target/browser/main.js` | Browser example bundle |
 | `target/typescript/index.js` | TypeScript host adapter bundle |
@@ -410,3 +413,21 @@ runtime.step(33);
 Upload copies the supplied bytes. Resource names cannot be replaced, resources can be shared by multiple images, and deleting an image does not remove its resource. Uploaded resources remain available until runtime shutdown. Rust uses `lvw_resource_put` and the generated `lv_image_create` / `lv_image_set_src` methods for the same path.
 
 This decoder rejects 16-bit-per-channel PNG. Decoding reads the complete file and allocates the complete pixel buffer, so compressed file size does not describe its memory cost. PNG profiles and gamma metadata do not apply color correction. Setting a source or reading its header only establishes the initial format and dimensions; corrupt CRCs or truncated pixel data can fail later during rendering. Failed decoding leaves the image undrawn, and assigning a valid source restores rendering without recreating the runtime.
+
+### GIF playback
+
+GIF playback uses `lv_gif_create` and `lv_gif_set_src`, available through the generated TypeScript and Rust raw APIs. Upload the GIF as a `W:` resource before setting its source. Native C code uses the same functions:
+
+```c
+lv_obj_t * gif = lv_gif_create(lv_screen_active());
+lv_gif_set_src(gif, "W:animation.gif");
+lv_gif_set_loop_count(gif, 0);
+```
+
+The GIF widget borrows its source pointer. Keep a guest filename allocation, or a variable image descriptor and its GIF bytes, alive until the source is replaced or the widget is deleted. `lv_gif_is_loaded` reports whether the source opened; it does not validate every subsequent frame. Clearing the source or failing to open a replacement stops playback; a valid replacement can then load on the same widget.
+
+Setting a source decodes its first frame synchronously. `step(ms)` advances the clock and runs the timer handler once; use steps no larger than the desired frame interval for playback. A large step does not replay every missed frame. `lv_gif_get_frame_count` scans the resource while preserving playback position. The native frame index starts at `1` after the first frame and returns to `0` when the last frame is decoded.
+
+`lv_gif_set_loop_count(gif, 0)` repeats indefinitely; a positive count limits the number of playback cycles. `LV_EVENT_READY` fires when the last frame is decoded, after updating its pixels and loop state. Its handler can delete the widget, replace its source, pause, or restart playback. A single-frame GIF can deliver this event inside `lv_gif_set_src`. `lv_gif_restart` rewinds, clears the canvas, and resets the loop count to `-1`; set the required loop count again. Pause/resume preserves the timer's elapsed time.
+
+Both hosts verify the same three-frame resource with distinct 80/120/160 ms delays, palette transparency, and disposal mode 2, plus a single-frame resource for synchronous completion. Disposal mode 3 (restore to previous) is unsupported. Automatic pausing when invisible requires an explicit resume after showing the widget. GIF decoding is synchronous, and `is_loaded` or `READY` is not a full-file integrity check.

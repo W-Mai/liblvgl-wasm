@@ -4,6 +4,7 @@
 
 ### Added
 
+- GIF playback checks in both hosts for frame pixels, timing, queries, loops, source changes, and completion callbacks.
 - PNG rendering checks for RGB8, RGBA8, indexed transparency, and Adam7 input in both hosts, including malformed-image recovery and shared resource lifetimes.
 - Native image decoder callbacks in TypeScript and Rust, with synchronous session access, complete and incremental pixel buffers, managed cancellation, and native deletion tracking.
 - Native event parameters in TypeScript and Rust callbacks for synchronous drawing, draw-task changes, and event propagation control, with nested event context and synchronous TypeScript handler checks.
@@ -42,6 +43,7 @@
 
 ### Fixed
 
+- GIF playback stops before releasing a source, applies the final frame's delay, preserves decoder state during frame-count queries, and finishes frame processing before completion callbacks can delete or replace the widget.
 - Initialize the Rust example's complete input packet before sending it to the bridge.
 
 - Aggregate ABI wrappers recognize qualified record types and typedef chains through the canonical type graph.

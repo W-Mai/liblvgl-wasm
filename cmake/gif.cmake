@@ -1,0 +1,88 @@
+# Adapt GIF timing and lifecycle without modifying the pinned source checkout.
+set(LVW_GIF_SOURCE "${lvgl_SOURCE_DIR}/src/widgets/gif/lv_gif.c")
+set(LVW_GIF_ADAPTED "${CMAKE_CURRENT_BINARY_DIR}/lvgl-adapted/lv_gif.c")
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${LVW_GIF_SOURCE}")
+file(SHA256 "${LVW_GIF_SOURCE}" LVW_GIF_HASH)
+if(NOT LVW_GIF_HASH STREQUAL "76ff0761c46af76e7c6af6d496171f783a58bf1b700f0a080f6377f0f9bc747a")
+    file(REMOVE "${LVW_GIF_ADAPTED}")
+    message(FATAL_ERROR "Unsupported LVGL GIF source: ${LVW_GIF_SOURCE}")
+endif()
+file(READ "${LVW_GIF_SOURCE}" LVW_GIF_CODE)
+
+function(lvw_gif_replace before after)
+    string(FIND "${LVW_GIF_CODE}" "${before}" LVW_FIRST)
+    string(FIND "${LVW_GIF_CODE}" "${before}" LVW_LAST REVERSE)
+    if(LVW_FIRST LESS 0 OR NOT LVW_FIRST EQUAL LVW_LAST)
+        file(REMOVE "${LVW_GIF_ADAPTED}")
+        message(FATAL_ERROR "LVGL GIF adaptation requires a unique source anchor")
+    endif()
+    string(REPLACE "${before}" "${after}" LVW_GIF_CODE "${LVW_GIF_CODE}")
+    set(LVW_GIF_CODE "${LVW_GIF_CODE}" PARENT_SCOPE)
+endfunction()
+
+lvw_gif_replace([=[    GIFINFO info;
+    if(!GIF_getInfo(&gifobj->gif, &info)) {
+]=] [=[    GIFIMAGE * gif = &gifobj->gif;
+    int32_t position = gif->GIFFile.iPos;
+    unsigned char file_buffer[sizeof(gif->ucFileBuf)];
+    lv_memcpy(file_buffer, gif->ucFileBuf, sizeof(file_buffer));
+    GIFINFO info;
+    int valid = GIF_getInfo(gif, &info);
+    int32_t restored = gif->pfnSeek(&gif->GIFFile, position);
+    lv_memcpy(gif->ucFileBuf, file_buffer, sizeof(file_buffer));
+    if(!valid || restored != position) {
+]=])
+
+lvw_gif_replace([=[    lv_image_set_src((lv_obj_t *) gifobj, NULL);
+
+    lv_timer_resume(gifobj->timer);
+    lv_timer_reset(gifobj->timer);
+]=] [=[    lv_timer_pause(gifobj->timer);
+    lv_image_set_src((lv_obj_t *) gifobj, NULL);
+]=])
+
+lvw_gif_replace([=[        lv_timer_set_period(gifobj->timer, ms_delay_next);
+]=] "")
+lvw_gif_replace([=[    LV_PROFILER_DECODER_END_TAG("GIF_playFrame");
+
+    if(has_next <= 0) {
+]=] [=[    LV_PROFILER_DECODER_END_TAG("GIF_playFrame");
+
+    if(ms_delay_next > 0) lv_timer_set_period(t, (uint32_t)ms_delay_next);
+    if(has_next <= 0) {
+]=])
+
+lvw_gif_replace([=[        lv_result_t res = lv_obj_send_event(obj, LV_EVENT_READY, NULL);
+]=] "")
+lvw_gif_replace([=[        if(res != LV_RESULT_OK) {
+            LV_PROFILER_DECODER_END;
+            return;
+        }
+]=] "")
+lvw_gif_replace([=[    lv_draw_buf_flush_cache(gifobj->draw_buf, NULL);
+    lv_image_cache_drop(lv_image_get_src(obj));
+    lv_obj_invalidate(obj);
+
+    LV_PROFILER_DECODER_END;
+]=] [=[    lv_draw_buf_flush_cache(gifobj->draw_buf, NULL);
+    lv_image_cache_drop(lv_image_get_src(obj));
+    lv_obj_invalidate(obj);
+
+    LV_PROFILER_DECODER_END;
+    if(has_next <= 0) lv_obj_send_event(obj, LV_EVENT_READY, NULL);
+]=])
+file(CONFIGURE OUTPUT "${LVW_GIF_ADAPTED}" CONTENT "${LVW_GIF_CODE}" @ONLY)
+
+get_target_property(LVW_LVGL_SOURCES lvgl SOURCES)
+list(FIND LVW_LVGL_SOURCES "${LVW_GIF_SOURCE}" LVW_GIF_INDEX)
+list(LENGTH LVW_LVGL_SOURCES LVW_BEFORE)
+list(REMOVE_ITEM LVW_LVGL_SOURCES "${LVW_GIF_SOURCE}")
+list(LENGTH LVW_LVGL_SOURCES LVW_AFTER)
+math(EXPR LVW_REMOVED "${LVW_BEFORE} - ${LVW_AFTER}")
+if(NOT LVW_REMOVED EQUAL 1)
+    message(FATAL_ERROR "Expected one LVGL GIF compilation unit")
+endif()
+list(INSERT LVW_LVGL_SOURCES ${LVW_GIF_INDEX} "${LVW_GIF_ADAPTED}")
+set_property(TARGET lvgl PROPERTY SOURCES "${LVW_LVGL_SOURCES}")
+set_source_files_properties("${LVW_GIF_ADAPTED}" TARGET_DIRECTORY lvgl
+    PROPERTIES INCLUDE_DIRECTORIES "${lvgl_SOURCE_DIR}/src/widgets/gif")

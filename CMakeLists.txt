@@ -25,6 +25,7 @@ FetchContent_Declare(lvgl
 FetchContent_MakeAvailable(lvgl)
 include(cmake/observer.cmake)
 include(cmake/decoder.cmake)
+include(cmake/gif.cmake)
 
 add_executable(liblvgl bridge/lvw.c)
 if(EXISTS "${CMAKE_BINARY_DIR}/api-shims.c")
