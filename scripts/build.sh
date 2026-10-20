@@ -32,7 +32,7 @@ cmake --build "$root/target/wasm" --target lvgl -j 4
 if [ -z "$source_dir" ]; then
     source_dir="$root/target/wasm/_deps/lvgl-src"
 fi
-python3 "$root/generator/api.py" \
+python3 -B "$root/generator/api.py" \
     --source "$source_dir" --sdk "$sdk" \
     --config "$root/config" \
     --archive "$root/target/wasm/_deps/lvgl-build/liblvgl.a" \

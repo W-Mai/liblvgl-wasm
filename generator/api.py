@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Inventory enabled LVGL declarations against the WASIp1 static library."""
+"""Inventory configured LVGL functions and constants for WASIp1."""
 
 import argparse
 import json
@@ -7,29 +7,29 @@ import re
 import subprocess
 from pathlib import Path
 
+from constants import collect_constants, json_nodes
 
-def declarations(clang: Path, source: Path, config: Path):
-    command = [
+
+def compiler_command(clang: Path, source: Path, config: Path):
+    return [
         str(clang), "--target=wasm32-wasip1", "-std=c11",
         "-DLV_CONF_INCLUDE_SIMPLE", "-DLV_KCONFIG_IGNORE",
         "-DLV_LVGL_H_INCLUDE_SIMPLE", f"-I{config}",
         f"-I{source / 'include'}", f"-I{source}",
+    ]
+
+
+def declarations(command, source: Path):
+    command = command + [
         "-Xclang", "-ast-dump=json", "-Xclang", "-ast-dump-filter=lv_",
         "-fsyntax-only", "-x", "c", "-",
     ]
     output = subprocess.run(command, input='#include "lvgl/lvgl.h"\n',
                             text=True, capture_output=True, check=True).stdout
-    decoder = json.JSONDecoder()
-    offset = 0
     by_name = {}
     typedefs = {}
     header_root = (source / "include" / "lvgl").resolve()
-    while offset < len(output):
-        while offset < len(output) and output[offset].isspace():
-            offset += 1
-        if offset == len(output):
-            break
-        node, offset = decoder.raw_decode(output, offset)
+    for node in json_nodes(output):
         if node.get("kind") == "TypedefDecl":
             typedefs[node.get("name", "")] = node.get("type", {}).get("qualType", "")
             continue
@@ -125,7 +125,9 @@ def main():
     parser.add_argument("--exports", required=True, type=Path)
     parser.add_argument("--shims", required=True, type=Path)
     args = parser.parse_args()
-    found, typedefs = declarations(args.sdk / "bin" / "clang", args.source, args.config.resolve())
+    command = compiler_command(args.sdk / "bin" / "clang", args.source, args.config.resolve())
+    found, typedefs = declarations(command, args.source)
+    constant_report = collect_constants(command, args.source, args.config.resolve())
     symbols = definitions(args.sdk / "bin" / "llvm-nm", args.archive)
     entries = []
     shims = []
@@ -141,7 +143,7 @@ def main():
     counts = {category: sum(item["category"] == category for item in entries)
               for category in ("direct_export", "abi_shim", "compile_disabled", "unsupported")}
     args.output.parent.mkdir(parents=True, exist_ok=True)
-    args.output.write_text(json.dumps({"summary": {"total": len(entries), **counts},
+    args.output.write_text(json.dumps({**constant_report, "summary": {"total": len(entries), **counts},
                                        "declarations": entries}, indent=2) + "\n")
     args.shims.write_text('#include "lvgl/lvgl.h"\n\n'
                           '#pragma clang diagnostic push\n'
@@ -151,6 +153,7 @@ def main():
     exports = [item["export_name"] for item in entries if item["export_name"]]
     args.exports.write_text("\n".join(f"-Wl,--export={name}" for name in exports) + "\n")
     print(f"API inventory: {len(entries)} declarations, {counts}")
+    print(f"Constant inventory: {constant_report['constant_summary']}")
 
 
 if __name__ == "__main__":
