@@ -2,10 +2,15 @@
 //!
 //! Guest calls are synchronous. A failed guest call poisons the runtime; dropping it releases the Wasmtime store without invoking guest cleanup. Call [`Runtime::shutdown`] for explicit cleanup.
 
+use std::panic::{AssertUnwindSafe, catch_unwind, resume_unwind};
 use std::path::Path;
+use std::sync::Arc;
 
 use sha2::{Digest, Sha256};
-use wasmtime::{Caller, Engine, ExternType, Instance, Linker, Memory, Module, Store};
+use wasmtime::{
+    AsContextMut, Caller, Engine, ExternType, Instance, Linker, Memory, Module, Store,
+    StoreContextMut,
+};
 use wasmtime::{WasmParams, WasmResults};
 use wasmtime_wasi::WasiCtxBuilder;
 use wasmtime_wasi::p1::{self, WasiP1Ctx};
@@ -30,26 +35,82 @@ pub struct Event {
     pub code: u32,
 }
 
-type EventHandler = Box<dyn FnMut(Event) -> Result<()> + Send>;
+type NotificationHandler = Box<dyn FnMut(Event) -> Result<()> + Send>;
+type ContextHandler = Arc<dyn Fn(&mut CallbackContext<'_>, Event) -> Result<()> + Send + Sync>;
+
+enum EventHandler {
+    Notification(NotificationHandler),
+    Context(ContextHandler),
+}
+
+#[derive(Clone, Copy)]
+struct Core {
+    instance: Instance,
+    memory: Memory,
+}
 
 struct Host {
     wasi: WasiP1Ctx,
     handler: Option<EventHandler>,
+    core: Option<Core>,
+    core_hash: String,
+    state: State,
+    guest_depth: usize,
+    failure: Option<String>,
 }
 
+#[derive(Clone, Copy)]
 enum State {
     Ready,
+    Closing,
     Poisoned,
     Closed,
+}
+
+impl Host {
+    fn ensure_ready(&self) -> Result<()> {
+        match self.state {
+            State::Ready => Ok(()),
+            State::Closing => Err(Error::msg("LVGL runtime is closing")),
+            State::Poisoned => Err(self.poison_error()),
+            State::Closed => Err(Error::msg("LVGL runtime is closed")),
+        }
+    }
+
+    fn poison_error(&self) -> Error {
+        Error::msg(format!(
+            "LVGL runtime is poisoned after a failed guest call: {}",
+            self.failure.as_deref().unwrap_or("unknown failure")
+        ))
+    }
+
+    fn poison(&mut self, reason: impl FnOnce() -> String) {
+        self.state = State::Poisoned;
+        self.handler = None;
+        if self.failure.is_none() {
+            self.failure = Some(reason());
+        }
+    }
+
+    fn ensure_not_poisoned(&self) -> Result<()> {
+        if matches!(self.state, State::Poisoned) {
+            return Err(self.poison_error());
+        }
+        Ok(())
+    }
 }
 
 /// An isolated LVGL runtime with private Wasmtime execution state.
 pub struct Runtime {
     store: Store<Host>,
-    instance: Instance,
-    memory: Memory,
-    state: State,
-    core_hash: String,
+}
+
+/// Synchronous access to the emitting core, borrowed for the duration of a callback.
+///
+/// Generated methods and checked memory access share the runtime's state and identity guards. Guest pointer preconditions still apply. Calling `lvw_step` or `lvw_shutdown` during a callback is rejected; during shutdown, callbacks may only update host data.
+pub struct CallbackContext<'a> {
+    store: StoreContextMut<'a, Host>,
+    core: Core,
 }
 
 impl Runtime {
@@ -82,14 +143,34 @@ impl Runtime {
              object: u32,
              code: u32|
              -> Result<()> {
-                if let Some(handler) = caller.data_mut().handler.as_mut() {
-                    handler(Event {
-                        callback_id,
-                        object,
-                        code,
-                    })?;
+                caller.data().ensure_not_poisoned()?;
+                let event = Event {
+                    callback_id,
+                    object,
+                    code,
+                };
+                let context_handler = match caller.data().handler.as_ref() {
+                    Some(EventHandler::Context(handler)) => Some(Arc::clone(handler)),
+                    _ => None,
+                };
+                if let Some(handler) = context_handler {
+                    let core = caller
+                        .data()
+                        .core
+                        .ok_or_else(|| Error::msg("LVGL core is not instantiated"))?;
+                    handler(
+                        &mut CallbackContext {
+                            store: caller.as_context_mut(),
+                            core,
+                        },
+                        event,
+                    )?;
+                } else if let Some(EventHandler::Notification(handler)) =
+                    caller.data_mut().handler.as_mut()
+                {
+                    handler(event)?;
                 }
-                Ok(())
+                caller.data().ensure_not_poisoned()
             },
         )?;
         let mut store = Store::new(
@@ -97,19 +178,19 @@ impl Runtime {
             Host {
                 wasi: WasiCtxBuilder::new().inherit_stdio().build_p1(),
                 handler: None,
+                core: None,
+                core_hash,
+                state: State::Ready,
+                guest_depth: 0,
+                failure: None,
             },
         );
         let instance = linker.instantiate(&mut store, &module)?;
         let memory = instance
             .get_memory(&mut store, "memory")
             .ok_or_else(|| Error::msg("missing Wasm memory export"))?;
-        let mut runtime = Self {
-            store,
-            instance,
-            memory,
-            state: State::Ready,
-            core_hash,
-        };
+        store.data_mut().core = Some(Core { instance, memory });
+        let mut runtime = Self { store };
         runtime.call_raw::<(), ()>("_initialize", ())?;
         if runtime.call_raw::<(), u32>("lvw_abi_version", ())? != 1 {
             return Err(Error::msg("unsupported bridge ABI"));
@@ -126,13 +207,10 @@ impl Runtime {
         Self::load(&std::fs::read(path)?)
     }
 
-    fn ensure_ready(&self) -> Result<()> {
-        match self.state {
-            State::Ready => Ok(()),
-            State::Poisoned => Err(Error::msg(
-                "LVGL runtime is poisoned after a failed guest call",
-            )),
-            State::Closed => Err(Error::msg("LVGL runtime is closed")),
+    fn context(&mut self) -> CallbackContext<'_> {
+        CallbackContext {
+            core: self.store.data().core.expect("instantiated core"),
+            store: self.store.as_context_mut(),
         }
     }
 
@@ -140,13 +218,7 @@ impl Runtime {
     ///
     /// The caller manages guest pointer ownership, bounds, alignment, and lifetime. A different core can still use the bridge through [`Self::call_raw`], but cannot use these generated methods.
     pub fn raw(&mut self) -> Result<RawApi<'_>> {
-        self.ensure_ready()?;
-        if self.core_hash != BINDING_IDENTITY.wasm_sha256 {
-            return Err(Error::msg(
-                "LVGL bindings do not match this core; generate bindings for the selected core",
-            ));
-        }
-        Ok(RawApi { runtime: self })
+        self.context().into_raw()
     }
 
     /// Call an export using its Wasm parameter and result types.
@@ -155,27 +227,156 @@ impl Runtime {
     ///
     /// This is a safe Rust method: invalid guest pointers can corrupt the guest runtime or trap, but remain confined to Wasmtime's sandbox.
     pub fn call_raw<P: WasmParams, R: WasmResults>(&mut self, name: &str, params: P) -> Result<R> {
-        self.ensure_ready()?;
-        let function = self
-            .instance
-            .get_typed_func::<P, R>(&mut self.store, name)?;
-        self.state = State::Poisoned;
-        let result = function.call(&mut self.store, params)?;
-        self.state = State::Ready;
-        Ok(result)
+        self.context().call_raw(name, params)
     }
 
     /// Read bytes from linear memory, checking the requested range.
     pub fn read_memory(&self, pointer: u32, buffer: &mut [u8]) -> Result<()> {
-        self.ensure_ready()?;
-        self.memory.read(&self.store, pointer as usize, buffer)?;
+        self.store.data().ensure_ready()?;
+        self.store
+            .data()
+            .core
+            .expect("instantiated core")
+            .memory
+            .read(&self.store, pointer as usize, buffer)?;
         Ok(())
     }
 
     /// Write bytes to linear memory, checking the requested range.
     pub fn write_memory(&mut self, pointer: u32, bytes: &[u8]) -> Result<()> {
-        self.ensure_ready()?;
-        self.memory
+        self.context().write_memory(pointer, bytes)
+    }
+
+    /// Allocate scratch memory in this instance. Release it with [`Self::free`].
+    pub fn alloc(&mut self, bytes: u32) -> Result<u32> {
+        self.context().alloc(bytes)
+    }
+
+    /// Release a scratch allocation from this instance.
+    ///
+    /// The pointer must come from [`Self::alloc`] on this runtime and must not have been freed.
+    pub fn free(&mut self, pointer: u32) -> Result<()> {
+        self.context().free(pointer)
+    }
+
+    /// Replace the synchronous event handler.
+    ///
+    /// The handler receives callback identifiers and guest object pointers. Use [`Self::set_event_handler_with_context`] for nested guest calls. Returning an error or panicking poisons the runtime.
+    pub fn set_event_handler(
+        &mut self,
+        handler: impl FnMut(Event) -> Result<()> + Send + 'static,
+    ) -> Result<()> {
+        self.store.data().ensure_ready()?;
+        self.store.data_mut().handler = Some(EventHandler::Notification(Box::new(handler)));
+        Ok(())
+    }
+
+    /// Replace the event handler with a function that can call LVGL synchronously.
+    ///
+    /// Nested notifications invoke the same `Fn` handler. Use atomics or a mutex for mutable captured state, and release application locks before calling the guest to avoid recursive locking. The context and its generated API cannot outlive the callback's borrow.
+    pub fn set_event_handler_with_context(
+        &mut self,
+        handler: impl Fn(&mut CallbackContext<'_>, Event) -> Result<()> + Send + Sync + 'static,
+    ) -> Result<()> {
+        self.store.data().ensure_ready()?;
+        self.store.data_mut().handler = Some(EventHandler::Context(Arc::new(handler)));
+        Ok(())
+    }
+
+    /// Run guest cleanup and close the runtime.
+    ///
+    /// A cleanup status error still closes the runtime. Traps poison it. Dropping a runtime does not execute this method.
+    pub fn shutdown(&mut self) -> Result<()> {
+        let status = self.call_raw::<(), i32>("lvw_shutdown", ())?;
+        if status != 0 {
+            return Err(Error::msg(format!("lvw_shutdown failed ({status})")));
+        }
+        Ok(())
+    }
+}
+
+impl<'a> CallbackContext<'a> {
+    fn reborrow(&mut self) -> CallbackContext<'_> {
+        CallbackContext {
+            store: self.store.as_context_mut(),
+            core: self.core,
+        }
+    }
+
+    fn into_raw(self) -> Result<RawApi<'a>> {
+        self.store.data().ensure_ready()?;
+        if self.store.data().core_hash != BINDING_IDENTITY.wasm_sha256 {
+            return Err(Error::msg(
+                "LVGL bindings do not match this core; generate bindings for the selected core",
+            ));
+        }
+        Ok(RawApi { runtime: self })
+    }
+
+    /// Borrow generated methods for the exact core recorded in [`BINDING_IDENTITY`].
+    ///
+    /// The caller manages guest pointer ownership, bounds, alignment, and lifetime.
+    pub fn raw(&mut self) -> Result<RawApi<'_>> {
+        self.reborrow().into_raw()
+    }
+
+    /// Call a core export synchronously with its Wasm parameter and result types.
+    ///
+    /// Lookup and signature errors leave the instance usable. A guest trap, handler error, or panic permanently poisons it, even when caught inside a callback. Raw lifecycle functions remain subject to LVGL's preconditions; use [`Runtime::shutdown`] for cleanup.
+    pub fn call_raw<P: WasmParams, R: WasmResults>(&mut self, name: &str, params: P) -> Result<R> {
+        self.store.data().ensure_ready()?;
+        if self.store.data().guest_depth != 0 && matches!(name, "lvw_step" | "lvw_shutdown") {
+            return Err(Error::msg(format!(
+                "{name} cannot be called during an active guest call"
+            )));
+        }
+        let function = self
+            .core
+            .instance
+            .get_typed_func::<P, R>(&mut self.store, name)?;
+        let closing = name == "lvw_shutdown";
+        if closing {
+            self.store.data_mut().state = State::Closing;
+        }
+        self.store.data_mut().guest_depth += 1;
+        let outcome = catch_unwind(AssertUnwindSafe(|| function.call(&mut self.store, params)));
+        self.store.data_mut().guest_depth -= 1;
+        match outcome {
+            Ok(Ok(value)) => {
+                self.store.data().ensure_not_poisoned()?;
+                if closing {
+                    self.store.data_mut().state = State::Closed;
+                    self.store.data_mut().handler = None;
+                }
+                Ok(value)
+            }
+            Ok(Err(error)) => {
+                self.store.data_mut().poison(|| format!("{error:#}"));
+                Err(error)
+            }
+            Err(payload) => {
+                self.store
+                    .data_mut()
+                    .poison(|| "host callback panicked".to_owned());
+                resume_unwind(payload)
+            }
+        }
+    }
+
+    /// Read bytes from linear memory, checking the requested range.
+    pub fn read_memory(&self, pointer: u32, buffer: &mut [u8]) -> Result<()> {
+        self.store.data().ensure_ready()?;
+        self.core
+            .memory
+            .read(&self.store, pointer as usize, buffer)?;
+        Ok(())
+    }
+
+    /// Write bytes to linear memory, checking the requested range.
+    pub fn write_memory(&mut self, pointer: u32, bytes: &[u8]) -> Result<()> {
+        self.store.data().ensure_ready()?;
+        self.core
+            .memory
             .write(&mut self.store, pointer as usize, bytes)?;
         Ok(())
     }
@@ -191,35 +392,10 @@ impl Runtime {
         Ok(pointer)
     }
 
-    /// Release a scratch allocation from this instance.
+    /// Release scratch memory allocated by [`Self::alloc`] on this instance.
     ///
-    /// The pointer must come from [`Self::alloc`] on this runtime and must not have been freed.
+    /// The pointer must not have been freed.
     pub fn free(&mut self, pointer: u32) -> Result<()> {
         self.call_raw("lvw_free", pointer)
-    }
-
-    /// Replace the synchronous event handler.
-    ///
-    /// The handler receives callback identifiers and guest object pointers. It does not receive execution state for reentering the guest; returning an error or panicking poisons the runtime.
-    pub fn set_event_handler(
-        &mut self,
-        handler: impl FnMut(Event) -> Result<()> + Send + 'static,
-    ) -> Result<()> {
-        self.ensure_ready()?;
-        self.store.data_mut().handler = Some(Box::new(handler));
-        Ok(())
-    }
-
-    /// Run guest cleanup and close the runtime.
-    ///
-    /// A cleanup status error still closes the runtime. Traps poison it. Dropping a runtime does not execute this method.
-    pub fn shutdown(&mut self) -> Result<()> {
-        let status = self.call_raw::<(), i32>("lvw_shutdown", ())?;
-        self.state = State::Closed;
-        self.store.data_mut().handler = None;
-        if status != 0 {
-            return Err(Error::msg(format!("lvw_shutdown failed ({status})")));
-        }
-        Ok(())
     }
 }

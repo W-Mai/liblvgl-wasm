@@ -89,7 +89,7 @@ def render(report, identity):
         "///\n"
         "/// Calls preserve Wasm scalar types and signed integer values. The caller maintains the C API's guest object and pointer preconditions; these methods do not validate pointer ownership or object lifetime. Use the runtime's shutdown method for cleanup.\n"
         "pub struct RawApi<'a> {\n"
-        "    pub(crate) runtime: &'a mut crate::Runtime,\n"
+        "    pub(crate) runtime: crate::CallbackContext<'a>,\n"
         "}\n\n"
         "#[allow(clippy::too_many_arguments)]\n"
         "impl RawApi<'_> {\n"

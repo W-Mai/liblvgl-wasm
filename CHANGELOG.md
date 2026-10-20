@@ -16,6 +16,7 @@
 - Strict TypeScript checks for generated bindings and the runtime, with locked JavaScript dependencies.
 - Browser/Bun and Rust hosts using the same Wasm module, with resource and pointer interaction checks.
 - Reusable Rust host library with checked memory copies, synchronous event handlers, and runtime shutdown and failure guards.
+- Rust callback contexts with generated LVGL methods, synchronous nested notifications, shared failure state, and shutdown reentry guards.
 - Generated Rust `lv_*` methods with core identity checks, separate memory and function pointer types, and a configurable generated source path.
 - TypeScript and Rust constants and named type layouts with exact integer and string values, field and bitfield metadata, and explicit opaque types.
 - LVGL Studio with default or user-selected cores, application and resource uploads, interactive preview, console, and isolated browser runner.

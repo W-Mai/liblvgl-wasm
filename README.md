@@ -122,7 +122,7 @@ liblvgl-wasm-host = { path = "/path/to/liblvgl-wasm/bindings/rust" }
 ```
 
 ```rust
-use liblvgl_wasm_host::{Result, Runtime, UnsafePointer};
+use liblvgl_wasm_host::{Result, Runtime, UnsafePointer, values};
 
 fn main() -> Result<()> {
     let mut runtime = Runtime::from_file("target/wasm/liblvgl.wasm")?;
@@ -131,6 +131,14 @@ fn main() -> Result<()> {
     let screen = api.lv_display_get_screen_active(UnsafePointer(display))?;
     let button = api.lv_button_create(screen)?;
     api.lv_obj_set_size(button, 180, 64)?;
+    runtime.set_event_handler_with_context(|context, event| {
+        context.raw()?.lv_obj_set_width(UnsafePointer(event.object), 200)
+    })?;
+    assert_eq!(
+        runtime.call_raw::<_, i32>("lvw_event_add", (button.0, values::LV_EVENT_CLICKED, 1u32))?,
+        0
+    );
+    runtime.raw()?.lv_obj_send_event(button, values::LV_EVENT_CLICKED as i32, UnsafePointer(0))?;
     runtime.shutdown()
 }
 ```
@@ -143,7 +151,9 @@ fn main() -> Result<()> {
 
 `RawApi` also provides `alloc`, `free`, `read_memory`, and `write_memory` using `UnsafePointer`. Core bytes are hashed and compiled from the same input. A different bridge-compatible core can use the generic `call_raw` interface, but obtaining this generated API reports a binding mismatch. The Rust crate needs the generated source at compile time; a relocated copy can use `LVW_RUST_BINDINGS` to locate it.
 
-`set_event_handler` receives synchronous `Event { callback_id, object, code }` notifications for IDs registered with `lvw_event_add`. A handler returns `Result<()>` and can capture application state; it has no runtime access for nested LVGL calls. Guest traps, handler errors, and handler panics poison the runtime, which then rejects calls and memory access. Successful shutdown closes it. Dropping a runtime releases its store without executing guest code or user callbacks.
+`set_event_handler` receives synchronous `Event { callback_id, object, code }` notifications for IDs registered with `lvw_event_add` and accepts an `FnMut` closure. `set_event_handler_with_context` adds a borrowed `CallbackContext` with `raw`, `call_raw`, scratch allocation, and checked memory copies. It accepts `Fn + Send + Sync`, allowing the same handler to receive nested notifications while calling LVGL. Use atomics or a mutex for mutable captured state, and release application locks before guest calls. Either setter replaces the current handler.
+
+Guest traps, handler errors, and handler panics poison the Rust runtime. Catching an inner failure does not recover it; all later calls and memory access are rejected. Export lookup, signature mismatch, and checked memory range errors leave the instance usable. Calling `lvw_step` or `lvw_shutdown` during a guest call is rejected before guest entry. Shutdown DELETE handlers can update host data, but context calls and memory access are rejected while closing. Normal cleanup closes the runtime, including a nonzero cleanup status; a trap or panic poisons it. Calling `lvw_shutdown` through `call_raw` applies the same closing rules. Dropping a runtime releases its store without executing guest code or user callbacks.
 
 ### Constants and layouts
 
