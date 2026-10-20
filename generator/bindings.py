@@ -16,6 +16,57 @@ IDENTITY_KEYS = {"schema_version", "api_sha256", "wasm_sha256",
 POINTER_KINDS = {"pointer", "function_pointer", "record"}
 
 
+def animation_exec_module(report):
+    """Build a typed exec adapter after checking the measured animation ABI.
+
+    Equivalent WAT:
+      (module
+        (import "core" "dispatch" (func $dispatch (param i32 i32 i32)))
+        (import "core" "slot" (global $slot i32))
+        (func (export "exec") (param i32 i32)
+          global.get $slot local.get 0 local.get 1 call $dispatch))
+    The adapter owns no memory or application callback.
+    """
+    measured = {report["types"][identity]["name"]: entry["wasm_signature"]
+                for identity, entry in report["callback_types"].items()}
+    groups = [
+        (["lv_anim_exec_xcb_t", "lv_anim_custom_exec_cb_t"], ["i32", "i32"], []),
+        (["lv_anim_path_cb_t", "lv_anim_get_value_cb_t"], ["i32"], ["i32"]),
+        (["lv_anim_start_cb_t", "lv_anim_completed_cb_t", "lv_anim_deleted_cb_t"], ["i32"], []),
+    ]
+    for names, params, results in groups:
+        for name in names:
+            if measured.get(name) != {"params": params, "results": results}:
+                raise ValueError(f"unsupported target animation callback signature: {name}")
+
+    def u32(value):
+        result = []
+        while value >= 128:
+            result.append((value & 127) | 128)
+            value >>= 7
+        return bytes([*result, value])
+
+    def vector(items):
+        return u32(len(items)) + b"".join(items)
+
+    def name(value):
+        encoded = value.encode()
+        return u32(len(encoded)) + encoded
+
+    def section(identity, payload):
+        return bytes([identity]) + u32(len(payload)) + payload
+
+    body = bytes([0, 0x23, 0, 0x20, 0, 0x20, 1, 0x10, 0, 0x0b])
+    return (b"\0asm\1\0\0\0"
+            + section(1, vector([bytes([0x60, 3, 0x7f, 0x7f, 0x7f, 0]),
+                                 bytes([0x60, 2, 0x7f, 0x7f, 0])]))
+            + section(2, vector([name("core") + name("dispatch") + bytes([0, 0]),
+                                 name("core") + name("slot") + bytes([3, 0x7f, 0])]))
+            + section(3, vector([bytes([1])]))
+            + section(7, vector([name("exec") + bytes([0, 1])]))
+            + section(10, vector([u32(len(body)) + body])))
+
+
 def inventory(report, identity):
     exports = supported_exports(report["declarations"])
     names = [entry["name"] for entry in report["declarations"]]

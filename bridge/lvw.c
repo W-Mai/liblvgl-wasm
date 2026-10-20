@@ -43,6 +43,17 @@ typedef struct lvw_timer_node {
     struct lvw_timer_node *next;
 } lvw_timer_node_t;
 
+typedef struct lvw_anim_node {
+    lv_anim_t *lvgl;
+    lv_anim_path_cb_t path;
+    uint32_t callback_id;
+    uint32_t exec_slot;
+    uint32_t flags;
+    bool creating;
+    bool finishing;
+    struct lvw_anim_node *next;
+} lvw_anim_node_t;
+
 typedef struct lvw_resource {
     char name[LVW_RESOURCE_NAME_LEN + 1u];
     uint8_t *data;
@@ -58,11 +69,13 @@ typedef struct {
 static lvw_display_node_t *displays;
 static lvw_indev_node_t *indevs;
 static lvw_timer_node_t *timers;
+static lvw_anim_node_t *animations;
 static lvw_resource_t *resources;
 static lv_fs_drv_t resource_driver;
 static uint32_t initialized;
 static uint32_t running;
 static uint32_t callback_depth;
+static uint32_t anim_restricted_depth;
 
 __attribute__((import_module("lvw"), import_name("event")))
 extern void lvw_host_event(uint32_t callback_id, uint32_t object, uint32_t code);
@@ -72,6 +85,18 @@ extern void lvw_host_timer(uint32_t callback_id, uint32_t timer);
 
 __attribute__((import_module("lvw"), import_name("timer_release")))
 extern void lvw_host_timer_release(uint32_t callback_id);
+
+__attribute__((import_module("lvw"), import_name("anim_exec")))
+extern void lvw_host_anim_exec(uint32_t callback_id, uint32_t animation, int32_t value);
+
+__attribute__((import_module("lvw"), import_name("anim_query")))
+extern int32_t lvw_host_anim_query(uint32_t callback_id, uint32_t animation, uint32_t kind);
+
+__attribute__((import_module("lvw"), import_name("anim_notify")))
+extern void lvw_host_anim_notify(uint32_t callback_id, uint32_t animation, uint32_t kind);
+
+__attribute__((import_module("lvw"), import_name("anim_release")))
+extern void lvw_host_anim_release(uint32_t callback_id);
 
 static uint32_t pointer_value(const void *pointer) {
     return (uint32_t)(uintptr_t)pointer;
@@ -170,6 +195,81 @@ static void timer_release(void *data) {
     callback_depth++;
     lvw_host_timer_release(callback_id);
     callback_depth--;
+}
+
+static lvw_anim_node_t *bind_animation(const lv_anim_t *animation) {
+    for (lvw_anim_node_t *node = animations; node; node = node->next) {
+        if (node != animation->ext_data.data) continue;
+        if (node->lvgl && node->lvgl != animation) __builtin_trap();
+        node->lvgl = (lv_anim_t *)animation;
+        return node;
+    }
+    __builtin_trap();
+}
+
+static int32_t animation_query(const lv_anim_t *animation, uint32_t kind) {
+    lvw_anim_node_t *node = bind_animation(animation);
+    uint32_t callback_id = node->callback_id;
+    uint32_t flags = node->flags;
+    lv_anim_path_cb_t path = node->path;
+    // LVGL continues accessing this animation after a query returns.
+    anim_restricted_depth++;
+    callback_depth++;
+    int32_t value = kind == 1u && !(flags & LVW_ANIM_PATH)
+                    ? path(animation)
+                    : lvw_host_anim_query(callback_id, pointer_value(animation), kind);
+    callback_depth--;
+    anim_restricted_depth--;
+    return value;
+}
+
+static int32_t animation_path(const lv_anim_t *animation) {
+    // The path always runs before exec, including inside lv_anim_start.
+    return animation_query(animation, 1u);
+}
+
+static int32_t animation_get_value(lv_anim_t *animation) {
+    return animation_query(animation, 2u);
+}
+
+static void animation_notify(lv_anim_t *animation, uint32_t kind, uint32_t flag) {
+    lvw_anim_node_t *node = bind_animation(animation);
+    if (kind != 1u) node->finishing = true;
+    if (!(node->flags & flag)) return;
+    uint32_t callback_id = node->callback_id;
+    // Terminal callbacks can run inside native delete_all's cached-next traversal.
+    anim_restricted_depth++;
+    callback_depth++;
+    lvw_host_anim_notify(callback_id, pointer_value(animation), kind);
+    callback_depth--;
+    anim_restricted_depth--;
+}
+
+static void animation_start(lv_anim_t *animation) {
+    animation_notify(animation, 1u, LVW_ANIM_START);
+}
+
+static void animation_completed(lv_anim_t *animation) {
+    animation_notify(animation, 2u, LVW_ANIM_COMPLETED);
+}
+
+static void animation_deleted(lv_anim_t *animation) {
+    animation_notify(animation, 3u, LVW_ANIM_DELETED);
+}
+
+static void animation_release(void *data) {
+    lvw_anim_node_t **cursor = &animations;
+    while (*cursor && *cursor != data) cursor = &(*cursor)->next;
+    if (!*cursor) return;
+    lvw_anim_node_t *node = *cursor;
+    *cursor = node->next;
+    uint32_t callback_id = node->callback_id;
+    free(node);
+    anim_restricted_depth++;
+    callback_depth++;
+    lvw_host_anim_release(callback_id);
+    callback_depth--;
+    anim_restricted_depth--;
 }
 
 static void *resource_open(lv_fs_drv_t *driver, const char *path, lv_fs_mode_t mode) {
@@ -501,4 +601,83 @@ LVW_EXPORT(lvw_timer_delete) int32_t lvw_timer_delete(uint32_t timer, uint32_t c
         }
     }
     return 0;
+}
+
+LVW_EXPORT(lvw_anim_start) uint32_t lvw_anim_start(uint32_t descriptor, uint32_t callback_id,
+                                                   uint32_t exec_slot, uint32_t flags) {
+    const uint32_t known_flags = LVW_ANIM_PATH | LVW_ANIM_GET_VALUE | LVW_ANIM_START |
+                                 LVW_ANIM_COMPLETED | LVW_ANIM_DELETED;
+    if (!initialized || !descriptor || !callback_id || !exec_slot || (flags & ~known_flags)) return 0;
+    for (lvw_anim_node_t *node = animations; node; node = node->next) {
+        if (node->callback_id == callback_id || node->exec_slot == exec_slot) return 0;
+    }
+    const lv_anim_t *source = (const lv_anim_t *)(uintptr_t)descriptor;
+    if (!source->path_cb || source->exec_cb || source->custom_exec_cb || source->get_value_cb ||
+        source->start_cb || source->completed_cb || source->deleted_cb ||
+        source->ext_data.data || source->ext_data.free_cb) return 0;
+    lvw_anim_node_t *node = calloc(1, sizeof(*node));
+    if (!node) return 0;
+    node->path = source->path_cb;
+    node->callback_id = callback_id;
+    node->exec_slot = exec_slot;
+    node->flags = flags;
+    node->creating = true;
+    node->next = animations;
+    animations = node;
+
+    lv_anim_t copy = *source;
+    if (source->var == source) copy.var = &copy;
+    copy.exec_cb = (lv_anim_exec_xcb_t)(uintptr_t)exec_slot;
+    copy.path_cb = animation_path;
+    copy.get_value_cb = flags & LVW_ANIM_GET_VALUE ? animation_get_value : NULL;
+    copy.start_cb = animation_start;
+    copy.completed_cb = animation_completed;
+    copy.deleted_cb = animation_deleted;
+    lv_anim_set_external_data(&copy, node, animation_release);
+    lv_anim_t *created = lv_anim_start(&copy);
+    if (!created) {
+        animation_release(node);
+        return 0;
+    }
+    // A callback can release a registration; never revive it from the returned address.
+    for (lvw_anim_node_t *active = animations; active; active = active->next) {
+        if (active->callback_id != callback_id || active->exec_slot != exec_slot) continue;
+        if (active->finishing) return 0;
+        if (active->lvgl && active->lvgl != created) __builtin_trap();
+        active->lvgl = created;
+        active->creating = false;
+        return pointer_value(created);
+    }
+    return 0;
+}
+
+LVW_EXPORT(lvw_anim_delete) int32_t lvw_anim_delete(uint32_t animation, uint32_t callback_id) {
+    if (!initialized) return -1;
+    if (!animation || !callback_id) return -2;
+    for (lvw_anim_node_t *node = animations; node; node = node->next) {
+        if (pointer_value(node->lvgl) != animation || node->callback_id != callback_id) continue;
+        if (node->finishing) return 0;
+        if (anim_restricted_depth) return -3;
+        lv_anim_delete(node->lvgl->var, (lv_anim_exec_xcb_t)(uintptr_t)node->exec_slot);
+        return 0;
+    }
+    return 0;
+}
+
+LVW_EXPORT(lvw_anim_exec) void lvw_anim_exec(uint32_t exec_slot, uint32_t var, int32_t value) {
+    if (!initialized) __builtin_trap();
+    for (lvw_anim_node_t *node = animations; node; node = node->next) {
+        if (node->exec_slot != exec_slot) continue;
+        if (!node->lvgl || node->finishing || pointer_value(node->lvgl->var) != var) __builtin_trap();
+        uint32_t callback_id = node->callback_id;
+        uint32_t animation = pointer_value(node->lvgl);
+        bool restricted = node->creating;
+        if (restricted) anim_restricted_depth++;
+        callback_depth++;
+        lvw_host_anim_exec(callback_id, animation, value);
+        callback_depth--;
+        if (restricted) anim_restricted_depth--;
+        return;
+    }
+    __builtin_trap();
 }

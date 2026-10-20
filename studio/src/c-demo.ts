@@ -21,9 +21,15 @@ export async function startCDemo(canvas: HTMLCanvasElement, signal: AbortSignal,
   const bytes = await response.arrayBuffer();
   let core: DemoCore;
   const { instance } = await WebAssembly.instantiate(bytes, {
-    lvw: { event() {}, timer() {}, timer_release() {} },
+    lvw: {
+      event() {}, timer() {}, timer_release() {},
+      anim_exec() {}, anim_query() { return 0; }, anim_notify() {}, anim_release() {},
+    },
     wasi_snapshot_preview1: {
       fd_close: () => 0,
+      fd_seek(fd: number, _offset: bigint, _whence: number, _result: number) {
+        return fd >= 0 && fd <= 2 ? 70 : 8;
+      },
       fd_write(_fd: number, iov: number, count: number, written: number) {
         const view = new DataView(core.memory.buffer);
         let length = 0;

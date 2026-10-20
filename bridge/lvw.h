@@ -8,6 +8,11 @@
 #define LVW_INPUT_POINTER 1u
 #define LVW_INPUT_KEYPAD 2u
 #define LVW_INPUT_ENCODER 4u
+#define LVW_ANIM_PATH 1u
+#define LVW_ANIM_GET_VALUE 2u
+#define LVW_ANIM_START 4u
+#define LVW_ANIM_COMPLETED 8u
+#define LVW_ANIM_DELETED 16u
 
 typedef struct {
     uint32_t struct_size;
@@ -68,5 +73,9 @@ uint32_t lvw_event_clicked(void);
 uint32_t lvw_event_delete(void);
 uint32_t lvw_timer_create(uint32_t period_ms, uint32_t user_data, uint32_t callback_id);
 int32_t lvw_timer_delete(uint32_t timer, uint32_t callback_id);
+uint32_t lvw_anim_start(uint32_t descriptor, uint32_t callback_id, uint32_t exec_slot,
+                        uint32_t flags);
+int32_t lvw_anim_delete(uint32_t animation, uint32_t callback_id);
+void lvw_anim_exec(uint32_t exec_slot, uint32_t var, int32_t value);
 
 #endif

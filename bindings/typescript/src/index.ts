@@ -4,8 +4,10 @@ import {
   type UnsafeFunctionPointer, type UnsafeLvglApi, type UnsafePointer,
 } from "../../../target/typescript/raw.ts";
 import { valuesIdentity } from "../../../target/typescript/values.ts";
+import { Animation, AnimationRegistry, type AnimationCallbacks, type AnimationExports } from "./animation.ts";
 
-export { bindingIdentity };
+export { bindingIdentity, Animation };
+export type { AnimationCallbacks };
 export type { UnsafeFunctionPointer, UnsafeLvglApi, UnsafePointer };
 export * from "../../../target/typescript/values.ts";
 
@@ -13,7 +15,7 @@ const ABI_VERSION = 1;
 const PIXEL_XRGB8888 = 1;
 const INPUT_POINTER = 1;
 
-interface RawExports {
+interface RawExports extends AnimationExports {
   memory: WebAssembly.Memory;
   _initialize(): void;
   lvw_abi_version(): number;
@@ -104,6 +106,7 @@ export class LvglRuntime {
   private failure: unknown;
   private guestDepth = 0;
   private readonly raw: RawExports;
+  private readonly animations: AnimationRegistry;
   private unsafeApi?: UnsafeLvgl;
 
   private constructor(exports: RawExports, private readonly coreHash: string) {
@@ -112,9 +115,21 @@ export class LvglRuntime {
         ? (...args: unknown[]) => this.invoke(name, () => value(...args))
         : value,
     ])) as unknown as RawExports;
+    this.animations = new AnimationRegistry(this.raw, exports.lvw_anim_exec, {
+      ensureActive: () => this.ensureActive(),
+      rethrowFailure: () => this.rethrowFailure(),
+      poison: (error) => this.poison(error),
+      ready: () => this.state === "ready",
+      closing: () => this.state === "closing",
+      inGuest: () => this.guestDepth !== 0,
+      allocateId: () => this.allocateCallbackId(),
+    });
   }
 
   private invoke<T>(name: string, call: () => T): T {
+    if (this.animations.inCallback && (name === "lv_anim_refr_now" || name === "lv_anim_delete_all")) {
+      throw new Error(`${name} cannot be called during an animation callback`);
+    }
     if (!(name === "lvw_shutdown" && this.state === "closing" && this.guestDepth === 0)) {
       this.ensureActive();
     }
@@ -124,12 +139,7 @@ export class LvglRuntime {
       this.rethrowFailure();
       return result;
     } catch (error) {
-      if (this.state !== "poisoned") {
-        this.failure = error;
-        this.state = "poisoned";
-        this.clearCallbacks();
-      }
-      throw this.failure;
+      return this.poison(error);
     } finally {
       this.guestDepth--;
       if (this.guestDepth === 0) {
@@ -138,11 +148,13 @@ export class LvglRuntime {
           owner.ids.clear();
         }
         this.deletedObjects.clear();
+        this.animations.settle();
       }
     }
   }
 
   private clearCallbacks(): void {
+    this.animations.clear();
     for (const { owner } of this.callbacks.values()) owner.ids.clear();
     for (const { owner } of this.timers.values()) owner.alive = false;
     this.timers.clear();
@@ -150,6 +162,15 @@ export class LvglRuntime {
     this.deletedObjects.clear();
     this.objectLifetimes.clear();
     this.displays.clear();
+  }
+
+  private poison(error: unknown): never {
+    if (this.state !== "poisoned") {
+      this.failure = error;
+      this.state = "poisoned";
+      this.clearCallbacks();
+    }
+    throw this.failure;
   }
 
   private rethrowFailure(): void {
@@ -172,7 +193,9 @@ export class LvglRuntime {
     const imports = WebAssembly.Module.imports(module).map((item) => `${item.module}.${item.name}`);
     const expected = new Set([
       "lvw.event", "lvw.timer", "lvw.timer_release",
+      "lvw.anim_exec", "lvw.anim_query", "lvw.anim_notify", "lvw.anim_release",
       "wasi_snapshot_preview1.fd_close", "wasi_snapshot_preview1.fd_write",
+      "wasi_snapshot_preview1.fd_seek",
     ]);
     for (const item of imports) {
       if (!expected.has(item)) throw new Error(`unsupported Wasm import: ${item}`);
@@ -189,9 +212,27 @@ export class LvglRuntime {
         timer_release(callbackId: number) {
           runtime?.releaseTimer(callbackId);
         },
+        anim_exec(id: number, pointer: number, value: number) {
+          if (!runtime) throw new Error("LVGL animation callback before runtime initialization");
+          runtime.animations.exec(id, pointer, value);
+        },
+        anim_query(id: number, pointer: number, kind: number): number {
+          if (!runtime) throw new Error("LVGL animation callback before runtime initialization");
+          return runtime.animations.query(id, pointer, kind);
+        },
+        anim_notify(id: number, pointer: number, kind: number) {
+          if (!runtime) throw new Error("LVGL animation callback before runtime initialization");
+          runtime.animations.notify(id, pointer, kind);
+        },
+        anim_release(id: number) {
+          runtime?.animations.release(id);
+        },
       },
       wasi_snapshot_preview1: {
         fd_close() { return 0; },
+        fd_seek(fd: number, _offset: bigint, _whence: number, _result: number) {
+          return fd >= 0 && fd <= 2 ? 70 : 8;
+        },
         fd_write(fd: number, iovPointer: number, iovCount: number, writtenPointer: number) {
           if (!memory) return 8;
           const view = new DataView(memory.buffer);
@@ -302,6 +343,16 @@ export class LvglRuntime {
     const handle = this.raw.lvw_indev_create(display.handle, INPUT_POINTER);
     if (!handle) throw new Error("lvw_indev_create failed");
     return new PointerInput(this, handle, display);
+  }
+
+  /** Start an initialized native descriptor with synchronous callbacks. The input descriptor can be freed after this returns. */
+  startAnimation(descriptor: UnsafePointer, callbacks: AnimationCallbacks): Animation {
+    return this.animations.start(descriptor, callbacks);
+  }
+
+  /** Cancel an animation from this runtime. Cancellation during unsafe native callback phases is rejected without invalidating the animation. */
+  cancelAnimation(animation: Animation): void {
+    this.animations.cancel(animation);
   }
 
   /** Create a timer driven by step(). The callback must finish synchronously; userData remains available through the native LVGL API. */

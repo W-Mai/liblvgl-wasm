@@ -5,7 +5,7 @@ import argparse
 import json
 from pathlib import Path
 
-from bindings import POINTER_KINDS, comment, function_signature, inventory
+from bindings import POINTER_KINDS, animation_exec_module, comment, function_signature, inventory
 from bindings import generate as generate_bindings
 
 
@@ -52,6 +52,8 @@ def render(report, identity):
         "/** Wasm function-table index. No callback installation or invocation adapter is provided. */\n"
         "export type UnsafeFunctionPointer = number;\n\n"
         f"export const bindingIdentity = /* @__PURE__ */ Object.freeze({json.dumps(identity, indent=2)} as const);\n\n"
+        "/** @internal Typed exec adapter; imports core.dispatch and immutable core.slot. */\n"
+        f"export const animationExecModuleBytes: readonly number[] = /* @__PURE__ */ Object.freeze({list(animation_exec_module(report))});\n\n"
         f"export const apiExports = /* @__PURE__ */ Object.freeze({json.dumps(mapping, indent=2)} as const);\n\n"
         "/** Raw Wasm calls. i32 values retain their signed JavaScript representation. */\n"
         f"export interface UnsafeLvglApi {{\n{methods}\n}}\n\n"

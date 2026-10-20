@@ -21,6 +21,8 @@ pub use wasmtime::{Error, Result};
 
 mod timer;
 pub use timer::Timer;
+mod animation;
+pub use animation::{Animation, AnimationCallbacks};
 
 mod generated {
     include!(concat!(env!("OUT_DIR"), "/raw.rs"));
@@ -65,6 +67,7 @@ struct Host {
     lifetime: Arc<AtomicBool>,
     timers: HashMap<u32, timer::Registration>,
     next_timer_id: u64,
+    animations: animation::Registry,
 }
 
 #[derive(Clone, Copy)]
@@ -104,6 +107,7 @@ impl Host {
     fn clear_callbacks(&mut self) {
         self.invalidate_timers();
         self.timers.clear();
+        self.animations.clear();
         self.handler = None;
     }
 
@@ -119,6 +123,7 @@ impl Drop for Host {
     fn drop(&mut self) {
         self.lifetime.store(false, Ordering::SeqCst);
         self.invalidate_timers();
+        self.animations.invalidate();
     }
 }
 
@@ -144,8 +149,19 @@ impl Runtime {
         for import in module.imports() {
             if !matches!(
                 (import.module(), import.name()),
-                ("lvw", "event" | "timer" | "timer_release")
-                    | ("wasi_snapshot_preview1", "fd_close" | "fd_write")
+                (
+                    "lvw",
+                    "event"
+                        | "timer"
+                        | "timer_release"
+                        | "anim_exec"
+                        | "anim_query"
+                        | "anim_notify"
+                        | "anim_release"
+                ) | (
+                    "wasi_snapshot_preview1",
+                    "fd_close" | "fd_write" | "fd_seek"
+                )
             ) || !matches!(import.ty(), ExternType::Func(_))
             {
                 return Err(Error::msg(format!(
@@ -197,6 +213,7 @@ impl Runtime {
             },
         )?;
         timer::add_to_linker(&mut linker)?;
+        animation::add_to_linker(&mut linker)?;
         let mut store = Store::new(
             &engine,
             Host {
@@ -210,6 +227,7 @@ impl Runtime {
                 lifetime: Arc::new(AtomicBool::new(true)),
                 timers: HashMap::new(),
                 next_timer_id: 1,
+                animations: animation::Registry::default(),
             },
         );
         let instance = linker.instantiate(&mut store, &module)?;
@@ -323,6 +341,14 @@ impl Runtime {
 }
 
 impl<'a> CallbackContext<'a> {
+    fn poison(&mut self, reason: impl FnOnce() -> String) {
+        let result = catch_unwind(AssertUnwindSafe(|| self.store.data_mut().poison(reason)));
+        animation::flush_slots(&mut self.store);
+        if let Err(payload) = result {
+            resume_unwind(payload);
+        }
+    }
+
     fn reborrow(&mut self) -> CallbackContext<'_> {
         CallbackContext {
             store: self.store.as_context_mut(),
@@ -357,6 +383,13 @@ impl<'a> CallbackContext<'a> {
                 "{name} cannot be called during an active guest call"
             )));
         }
+        if self.store.data().animations.callback_depth != 0
+            && matches!(name, "lv_anim_refr_now" | "lv_anim_delete_all")
+        {
+            return Err(Error::msg(format!(
+                "{name} cannot be called during an animation callback"
+            )));
+        }
         let function = self
             .core
             .instance
@@ -369,23 +402,23 @@ impl<'a> CallbackContext<'a> {
         self.store.data_mut().guest_depth += 1;
         let outcome = catch_unwind(AssertUnwindSafe(|| function.call(&mut self.store, params)));
         self.store.data_mut().guest_depth -= 1;
+        animation::flush_slots(&mut self.store);
         match outcome {
             Ok(Ok(value)) => {
                 self.store.data().ensure_not_poisoned()?;
                 if closing {
                     self.store.data_mut().state = State::Closed;
                     self.store.data_mut().clear_callbacks();
+                    animation::flush_slots(&mut self.store);
                 }
                 Ok(value)
             }
             Ok(Err(error)) => {
-                self.store.data_mut().poison(|| format!("{error:#}"));
+                self.poison(|| format!("{error:#}"));
                 Err(error)
             }
             Err(payload) => {
-                self.store
-                    .data_mut()
-                    .poison(|| "host callback panicked".to_owned());
+                self.poison(|| "host callback panicked".to_owned());
                 resume_unwind(payload)
             }
         }

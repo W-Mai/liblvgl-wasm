@@ -45,6 +45,8 @@ if(CMAKE_SYSTEM_NAME STREQUAL "WASI")
         -mexec-model=reactor
         -Wl,--no-entry
         -Wl,--export-memory
+        -Wl,--export-table
+        -Wl,--growable-table
         -Wl,--max-memory=268435456
     )
     if(EXISTS "${CMAKE_BINARY_DIR}/api-exports.txt")
@@ -59,6 +61,8 @@ if(CMAKE_SYSTEM_NAME STREQUAL "WASI")
         -mexec-model=reactor
         -Wl,--no-entry
         -Wl,--export-memory
+        -Wl,--export-table
+        -Wl,--growable-table
         -Wl,--max-memory=268435456
     )
 endif()

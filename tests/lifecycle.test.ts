@@ -161,13 +161,17 @@ test("the bridge rejects step and shutdown inside raw event and DELETE callbacks
       lvw: {
         timer() {},
         timer_release() {},
+        anim_exec() {},
+        anim_query() { return 0; },
+        anim_notify() {},
+        anim_release() {},
         event(id: number) {
           notifications.push(id);
           expect(core.lvw_step(1, result)).toBe(-1);
           expect(core.lvw_shutdown()).toBe(-1);
         },
       },
-      wasi_snapshot_preview1: { fd_close: () => 0, fd_write: () => 0 },
+      wasi_snapshot_preview1: { fd_close: () => 0, fd_seek: () => 70, fd_write: () => 0 },
     },
   );
   core = instance.exports as unknown as Bridge;

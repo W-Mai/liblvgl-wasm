@@ -4,7 +4,7 @@
 import argparse
 from pathlib import Path
 
-from bindings import POINTER_KINDS, comment, function_signature, inventory
+from bindings import POINTER_KINDS, animation_exec_module, comment, function_signature, inventory
 from bindings import generate as generate_bindings
 from values import render_rust
 
@@ -75,6 +75,8 @@ def render(report, identity):
         f'    expected_functions: {identity["expected_functions"]},\n'
         f'    verified_functions: {identity["verified_functions"]},\n'
         "};\n\n"
+        "// Typed exec adapter; imports core.dispatch and immutable core.slot.\n"
+        f"pub(crate) const ANIMATION_EXEC_MODULE: &[u8] = &{list(animation_exec_module(report))};\n\n"
         "/// Original C names and their Wasm export names.\n"
         f"pub const API_EXPORTS: &[(&str, &str)] = &[\n{mapping}\n];\n\n"
         "/// Linear-memory offset. The caller manages ownership, alignment, bounds, initialization, and lifetime.\n"

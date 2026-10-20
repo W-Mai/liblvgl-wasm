@@ -2,7 +2,12 @@ const requiredImports = new Set([
   "lvw.event",
   "lvw.timer",
   "lvw.timer_release",
+  "lvw.anim_exec",
+  "lvw.anim_query",
+  "lvw.anim_notify",
+  "lvw.anim_release",
   "wasi_snapshot_preview1.fd_close",
+  "wasi_snapshot_preview1.fd_seek",
   "wasi_snapshot_preview1.fd_write",
 ]);
 

@@ -185,6 +185,61 @@ Managed timers reserve the external-data destructor slot enabled by `LV_USE_EXT_
 
 The core imports `lvw.timer(callback_id, timer)` for synchronous execution and `lvw.timer_release(callback_id)` for host bookkeeping. Hosts must implement both imports when loading this core. Updated hosts can still load older bridge-compatible cores; timer creation requires both `lvw_timer_create` and `lvw_timer_delete` and reports missing exports before registering a handler. The bridge ABI remains `1`, with existing signatures unchanged.
 
+### Native animations
+
+Initialize an `lv_anim_t` descriptor in core memory and configure it with the generated `lv_anim_*` setters. `startAnimation` / `start_animation` copies that descriptor into a native animation and attaches synchronous host callbacks. The input descriptor can be freed after creation. Native `var`, `user_data`, delay, duration, repeat, reverse, and pause behavior are preserved.
+
+```ts
+import { LV_ANIM_T_SIZE } from "./target/typescript/index.js";
+
+const api = runtime.unsafe;
+const descriptor = api.lvw_alloc(LV_ANIM_T_SIZE);
+if (!descriptor) throw new Error("animation allocation failed");
+api.lv_anim_init(descriptor);
+api.lv_anim_set_var(descriptor, button.handle);
+api.lv_anim_set_values(descriptor, 0, 120);
+api.lv_anim_set_duration(descriptor, 600);
+const animation = runtime.startAnimation(descriptor, {
+  exec(_current, x) { api.lv_obj_set_x(button.handle, x); },
+  path(current) { return api.lv_anim_path_ease_in_out(current.handle); },
+});
+api.lvw_free(descriptor);
+// runtime.step(elapsedMs) advances the animation.
+animation.cancel();
+```
+
+```rust
+use liblvgl_wasm_host::{AnimationCallbacks, values};
+
+let descriptor = {
+    let mut api = runtime.raw()?;
+    let descriptor = api.alloc(values::LV_ANIM_T_SIZE)?;
+    api.lv_anim_init(descriptor)?;
+    api.lv_anim_set_var(descriptor, button)?;
+    api.lv_anim_set_values(descriptor, 0, 120)?;
+    api.lv_anim_set_duration(descriptor, 600)?;
+    descriptor
+};
+let animation = runtime.start_animation(
+    descriptor,
+    AnimationCallbacks::new(move |context, _current, x| {
+        context.raw()?.lv_obj_set_x(button, x)
+    }).path(|context, current| {
+        context.raw()?.lv_anim_path_ease_in_out(current.pointer()?)
+    }),
+)?;
+runtime.free(descriptor.0)?;
+runtime.cancel_animation(&animation)?;
+```
+
+`exec` is required. Optional `path`, `getValue` / `get_value`, `start`, `completed`, and `deleted` callbacks receive the actual running animation. Query callbacks return a signed 32-bit integer synchronously; TypeScript rejects thenables, fractional values, and out-of-range results. With native `early_apply` enabled, get-value, path, and exec run during creation. Start notifications occur when a segment starts; repeat and reverse can trigger them more than once. Natural completion delivers completed, then deleted. Explicit deletion delivers deleted. Native deletion of the `var` object also releases its animations.
+
+Each active animation owns a distinct exec table slot, so cancellation affects only that animation even when several share the same `var`. Deleted handles become invalid, and repeated cancellation is harmless. Runtime shutdown, guest failure, and Rust runtime drop invalidate handles and release stored callbacks. Slots are cleared on release and reused after the outer guest call returns; cached wrappers retain no application callbacks. Closing notifications may update host data, and cancellation while closing only releases host records.
+
+Native query, start, and early exec code continues reading the current animation after the callback returns. Managed cancellation of active animations is rejected during those phases and terminal notifications; cancelling the already finishing animation is harmless. Ordinary tick exec callbacks can cancel themselves or other animations. The SDK rejects `lv_anim_refr_now` and `lv_anim_delete_all` inside animation callbacks. Raw callers must not delete the current animation, its `var` object or ancestors during query/start/early exec, or mutate animation lists from terminal notifications. Raw callbacks, EXT_DATA, and exec pointers on a managed animation belong to the bridge and must not be replaced or copied into another descriptor.
+
+Animation creation requires `lvw_anim_start`, `lvw_anim_delete`, `lvw_anim_exec`, and the exported growable `__indirect_function_table`. Missing capabilities are reported before registration. The core imports `lvw.anim_exec(id, animation, value)`, `lvw.anim_query(id, animation, kind)`, `lvw.anim_notify(id, animation, kind)`, and `lvw.anim_release(id)`. Query kinds are 1 for path and 2 for get-value; notification kinds are 1 for start, 2 for completed, and 3 for deleted. The bridge keeps ABI 1 and existing signatures. Exporting the table also retains libc's WASI `fd_seek` import; browser hosts report unseekable standard streams, and the Rust host uses its WASI implementation.
+
 ### Constants and layouts
 
 TypeScript exports constants and layouts from the SDK entry point; Rust exposes them through `liblvgl_wasm_host::values`. Integer constants retain their target C values. TypeScript uses `number` up to 32 bits and `bigint` for wider integers; Rust uses the corresponding signed or unsigned integer type. For example, `LV_ANIM_REPEAT_INFINITE` remains `4294967295`; a Rust raw method with an `i32` parameter needs an explicit `as i32` conversion.
