@@ -55,6 +55,7 @@ static lvw_resource_t *resources;
 static lv_fs_drv_t resource_driver;
 static uint32_t initialized;
 static uint32_t running;
+static uint32_t callback_depth;
 
 __attribute__((import_module("lvw"), import_name("event")))
 extern void lvw_host_event(uint32_t callback_id, uint32_t object, uint32_t code);
@@ -128,7 +129,9 @@ static void input_callback(lv_indev_t *indev, lv_indev_data_t *data) {
 static void event_callback(lv_event_t *event) {
     uint32_t callback_id = pointer_value(lv_event_get_user_data(event));
     uint32_t object = pointer_value(lv_event_get_current_target_obj(event));
+    callback_depth++;
     lvw_host_event(callback_id, object, (uint32_t)lv_event_get_code(event));
+    callback_depth--;
 }
 
 static void *resource_open(lv_fs_drv_t *driver, const char *path, lv_fs_mode_t mode) {
@@ -203,7 +206,7 @@ LVW_EXPORT(lvw_init) int32_t lvw_init(void) {
 }
 
 LVW_EXPORT(lvw_shutdown) int32_t lvw_shutdown(void) {
-    if (!initialized || running) return -1;
+    if (!initialized || running || callback_depth) return -1;
     while (indevs) {
         lvw_indev_node_t *node = indevs;
         indevs = node->next;
@@ -350,7 +353,7 @@ LVW_EXPORT(lvw_indev_push) int32_t lvw_indev_push(uint32_t indev, uint32_t packe
 }
 
 LVW_EXPORT(lvw_step) int32_t lvw_step(uint32_t elapsed_ms, uint32_t out_result_ptr) {
-    if (!initialized || running) return -1;
+    if (!initialized || running || callback_depth) return -1;
     if (!out_result_ptr) return -2;
     lvw_step_result_t *result = (void *)(uintptr_t)out_result_ptr;
     if (result->struct_size < sizeof(*result) || result->version != LVW_ABI_VERSION) return -2;

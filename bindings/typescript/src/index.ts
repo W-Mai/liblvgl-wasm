@@ -77,11 +77,48 @@ function check(status: number, operation: string): void {
 export class LvglRuntime {
   private readonly callbacks = new Map<number, (object: number, code: number) => void>();
   private nextCallbackId = 1;
-  private active = true;
-  private stepping = false;
+  private state: "ready" | "closing" | "poisoned" | "closed" = "ready";
+  private failure: unknown;
+  private guestDepth = 0;
+  private readonly raw: RawExports;
   private unsafeApi?: UnsafeLvgl;
 
-  private constructor(private readonly raw: RawExports, private readonly coreHash: string) {}
+  private constructor(exports: RawExports, private readonly coreHash: string) {
+    this.raw = Object.fromEntries(Object.entries(exports).map(([name, value]) => [
+      name, typeof value === "function"
+        ? (...args: unknown[]) => this.invoke(name, () => value(...args))
+        : value,
+    ])) as unknown as RawExports;
+  }
+
+  private invoke<T>(name: string, call: () => T): T {
+    if (!(name === "lvw_shutdown" && this.state === "closing" && this.guestDepth === 0)) {
+      this.ensureActive();
+    }
+    this.guestDepth++;
+    try {
+      const result = call();
+      this.rethrowFailure();
+      return result;
+    } catch (error) {
+      if (this.state !== "poisoned") {
+        this.failure = error;
+        this.state = "poisoned";
+        this.callbacks.clear();
+      }
+      throw this.failure;
+    } finally {
+      this.guestDepth--;
+    }
+  }
+
+  private rethrowFailure(): void {
+    if (this.state === "poisoned") throw this.failure;
+  }
+
+  private ensureIdle(operation: string): void {
+    if (this.guestDepth !== 0) throw new Error(`${operation} is not reentrant`);
+  }
 
   static async load(bytes: BufferSource): Promise<LvglRuntime> {
     const snapshot = (ArrayBuffer.isView(bytes)
@@ -164,7 +201,9 @@ export class LvglRuntime {
   }
 
   private ensureActive(): void {
-    if (!this.active) throw new Error("LVGL runtime is closed");
+    if (this.state !== "ready") {
+      throw new Error(`LVGL runtime is ${this.state}${this.state === "poisoned" ? " after a failed guest call" : ""}`);
+    }
   }
 
   private view(): DataView {
@@ -179,7 +218,7 @@ export class LvglRuntime {
       new Uint8Array(this.raw.memory.buffer)[pointer + bytes.byteLength] = 0;
       return callback(pointer);
     } finally {
-      this.raw.lvw_free(pointer);
+      if (this.state === "ready") this.raw.lvw_free(pointer);
     }
   }
 
@@ -193,7 +232,7 @@ export class LvglRuntime {
       view.setUint32(pointer + 4, ABI_VERSION, true);
       return callback(pointer);
     } finally {
-      this.raw.lvw_free(pointer);
+      if (this.state === "ready") this.raw.lvw_free(pointer);
     }
   }
 
@@ -255,17 +294,12 @@ export class LvglRuntime {
 
   step(elapsedMs: number): StepResult {
     this.ensureActive();
-    if (this.stepping) throw new Error("lvw_step is not reentrant");
-    this.stepping = true;
-    try {
-      return this.withStruct(16, (pointer) => {
-        check(this.raw.lvw_step(elapsedMs, pointer), "lvw_step");
-        const view = this.view();
-        return { nextMs: view.getUint32(pointer + 8, true), framesChanged: view.getUint32(pointer + 12, true) };
-      });
-    } finally {
-      this.stepping = false;
-    }
+    this.ensureIdle("lvw_step");
+    return this.withStruct(16, (pointer) => {
+      check(this.raw.lvw_step(elapsedMs, pointer), "lvw_step");
+      const view = this.view();
+      return { nextMs: view.getUint32(pointer + 8, true), framesChanged: view.getUint32(pointer + 12, true) };
+    });
   }
 
   readFrame(display: Display): Frame {
@@ -300,6 +334,7 @@ export class LvglRuntime {
   }
 
   onEvent(object: ObjectRef, code: number, callback: (code: number) => void): void {
+    this.ensureActive();
     object.assertOwner(this);
     const id = this.nextCallbackId++;
     this.callbacks.set(id, (_object, eventCode) => callback(eventCode));
@@ -307,7 +342,9 @@ export class LvglRuntime {
   }
 
   private dispatch(callbackId: number, object: number, code: number): void {
+    this.rethrowFailure();
     this.callbacks.get(callbackId)?.(object, code);
+    this.rethrowFailure();
   }
 
   get clickedEvent(): number { return this.raw.lvw_event_clicked(); }
@@ -352,9 +389,15 @@ export class LvglRuntime {
 
   shutdown(): void {
     this.ensureActive();
-    check(this.raw.lvw_shutdown(), "lvw_shutdown");
-    this.active = false;
-    this.callbacks.clear();
+    this.ensureIdle("lvw_shutdown");
+    this.state = "closing";
+    try {
+      const status = this.raw.lvw_shutdown();
+      this.state = "closed";
+      check(status, "lvw_shutdown");
+    } finally {
+      this.callbacks.clear();
+    }
   }
 }
 

@@ -11,6 +11,7 @@
 - Generated target type graphs with record sizes, alignments, field offsets, bitfields, opaque types, aliases, and declared and canonical C function signatures.
 - Compiler-derived Wasm function signatures, linked-core signature checks, and verification records tied to API and core hashes.
 - Generated TypeScript `lv_*` calls with aggregate pointer semantics, bigint arguments and results, exact-core identity checks, and guards after runtime shutdown.
+- Shared TypeScript guest-call failure guards, explicit closing state, and lifecycle reentry checks in the host and event bridge.
 - Strict TypeScript checks for generated bindings and the runtime, with locked JavaScript dependencies.
 - Browser/Bun and Rust hosts using the same Wasm module, with resource and pointer interaction checks.
 - Reusable Rust host library with checked memory copies, synchronous event handlers, and runtime shutdown and failure guards.
