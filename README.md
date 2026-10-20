@@ -4,7 +4,7 @@
 
 ## Build
 
-Requires CMake 3.25+, Ninja, Python 3.9+, Bun, Rust with the `wasm32-unknown-unknown` target, and wasi-sdk 34. Set `WASI_SDK_PATH` to the SDK root or add its `bin` directory to `PATH`. Existing builds can reuse the SDK path recorded in `target/wasm/CMakeCache.txt`. CMake downloads the official LVGL 9.6.0 lite source archive and verifies the SHA-256 pinned in `CMakeLists.txt`; set `LVGL_SOURCE_DIR` to use an existing source tree.
+Requires CMake 3.25+, Ninja, Python 3.9+, Bun, Rust 1.92+ with the `wasm32-unknown-unknown` target, and wasi-sdk 34. Set `WASI_SDK_PATH` to the SDK root or add its `bin` directory to `PATH`. Existing builds can reuse the SDK path recorded in `target/wasm/CMakeCache.txt`. CMake downloads the official LVGL 9.6.0 lite source archive and verifies the SHA-256 pinned in `CMakeLists.txt`; set `LVGL_SOURCE_DIR` to use an existing source tree.
 
 ```sh
 WASI_SDK_PATH=/path/to/wasi-sdk ./scripts/build.sh
@@ -27,6 +27,18 @@ Generated files stay under `target/`:
 | `target/apps/ts/app.js` | TypeScript sample application |
 | `target/apps/{c,cpp,rust}/app.wasm` | C, C++, and Rust sample applications |
 | `target/rust/` | Rust host build cache |
+
+## Quality checks
+
+Install `wasm-tools`, `rustfmt`, and `clippy` in addition to the build prerequisites, then run:
+
+```sh
+bun run quality
+```
+
+This command rebuilds the core, generated API wrappers, C demo, browser bundles, and application samples before validating all five Wasm modules. It runs the Bun tests, Rust formatting checks, Clippy with warnings denied for both Rust packages, host tests, and the Rust host's rendering/input checks. Every command stops on failure. Rust builds use the checked-in lockfiles. `bun run test` runs only the repository's `tests/` directory and requires existing build outputs.
+
+The GitHub Actions quality workflow runs the same command on Ubuntu 24.04 with Bun 1.3.14, Rust 1.92.0, wasi-sdk 34, and wasm-tools 1.246.2. SDK and Wasm tool downloads are verified against pinned SHA-256 values.
 
 ## LVGL Studio
 
@@ -57,12 +69,12 @@ JavaScript applications define `main(api)` and may use the runtime, display, scr
 ## Other hosts
 
 ```sh
-bun test
+bun run test
 CARGO_TARGET_DIR=target/rust cargo run --manifest-path bindings/rust/Cargo.toml
 python3 -m http.server 8765
 ```
 
-Open `http://127.0.0.1:8765/examples/browser/` after starting the server. The browser example renders a button and a BMP resource; pointer input changes the button label. The Rust example checks rendering, resource pixels, input, callbacks, and shutdown. `bun run quality` builds all browser bundles and application samples, then runs the test suite.
+Open `http://127.0.0.1:8765/examples/browser/` after starting the server. The browser example renders a button and a BMP resource; pointer input changes the button label. The Rust example checks rendering, resource pixels, input, callbacks, and shutdown.
 
 Select the C toolchain in Studio and open **C API preview**. The Studio workspace shifts left to show the preview panel. Opening `direct_api.c` shifts the workspace and preview left again, with the source in a second panel on the right. [`examples/c/direct_api.c`](examples/c/direct_api.c) creates the button and handles its click with native `lv_*` calls. `scripts/build.sh` links that C source and LVGL into a separate Wasm module at `target/wasm/examples/c/liblvgl-c-demo.wasm`. This linked module is separate from Studio's uploaded application ABI, which uses `lvw_app` imports.
 

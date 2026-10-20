@@ -18,8 +18,11 @@
 - Syntax highlighting for source files in both Studio side panels, with light and dark color palettes.
 - Open source panels refresh from repository files on localhost.
 - Build scripts resolve wasi-sdk from `WASI_SDK_PATH`, the existing CMake cache, or `PATH` instead of a machine-specific path.
+- Unified quality command that rebuilds all artifacts, validates Wasm modules, runs Bun tests, and checks both Rust packages and the Rust host.
+- GitHub Actions quality workflow with pinned Bun, Rust, wasi-sdk, and wasm-tools versions and verified tool downloads.
 
 ### Fixed
 
 - Builds recover from missing cached LVGL sources and resolve SDK, source, and generator configuration paths when invoked outside the repository.
 - LVGL source downloads use a SHA-256-verified release archive with a GitHub API download fallback.
+- Bun test discovery is restricted to repository tests, excluding copies under build directories.

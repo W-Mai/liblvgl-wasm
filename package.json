@@ -11,7 +11,7 @@
     "build:studio": "bun run build:studio-runtime && bun build studio/src/main.ts --target browser --outfile target/studio/main.js",
     "build:apps": "./toolchains/c/build.sh && ./toolchains/cpp/build.sh && ./toolchains/rust/build.sh",
     "build:ts-app": "bun build toolchains/ts/app.ts --target browser --format iife --outfile target/apps/ts/app.js",
-    "test": "bun test",
-    "quality": "bun run build:ts && bun run build:studio && bun run build:apps && bun run build:ts-app && bun run test"
+    "test": "bun test ./tests",
+    "quality": "./scripts/quality.sh"
   }
 }
