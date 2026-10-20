@@ -4,6 +4,7 @@
 
 ### Added
 
+- Native event parameters in TypeScript and Rust callbacks for synchronous drawing, draw-task changes, and event propagation control, with nested event context and synchronous TypeScript handler checks.
 - LVGL 9.6.0 WASIp1 reactor with a versioned host bridge for display, input, time, resources, events, and frame output.
 - Generated public API inventory and linker exports for directly callable functions.
 - Generated ABI wrappers for aggregate values and inline LVGL functions, with export coverage checks.

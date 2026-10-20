@@ -385,6 +385,17 @@ impl<'a> CallbackContext<'a> {
         self.reborrow().into_raw()
     }
 
+    /// Borrow the native event pointer for the innermost active bridge event.
+    ///
+    /// The event and its layer, task, and parameter pointers are valid only during the synchronous event call. Nested callbacks may access a still-active outer event. Do not retain these pointers after that event returns. A missing export or no active event is a recoverable error; closing and poisoned runtimes reject access.
+    pub fn event_pointer(&mut self) -> Result<UnsafePointer> {
+        let pointer = self.call_raw::<(), u32>("lvw_event_current", ())?;
+        if pointer == 0 {
+            return Err(Error::msg("no active native LVGL event"));
+        }
+        Ok(UnsafePointer(pointer))
+    }
+
     /// Call a core export synchronously with its Wasm parameter and result types.
     ///
     /// Lookup and signature errors leave the instance usable. A guest trap, handler error, or panic permanently poisons it, even when caught inside a callback. Raw lifecycle functions remain subject to LVGL's preconditions; use [`Runtime::shutdown`] for cleanup.

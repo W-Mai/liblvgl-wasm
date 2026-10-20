@@ -91,6 +91,7 @@ static uint32_t initialized;
 static uint32_t running;
 static uint32_t callback_depth;
 static uint32_t anim_restricted_depth;
+static lv_event_t *current_event;
 
 __attribute__((import_module("lvw"), import_name("event")))
 extern void lvw_host_event(uint32_t callback_id, uint32_t object, uint32_t code);
@@ -188,9 +189,12 @@ static void input_callback(lv_indev_t *indev, lv_indev_data_t *data) {
 static void event_callback(lv_event_t *event) {
     uint32_t callback_id = pointer_value(lv_event_get_user_data(event));
     uint32_t object = pointer_value(lv_event_get_current_target_obj(event));
+    lv_event_t *previous = current_event;
+    current_event = event;
     callback_depth++;
     lvw_host_event(callback_id, object, (uint32_t)lv_event_get_code(event));
     callback_depth--;
+    current_event = previous;
 }
 
 static void timer_callback(lv_timer_t *timer) {
@@ -627,6 +631,7 @@ LVW_EXPORT(lvw_event_remove) int32_t lvw_event_remove(uint32_t object, uint32_t 
 
 LVW_EXPORT(lvw_event_clicked) uint32_t lvw_event_clicked(void) { return LV_EVENT_CLICKED; }
 LVW_EXPORT(lvw_event_delete) uint32_t lvw_event_delete(void) { return LV_EVENT_DELETE; }
+LVW_EXPORT(lvw_event_current) uint32_t lvw_event_current(void) { return pointer_value(current_event); }
 
 LVW_EXPORT(lvw_timer_create) uint32_t lvw_timer_create(uint32_t period_ms, uint32_t user_data,
                                                        uint32_t callback_id) {

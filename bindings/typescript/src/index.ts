@@ -34,6 +34,7 @@ interface RawExports extends AnimationExports, ObserverExports {
   lvw_resource_put(name: number, nameLength: number, bytes: number, byteLength: number): number;
   lvw_event_add(object: number, code: number, callbackId: number): number;
   lvw_event_remove(object: number, callbackId: number): number;
+  lvw_event_current?(): number;
   lvw_event_clicked(): number;
   lvw_event_delete(): number;
   lvw_timer_create?(periodMs: number, userData: number, callbackId: number): number;
@@ -604,7 +605,13 @@ export class LvglRuntime {
 
   private dispatch(callbackId: number, _object: number, code: number): void {
     this.rethrowFailure();
-    this.callbacks.get(callbackId >>> 0)?.callback(code);
+    const result: unknown = this.callbacks.get(callbackId >>> 0)?.callback(code);
+    if (result !== null && (typeof result === "object" || typeof result === "function")
+        && typeof (result as { then?: unknown }).then === "function") {
+      void Promise.resolve(result).catch(() => {});
+      this.rethrowFailure();
+      throw new Error("LVGL event callbacks must finish synchronously; thenables are not supported");
+    }
     this.rethrowFailure();
   }
 
@@ -636,6 +643,17 @@ export class LvglRuntime {
 
   get clickedEvent(): number { return this.raw.lvw_event_clicked(); }
   get deleteEvent(): number { return this.raw.lvw_event_delete(); }
+
+  /** Borrow the innermost active bridge event. The event and its layer, task, and parameter pointers must not be used after that synchronous event returns. */
+  eventPointer(): UnsafePointer {
+    this.ensureActive();
+    if (typeof this.raw.lvw_event_current !== "function") {
+      throw new Error("missing Wasm function: lvw_event_current (required for native event parameters)");
+    }
+    const pointer = this.raw.lvw_event_current() >>> 0;
+    if (!pointer) throw new Error("no active LVGL event");
+    return pointer;
+  }
 
   setObjectSize(object: ObjectRef, width: number, height: number): void {
     object.assertOwner(this);

@@ -73,6 +73,8 @@ int32_t lvw_event_add(uint32_t object, uint32_t event_code, uint32_t callback_id
 int32_t lvw_event_remove(uint32_t object, uint32_t callback_id);
 uint32_t lvw_event_clicked(void);
 uint32_t lvw_event_delete(void);
+/* Borrowed until the active synchronous event callback returns; zero outside an event. */
+uint32_t lvw_event_current(void);
 uint32_t lvw_timer_create(uint32_t period_ms, uint32_t user_data, uint32_t callback_id);
 int32_t lvw_timer_delete(uint32_t timer, uint32_t callback_id);
 uint32_t lvw_anim_start(uint32_t descriptor, uint32_t callback_id, uint32_t exec_slot,

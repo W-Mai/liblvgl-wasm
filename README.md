@@ -158,6 +158,38 @@ fn main() -> Result<()> {
 
 Guest traps, handler errors, and handler panics poison the Rust runtime. Catching an inner failure does not recover it; all later calls and memory access are rejected. Export lookup, signature mismatch, and checked memory range errors leave the instance usable. Calling `lvw_step` or `lvw_shutdown` during a guest call is rejected before guest entry. Shutdown DELETE handlers can update host data, but context calls and memory access are rejected while closing. Normal cleanup closes the runtime, including a nonzero cleanup status; a trap or panic poisons it. Calling `lvw_shutdown` through `call_raw` applies the same closing rules. Dropping a runtime releases its store without executing guest code or user callbacks.
 
+### Native event parameters and drawing
+
+`runtime.eventPointer()` in TypeScript and `CallbackContext::event_pointer()` in Rust return the native `lv_event_t` pointer for the innermost active bridge event. Use the generated `lv_event_*` methods to read its original target, current target, parameters, draw layer, or draw task, and to stop processing or bubbling. Nested events restore the outer pointer when they return. A non-event callback nested inside an event can still access that active event.
+
+Drawing uses the existing event subscription API. For example, after allocating and initializing a rectangle descriptor and area in core memory:
+
+```ts
+screen.on(LV_EVENT_DRAW_MAIN_END, () => {
+  const event = runtime.eventPointer();
+  const layer = runtime.unsafe.lv_event_get_layer(event);
+  runtime.unsafe.lv_draw_rect(layer, rectangleDescriptor, area);
+});
+```
+
+```rust
+runtime.set_event_handler_with_context(move |context, event| {
+    if event.code == values::LV_EVENT_DRAW_MAIN_END as u32 {
+        let pointer = context.event_pointer()?;
+        let mut api = context.raw()?;
+        let layer = api.lv_event_get_layer(pointer)?;
+        api.lv_draw_rect(layer, rectangle_descriptor, area)?;
+    }
+    Ok(())
+})?;
+```
+
+The Rust handler receives IDs registered with `lvw_event_add`. Allocate descriptors with the generated size/layout constants and initialize them with `lv_draw_rect_dsc_init`. Enable `lv_obj_set_send_draw_task_events` to receive `LV_EVENT_DRAW_TASK_ADDED`; `lv_event_get_draw_task` and the generated task getters expose the descriptor for synchronous changes before dispatch.
+
+Event, layer, task, and parameter pointers are borrowed for the synchronous event call. Do not retain them or memory views into their storage after that call. Returned `UnsafePointer` values do not enforce this lifetime. During drawing, do not change the object tree, styles, or layout, delete objects, or reenter refresh. Do not force draw-task dispatch while handling `LV_EVENT_DRAW_TASK_ADDED`. These interfaces use LVGL's software renderer; they do not install custom draw units or image decoders.
+
+Event handlers must finish synchronously. TypeScript rejects Promise and thenable results and poisons the runtime. The pointer getter rejects calls with no active event and cores without `lvw_event_current`, leaving the runtime usable. Closing, closed, and poisoned runtimes reject access. This optional export preserves the existing three-argument `lvw.event` import and bridge ABI 1; older cores retain ordinary event notifications.
+
 ### Native timers
 
 `runtime.createTimer(periodMs, callback, userData = 0)` creates a TypeScript `Timer`. Its callback receives that timer and runs synchronously during LVGL timer handling. `timer.handle` returns its active native pointer; `timer.cancel()` and `runtime.cancelTimer(timer)` cancel it. Promise and thenable callback results are rejected and poison the runtime.
