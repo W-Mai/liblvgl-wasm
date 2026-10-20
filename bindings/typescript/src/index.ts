@@ -1,3 +1,12 @@
+import { sha256 } from "@noble/hashes/sha2.js";
+import {
+  bindingIdentity, createUnsafeLvglApi,
+  type UnsafeFunctionPointer, type UnsafeLvglApi, type UnsafePointer,
+} from "../../../target/typescript/raw.ts";
+
+export { bindingIdentity };
+export type { UnsafeFunctionPointer, UnsafeLvglApi, UnsafePointer };
+
 const ABI_VERSION = 1;
 const PIXEL_XRGB8888 = 1;
 const INPUT_POINTER = 1;
@@ -52,6 +61,13 @@ export interface StepResult {
   framesChanged: number;
 }
 
+/** Calls use pointers into this core's memory. The caller owns bounds, alignment, initialization, and lifetime. Recreate memory views after memory growth. Pair scratch allocations with lvw_free; use runtime methods for lifecycle. */
+export interface UnsafeLvgl extends UnsafeLvglApi {
+  readonly memory: WebAssembly.Memory;
+  lvw_alloc(bytes: number): UnsafePointer;
+  lvw_free(pointer: UnsafePointer): void;
+}
+
 function check(status: number, operation: string): void {
   if (status !== 0) throw new Error(`${operation} failed (${status})`);
 }
@@ -61,14 +77,19 @@ export class LvglRuntime {
   private nextCallbackId = 1;
   private active = true;
   private stepping = false;
+  private unsafeApi?: UnsafeLvgl;
 
-  private constructor(private readonly raw: RawExports) {}
+  private constructor(private readonly raw: RawExports, private readonly coreHash: string) {}
 
   static async load(bytes: BufferSource): Promise<LvglRuntime> {
+    const snapshot = (ArrayBuffer.isView(bytes)
+      ? new Uint8Array(bytes.buffer, bytes.byteOffset, bytes.byteLength)
+      : new Uint8Array(bytes)).slice();
+    const coreHash = Array.from(sha256(snapshot), (byte) => byte.toString(16).padStart(2, "0")).join("");
     let memory: WebAssembly.Memory | undefined;
     let runtime: LvglRuntime | undefined;
     const decoder = new TextDecoder();
-    const module = await WebAssembly.compile(bytes);
+    const module = await WebAssembly.compile(snapshot);
     const imports = WebAssembly.Module.imports(module).map((item) => `${item.module}.${item.name}`);
     const expected = new Set(["lvw.event", "wasi_snapshot_preview1.fd_close", "wasi_snapshot_preview1.fd_write"]);
     for (const item of imports) {
@@ -105,8 +126,35 @@ export class LvglRuntime {
     raw._initialize();
     if (raw.lvw_abi_version() !== ABI_VERSION) throw new Error("unsupported bridge ABI");
     check(raw.lvw_init(), "lvw_init");
-    runtime = new LvglRuntime(raw);
+    runtime = new LvglRuntime(raw, coreHash);
     return runtime;
+  }
+
+  /** Generated lv_* calls for the exact core recorded in bindingIdentity. */
+  get unsafe(): UnsafeLvgl {
+    this.ensureActive();
+    if (this.coreHash !== bindingIdentity.wasm_sha256) {
+      throw new Error("LVGL bindings do not match this core; generate bindings for the selected core");
+    }
+    if (!this.unsafeApi) {
+      const runtime = this;
+      this.unsafeApi = Object.freeze({
+        ...createUnsafeLvglApi(this.raw as unknown as Record<string, unknown>, () => this.ensureActive()),
+        get memory(): WebAssembly.Memory {
+          runtime.ensureActive();
+          return runtime.raw.memory;
+        },
+        lvw_alloc(bytes: number): UnsafePointer {
+          runtime.ensureActive();
+          return runtime.raw.lvw_alloc(bytes);
+        },
+        lvw_free(pointer: UnsafePointer): void {
+          runtime.ensureActive();
+          runtime.raw.lvw_free(pointer);
+        },
+      });
+    }
+    return this.unsafeApi;
   }
 
   private ensureActive(): void {

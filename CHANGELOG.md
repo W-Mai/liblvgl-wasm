@@ -10,6 +10,8 @@
 - Generated enum and macro constants evaluated by the Wasm target compiler, including integer types and widths, exact string bytes, and explicit classifications for unsupported expressions.
 - Generated target type graphs with record sizes, alignments, field offsets, bitfields, opaque types, aliases, and declared and canonical C function signatures.
 - Compiler-derived Wasm function signatures, linked-core signature checks, and verification records tied to API and core hashes.
+- Generated TypeScript `lv_*` calls with aggregate pointer semantics, bigint arguments and results, exact-core identity checks, and guards after runtime shutdown.
+- Strict TypeScript checks for generated bindings and the runtime, with locked JavaScript dependencies.
 - Browser/Bun and Rust hosts using the same Wasm module, with resource and pointer interaction checks.
 - LVGL Studio with default or user-selected cores, application and resource uploads, interactive preview, console, and isolated browser runner.
 - JavaScript, TypeScript, C, C++, and Rust application samples and build commands. Compiled Wasm applications use a versioned host ABI.

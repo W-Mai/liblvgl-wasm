@@ -5,6 +5,7 @@ root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 cd "$root"
 
 ./scripts/build.sh
+bun run typecheck
 
 for module in \
     target/wasm/liblvgl.wasm \

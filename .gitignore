@@ -1,3 +1,4 @@
 /target/
+/node_modules/
 /bindings/rust/target/
 .DS_Store

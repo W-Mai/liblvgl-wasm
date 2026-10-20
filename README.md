@@ -9,6 +9,7 @@ Requires CMake 3.25+, Ninja, Python 3.9+, Bun, Rust 1.92+ with the `wasm32-unkno
 On Ubuntu 24.04, install `libtinfo6`, `libstdc++6`, and `libgcc-s1` for the SDK's shared libraries. Keep the bundled `libclang`, LLVM, and `libedit` libraries and their symlinks intact.
 
 ```sh
+bun install --frozen-lockfile
 WASI_SDK_PATH=/path/to/wasi-sdk ./scripts/build.sh
 ```
 
@@ -26,6 +27,7 @@ Generated files stay under `target/`:
 | `target/wasm/examples/c/liblvgl-c-demo.wasm` | C demo linked with LVGL |
 | `target/browser/main.js` | Browser example bundle |
 | `target/typescript/index.js` | TypeScript host adapter bundle |
+| `target/typescript/raw.ts` | Generated typed `lv_*` calls, export mapping, and core identity |
 | `target/studio/{main,worker}.js` | Studio page and isolated runner bundles |
 | `target/apps/ts/app.js` | TypeScript sample application |
 | `target/apps/{c,cpp,rust}/app.wasm` | C, C++, and Rust sample applications |
@@ -39,7 +41,7 @@ Install `wasm-tools`, `rustfmt`, and `clippy` in addition to the build prerequis
 bun run quality
 ```
 
-This command rebuilds the core, generated API wrappers, C demo, browser bundles, and application samples before validating all five Wasm modules. It runs the Bun tests, Rust formatting checks, Clippy with warnings denied for both Rust packages, host tests, and the Rust host's rendering/input checks. Every command stops on failure. Rust builds use the checked-in lockfiles. `bun run test` runs only the repository's `tests/` directory and requires existing build outputs.
+This command rebuilds the core, generated API wrappers, TypeScript bindings, C demo, browser bundles, and application samples before validating all five Wasm modules. It runs strict TypeScript checks for the generated bindings and runtime, Bun tests, Rust formatting checks, Clippy with warnings denied for both Rust packages, host tests, and the Rust host's rendering/input checks. Every command stops on failure. Dependency installation and Rust builds use the checked-in lockfiles. `bun run test` runs only the repository's `tests/` directory and requires existing build outputs.
 
 The GitHub Actions quality workflow runs the same command on Ubuntu 24.04 with Bun 1.3.14, Rust 1.92.0, wasi-sdk 34, and wasm-tools 1.246.2. SDK and Wasm tool downloads are verified against pinned SHA-256 values.
 
@@ -81,11 +83,28 @@ Open `http://127.0.0.1:8765/examples/browser/` after starting the server. The br
 
 Select the C toolchain in Studio and open **C API preview**. The Studio workspace shifts left to show the preview panel. Opening `direct_api.c` shifts the workspace and preview left again, with the source in a second panel on the right. [`examples/c/direct_api.c`](examples/c/direct_api.c) creates the button and handles its click with native `lv_*` calls. `scripts/build.sh` links that C source and LVGL into a separate Wasm module at `target/wasm/examples/c/liblvgl-c-demo.wasm`. This linked module is separate from Studio's uploaded application ABI, which uses `lvw_app` imports.
 
+### TypeScript raw API
+
+`LvglRuntime.unsafe` exposes every supported function under its original `lv_*` name. The generated bindings map aggregate functions to their `lvw_api_*` exports. `i64` arguments and results use `bigint`; raw `i32` results retain Wasm's signed JavaScript representation.
+
+```ts
+const api = runtime.unsafe;
+const button = api.lv_button_create(screen.handle);
+api.lv_obj_set_size(button, 180, 64);
+const value = api.lv_pow(10n, 6); // 1000000n
+```
+
+`UnsafePointer` is an offset in the selected core's memory. The caller supplies valid bounds, alignment, initialization, and lifetimes. Read the target layouts in `api.json` when allocating aggregate storage: `lv_color_hex(out, rgb)` writes to `out`, while `lv_obj_set_style_bg_color(object, color, selector)` reads a color through a pointer. Strings use NUL-terminated bytes in core memory. `api.memory` exposes that memory; recreate views after calls that may grow it. Pair scratch allocations from `api.lvw_alloc` with `api.lvw_free` and check for a zero allocation result. `UnsafeFunctionPointer` represents a Wasm table index returned by callback getters; it is not a memory address or a callable JavaScript function.
+
+Generated calls require the exact core SHA-256 embedded in `bindingIdentity`. Loading snapshots the supplied bytes before hashing and compilation. A different bridge-compatible core can use the existing convenience API; accessing `unsafe` reports a binding mismatch. Generate matching bindings when rebuilding a core. Every generated call checks runtime state, including methods saved before shutdown. Use `LvglRuntime` for initialization, shutdown, and bridge-managed display/input lifetimes; raw lifecycle calls can invalidate its bookkeeping.
+
+`bun run generate:ts` generates bindings from the existing API report, core, and signature verification record. Missing or stale verification stops generation and removes the previous generated source. `build:ts`, `build:browser`, and `build:studio-worker` run this check before bundling. `bun run typecheck` checks the generated source and runtime using the pinned TypeScript compiler. The bundle includes SHA-256 from `@noble/hashes`, allowing core checks in Studio's isolated worker without WebCrypto. The generated `raw.ts` is self-contained, and `index.js` can be copied with its matching core; the repository runtime source imports generated files and requires the repository build layout.
+
 ## Interface
 
 The bridge ABI version is `1`. A Wasm instance owns one LVGL runtime and may create multiple displays. `lvw_step(elapsed_ms)` advances LVGL time and returns the next timer interval and frame count. Frames use XRGB8888 bytes in blue, green, red, unused order. Hosts must read or copy frame data before a call that can change the framebuffer. Each host must call `_initialize` before `lvw_init`.
 
-The generated API report classifies declarations as `direct_export`, `abi_shim`, `compile_disabled`, or `unsupported`. Direct functions keep their `lv_*` export names. Aggregate values and inline functions use generated `lvw_api_lv_*` wrappers: aggregate arguments are pointers into Wasm memory, and aggregate returns use an output pointer. Aggregate classification uses canonical types, including qualified records and typedef chains; wrapper storage preserves the record layout while removing top-level C qualifiers. `target/wasm/api.json` records each export name, wrapper signature, and unsupported reason. Function pointer callbacks and variadic functions remain unsupported by the raw API generator. The TypeScript adapter provides a typed interface for the bridge and the APIs used by its example.
+The generated API report classifies declarations as `direct_export`, `abi_shim`, `compile_disabled`, or `unsupported`. Direct functions keep their `lv_*` export names. Aggregate values and inline functions use generated `lvw_api_lv_*` wrappers: aggregate arguments are pointers into Wasm memory, and aggregate returns use an output pointer. Aggregate classification uses canonical types, including qualified records and typedef chains; wrapper storage preserves the record layout while removing top-level C qualifiers. `target/wasm/api.json` records each export name, wrapper signature, and unsupported reason. Installing host callbacks through raw function pointers and calling variadic functions remain unsupported by the generator. The TypeScript adapter provides typed raw calls for all supported APIs alongside the bridge convenience API.
 
 The report also includes `constants` and `constant_summary` for active `LV_*` and `LVGL_*` enums and macros visible through the configured public header. Values are evaluated by the same Wasm target compiler as the core. Integers include the C type, bit width, signedness, and a decimal string value to preserve 64-bit precision. Strings include exact bytes in `bytes_hex`, their length and termination flag, and UTF-8 text when valid. Function macros, empty macros, and unsupported expressions have separate classifications; symbol addresses require an instance-specific accessor and are not exported as numeric constants. Private `_LV_*` names and declarations hidden by disabled configuration are outside this inventory. Function counts in `summary` remain separate from constant counts.
 
