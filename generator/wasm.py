@@ -1,11 +1,11 @@
-"""Read scalar function signatures from core Wasm modules and object files.
+"""Read scalar function and exception tag signatures from core Wasm modules and object files.
 
 This checks signature sections and export indices, not instructions or complete module validity. Table, memory, and global definitions supply only their counts; their payloads must be checked separately with a full Wasm validator.
 """
 
 
 SCALARS = {0x7F: "i32", 0x7E: "i64", 0x7D: "f32", 0x7C: "f64"}
-KINDS = {0: "function", 1: "table", 2: "memory", 3: "global"}
+KINDS = {0: "function", 1: "table", 2: "memory", 3: "global", 4: "tag"}
 REFERENCES = {0x70, 0x6F}
 
 
@@ -53,6 +53,14 @@ class Reader:
             values.append(SCALARS[kind])
         return values
 
+    def tag_type(self, types):
+        if self.byte() != 0:
+            raise ValueError(f"{self.context}: unsupported tag attribute")
+        signature = indexed(types, self.u32(), f"{self.context} tag type")
+        if signature["results"]:
+            raise ValueError(f"{self.context}: tag type must not have results")
+        return signature
+
     def limits(self, kind):
         flags = self.byte()
         accepted = (0, 1, 3) if kind == "memory" else (0, 1)
@@ -77,7 +85,7 @@ def indexed(items, index, label):
 
 
 def read_module(data: bytes) -> dict:
-    """Return imports and exports, including their numeric function signatures."""
+    """Return imports and exports, including their numeric function and tag signatures."""
     module = Reader(data, "module")
     if bytes(module.take(8)) != b"\x00asm\x01\x00\x00\x00":
         raise ValueError("expected a core Wasm module with version 1")
@@ -88,7 +96,7 @@ def read_module(data: bytes) -> dict:
         if section_id == 0:
             section.name()
             continue
-        if section_id not in range(1, 13):
+        if section_id not in range(1, 14):
             raise ValueError(f"unsupported Wasm section {section_id}")
         if section_id in sections:
             raise ValueError(f"duplicate Wasm section {section_id}")
@@ -106,6 +114,7 @@ def read_module(data: bytes) -> dict:
 
     imports = []
     functions = []
+    tags = []
     counts = {"table": 0, "memory": 0, "global": 0}
     section = sections.get(2)
     if section is not None:
@@ -118,6 +127,10 @@ def read_module(data: bytes) -> dict:
             if kind == "function":
                 signature = indexed(types, section.u32(), "import function type")
                 functions.append(signature)
+                item["signature"] = signature
+            elif kind == "tag":
+                signature = section.tag_type(types)
+                tags.append(signature)
                 item["signature"] = signature
             elif kind == "table":
                 reference = section.byte()
@@ -132,7 +145,7 @@ def read_module(data: bytes) -> dict:
                     raise ValueError(f"section 2: unsupported global value type 0x{value:02x}")
                 if section.byte() not in (0, 1):
                     raise ValueError("section 2: invalid global mutability")
-            if kind != "function":
+            if kind not in ("function", "tag"):
                 counts[kind] += 1
             imports.append(item)
         section.finish()
@@ -148,6 +161,12 @@ def read_module(data: bytes) -> dict:
         if section is not None:
             counts[kind] += section.u32()
 
+    section = sections.get(13)
+    if section is not None:
+        for _ in range(section.u32()):
+            tags.append(section.tag_type(types))
+        section.finish()
+
     exports = {}
     section = sections.get(7)
     if section is not None:
@@ -161,6 +180,8 @@ def read_module(data: bytes) -> dict:
             item = {"kind": kind}
             if kind == "function":
                 item["signature"] = indexed(functions, index, f"export {name!r} function")
+            elif kind == "tag":
+                item["signature"] = indexed(tags, index, f"export {name!r} tag")
             elif index >= counts[kind]:
                 raise ValueError(f"export {name!r} {kind} index {index} is out of bounds ({counts[kind]})")
             exports[name] = item

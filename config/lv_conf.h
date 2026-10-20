@@ -14,7 +14,8 @@
 #define LV_USE_TINY_TTF 1
 #define LV_USE_LOG 0
 #define LV_USE_THORVG 0
-#define LV_USE_FREETYPE 0
+#define LV_USE_FREETYPE 1
+#define LV_FREETYPE_USE_LVGL_PORT 1
 #define LV_USE_SVG 0
 #define LV_USE_LOTTIE 0
 

@@ -23,6 +23,7 @@ FetchContent_Declare(lvgl
     TLS_VERIFY ON
 )
 FetchContent_MakeAvailable(lvgl)
+include(cmake/freetype.cmake)
 include(cmake/observer.cmake)
 include(cmake/decoder.cmake)
 include(cmake/gif.cmake)

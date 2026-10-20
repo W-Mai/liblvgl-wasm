@@ -4,6 +4,8 @@
 
 ### Added
 
+- FreeType 2.14.3 bitmap fonts from uploaded resources, with generated APIs, shared font caches, and glyph, kerning, fallback, and lifetime checks in both hosts.
+- Standard WebAssembly exception handling for font validation, Wasmtime configuration, and exception tag metadata parsing.
 - TinyTTF rendering checks in both hosts for glyph coverage, metrics, kerning, fallback, cache invalidation, and font resource lifetimes.
 - GIF playback checks in both hosts for frame pixels, timing, queries, loops, source changes, and completion callbacks.
 - PNG rendering checks for RGB8, RGBA8, indexed transparency, and Adam7 input in both hosts, including malformed-image recovery and shared resource lifetimes.

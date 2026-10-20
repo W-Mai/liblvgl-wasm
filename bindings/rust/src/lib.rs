@@ -10,7 +10,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use sha2::{Digest, Sha256};
 use wasmtime::{
-    AsContextMut, Caller, Engine, ExternType, Instance, Linker, Memory, Module, Store,
+    AsContextMut, Caller, Config, Engine, ExternType, Instance, Linker, Memory, Module, Store,
     StoreContextMut,
 };
 use wasmtime::{WasmParams, WasmResults};
@@ -160,7 +160,9 @@ impl Runtime {
     /// Instantiate core bytes, initialize the reactor, and validate bridge ABI 1.
     pub fn load(bytes: &[u8]) -> Result<Self> {
         let core_hash = format!("{:x}", Sha256::digest(bytes));
-        let engine = Engine::default();
+        let mut config = Config::new();
+        config.wasm_exceptions(true);
+        let engine = Engine::new(&config)?;
         let module = Module::from_binary(&engine, bytes)?;
         for import in module.imports() {
             if !matches!(

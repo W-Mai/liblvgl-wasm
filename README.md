@@ -4,7 +4,9 @@
 
 ## Build
 
-Requires CMake 3.25+, Ninja, Python 3.9+, Bun, Rust 1.92+ with the `wasm32-unknown-unknown` target, and the complete wasi-sdk 34 distribution for macOS or Linux. API generation loads the SDK's bundled libclang and uses Python's standard library; keep the SDK's libraries and sysroot together. Set `WASI_SDK_PATH` to the SDK root or add its `bin` directory to `PATH`. Existing builds can reuse the SDK path recorded in `target/wasm/CMakeCache.txt`. CMake downloads the official LVGL 9.6.0 lite source archive and verifies the SHA-256 pinned in `CMakeLists.txt`; set `LVGL_SOURCE_DIR` to use an existing source tree.
+Requires CMake 3.25+, Ninja, Python 3.9+, Bun, Rust 1.92+ with the `wasm32-unknown-unknown` target, and the complete wasi-sdk 34 distribution for macOS or Linux. API generation loads the SDK's bundled libclang and uses Python's standard library; keep the SDK's libraries and sysroot together. Set `WASI_SDK_PATH` to the SDK root or add its `bin` directory to `PATH`. Existing builds can reuse the SDK path recorded in `target/wasm/CMakeCache.txt`. CMake downloads the official LVGL 9.6.0 lite and FreeType 2.14.3 source archives and verifies their pinned SHA-256 values; set `LVGL_SOURCE_DIR` to use an existing LVGL source tree.
+
+The core and C demo require standard WebAssembly exception handling for FreeType's font validation. The Rust host enables this feature in Wasmtime. FreeType uses LVGL's memory and resource filesystem, with host environment configuration and external zlib, bzip2, PNG, HarfBuzz, and Brotli dependencies disabled. Its bundled zlib remains enabled.
 
 On Ubuntu 24.04, install `libtinfo6`, `libstdc++6`, and `libgcc-s1` for the SDK's shared libraries. Keep the bundled `libclang`, LLVM, and `libedit` libraries and their symlinks intact.
 
@@ -397,7 +399,7 @@ Each supported declaration has a `wasm_signature` with the parameter and result 
 
 ## Software rendering
 
-The software configuration enables PNG, BMP, GIF, and TinyTTF. ThorVG, FreeType, SVG, Lottie, native windows, and hardware drawing backends are disabled. The Wasm linear memory maximum is 256 MiB.
+The software configuration enables PNG, BMP, GIF, TinyTTF, and FreeType bitmap fonts. ThorVG, SVG, Lottie, native windows, and hardware drawing backends are disabled. The Wasm linear memory maximum is 256 MiB.
 
 ### PNG resources
 
@@ -468,3 +470,42 @@ Font size is measured against the font's units per em; line height and baseline 
 Release any manually acquired glyph draw data before changing size or destroying a font. Remove all label, style, and fallback references before calling `lv_tiny_ttf_destroy`; then free its borrowed bytes. Deleting labels or shutting down LVGL does not automatically destroy fonts created through these raw constructors. A fallback font must remain alive until its references and acquired glyphs have been released.
 
 Both hosts check geometric glyph pixels, fractional coverage, composite characters, kerning, fallback resolution, size changes, and shared font lifetimes. The default configuration disables TinyTTF file streaming, so `lv_tiny_ttf_create_file` is absent. The enabled memory parser ignores `data_size` and does not validate arbitrary malformed or truncated fonts; provide valid, complete font data. OpenType shaping is not supplied by this API.
+
+### FreeType fonts
+
+FreeType reads uploaded fonts through `W:` resources. The generated TypeScript and Rust APIs expose `lv_freetype_font_create`, `lv_freetype_init_font_info`, `lv_freetype_font_create_with_info`, and `lv_freetype_font_delete`. Runtime initialization and shutdown manage the FreeType library; application-created fonts require explicit deletion.
+
+```ts
+import {
+  LV_FREETYPE_FONT_RENDER_MODE_BITMAP, LV_FREETYPE_FONT_STYLE_NORMAL, LV_PART_MAIN,
+} from "./target/typescript/index.js";
+
+runtime.putResource("app.ttf", fontBytes);
+const raw = runtime.unsafe;
+const pathBytes = new TextEncoder().encode("W:app.ttf\0");
+const path = raw.lvw_alloc(pathBytes.length);
+if (!path) throw new Error("Cannot allocate font path");
+new Uint8Array(raw.memory.buffer, path, pathBytes.length).set(pathBytes);
+const font = raw.lv_freetype_font_create(path, LV_FREETYPE_FONT_RENDER_MODE_BITMAP, 32, LV_FREETYPE_FONT_STYLE_NORMAL);
+raw.lvw_free(path);
+if (!font) throw new Error("Cannot load font");
+const label = runtime.createLabel(screen);
+raw.lv_obj_set_style_text_font(label.handle, font, LV_PART_MAIN);
+runtime.setText(label, "Hello");
+runtime.step(33);
+
+label.delete();
+raw.lv_freetype_font_delete(font);
+```
+
+Resource upload copies the font bytes, and font creation copies its path. Resources remain available until shutdown. Fonts using the same path and style share a face and caches; create separate fonts for different sizes. Remove all label, style, and fallback references and release manually acquired glyph draw data before deleting a font. Deleting a label does not delete its font.
+
+The simple constructor disables kerning. To enable it, initialize an `lv_font_info_t`, set its `name`, `size`, and `kerning = LV_FONT_KERNING_NORMAL`, then call `lv_freetype_font_create_with_info`; generated layouts describe this structure. `lv_font_set_kerning` can toggle a font created with kerning enabled. FreeType's hinted metrics and small-size kerning can differ from TinyTTF.
+
+Both hosts verify TrueType glyph metrics, fractional bitmap coverage, composite characters, fallback, different sizes sharing a face, and recovery after missing or malformed font resources. Bitmap rendering does not synthesize bold outlines for ordinary non-variable fonts. Outline drawing, embedded PNG glyphs, WOFF2, and complex text shaping are not provided by this configuration.
+
+### FreeType license
+
+Portions of this software are copyright © 2026 The FreeType Project (https://freetype.org). All rights reserved. FreeType is used under the [FreeType License](third_party/freetype/FTL.TXT); [additional notices](third_party/freetype/NOTICES.txt) cover its included components. Preserve these notices when distributing the core or C demo.
+
+The build excludes FreeType's default system implementation, selects LVGL's allocator and resource streams, disables environment properties, and uses standard Wasm exception handling. FreeType source files are unchanged.
