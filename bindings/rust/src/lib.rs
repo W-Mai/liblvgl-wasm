@@ -18,6 +18,7 @@ mod generated {
 
 pub use generated::{
     API_EXPORTS, BINDING_IDENTITY, BindingIdentity, RawApi, UnsafeFunctionPointer, UnsafePointer,
+    values,
 };
 
 /// A synchronous notification from the core's event bridge.

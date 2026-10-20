@@ -28,7 +28,8 @@ Generated files stay under `target/`:
 | `target/browser/main.js` | Browser example bundle |
 | `target/typescript/index.js` | TypeScript host adapter bundle |
 | `target/typescript/raw.ts` | Generated typed `lv_*` calls, export mapping, and core identity |
-| `target/rust-bindings/raw.rs` | Generated Rust `lv_*` methods, pointer types, export mapping, and core identity |
+| `target/typescript/values.ts` | Generated constants, named type layouts, and matching identity |
+| `target/rust-bindings/raw.rs` | Generated Rust `lv_*` methods, values module, pointer types, export mapping, and core identity |
 | `target/studio/{main,worker}.js` | Studio page and isolated runner bundles |
 | `target/apps/ts/app.js` | TypeScript sample application |
 | `target/apps/{c,cpp,rust}/app.wasm` | C, C++, and Rust sample applications |
@@ -99,7 +100,7 @@ const value = api.lv_pow(10n, 6); // 1000000n
 
 Generated calls require the exact core SHA-256 embedded in `bindingIdentity`. Loading snapshots the supplied bytes before hashing and compilation. A different bridge-compatible core can use the existing convenience API; accessing `unsafe` reports a binding mismatch. Generate matching bindings when rebuilding a core. Every generated call checks runtime state, including methods saved before shutdown. Use `LvglRuntime` for initialization, shutdown, and bridge-managed display/input lifetimes; raw lifecycle calls can invalidate its bookkeeping.
 
-`bun run generate:ts` generates bindings from the existing API report, core, and signature verification record. Missing or stale verification stops generation and removes the previous generated source. `build:ts`, `build:browser`, and `build:studio-worker` run this check before bundling. `bun run typecheck` checks the generated source and runtime using the pinned TypeScript compiler. The bundle includes SHA-256 from `@noble/hashes`, allowing core checks in Studio's isolated worker without WebCrypto. The generated `raw.ts` is self-contained, and `index.js` can be copied with its matching core; the repository runtime source imports generated files and requires the repository build layout.
+`bun run generate:ts` generates bindings, constants, and layouts from the existing API report, core, and signature verification record. Missing or stale verification stops generation and removes the affected previous generated source. `build:ts`, `build:browser`, and `build:studio-worker` run this check before bundling. `bun run typecheck` checks the generated sources and runtime using the pinned TypeScript compiler. The bundle includes SHA-256 from `@noble/hashes`, allowing core checks in Studio's isolated worker without WebCrypto. The generated sources are self-contained, and `index.js` can be copied with its matching core; the repository runtime source imports generated files and requires the repository build layout.
 
 ### Rust host library
 
@@ -133,6 +134,37 @@ fn main() -> Result<()> {
 `RawApi` also provides `alloc`, `free`, `read_memory`, and `write_memory` using `UnsafePointer`. Core bytes are hashed and compiled from the same input. A different bridge-compatible core can use the generic `call_raw` interface, but obtaining this generated API reports a binding mismatch. The Rust crate needs the generated source at compile time; a relocated copy can use `LVW_RUST_BINDINGS` to locate it.
 
 `set_event_handler` receives synchronous `Event { callback_id, object, code }` notifications for IDs registered with `lvw_event_add`. A handler returns `Result<()>` and can capture application state; it has no runtime access for nested LVGL calls. Guest traps, handler errors, and handler panics poison the runtime, which then rejects calls and memory access. Successful shutdown closes it. Dropping a runtime releases its store without executing guest code or user callbacks.
+
+### Constants and layouts
+
+TypeScript exports constants and layouts from the SDK entry point; Rust exposes them through `liblvgl_wasm_host::values`. Integer constants retain their target C values. TypeScript uses `number` up to 32 bits and `bigint` for wider integers; Rust uses the corresponding signed or unsigned integer type. For example, `LV_ANIM_REPEAT_INFINITE` remains `4294967295`; a Rust raw method with an `i32` parameter needs an explicit `as i32` conversion.
+
+String constants such as `LV_SYMBOL_OK` are immutable byte sequences, including their recorded NUL bytes. They can be copied directly into guest memory. Non-UTF-8 bytes and embedded NULs are preserved; C string calls stop at the first NUL.
+
+```ts
+import { LV_COLOR_T_SIZE, LV_PART_MAIN } from "./target/typescript/index.js";
+
+const api = runtime.unsafe;
+const color = api.lvw_alloc(LV_COLOR_T_SIZE);
+if (!color) throw new Error("allocation failed");
+api.lv_color_hex(color, 0x123456);
+api.lv_obj_set_style_bg_color(button, color, LV_PART_MAIN);
+api.lvw_free(color);
+```
+
+```rust
+use liblvgl_wasm_host::values::{LV_COLOR_T_SIZE, LV_PART_MAIN};
+
+let mut api = runtime.raw()?;
+let color = api.alloc(LV_COLOR_T_SIZE)?;
+api.lv_color_hex(color, 0x123456)?;
+api.lv_obj_set_style_bg_color(button, color, LV_PART_MAIN)?;
+api.free(color)?;
+```
+
+Named LVGL types provide `_STATUS`, and complete types provide `_SIZE` and `_ALIGN` in bytes. Complete records also provide `_FIELDS` with field names, type IDs, bit offsets, and optional bit widths. Typedef layouts retain their own alignment. Tag names use `STRUCT_` or `UNION_` prefixes; aliases use their uppercase names. Anonymous fields retain null names. Bitfields require masks or C wrappers. Opaque types such as `lv_obj_t` expose a status without a size, alignment, or field table.
+
+Use these values with the matching generated API. TypeScript checks `valuesIdentity` against the raw binding identity before exposing `unsafe`; Rust emits both in the same generated file. Values are separate static exports, so importing a constant does not require the full field inventory. Function macros, empty macros, and unsupported expressions remain classified in `api.json` without fabricated SDK values.
 
 ## Interface
 

@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 use std::path::Path;
 
+use liblvgl_wasm_host::values::{LV_COLOR_T_SIZE, LV_PART_MAIN, LV_SYMBOL_OK};
 use liblvgl_wasm_host::{API_EXPORTS, BINDING_IDENTITY, Result, Runtime, UnsafePointer};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
@@ -70,6 +71,8 @@ fn generated_bindings_match_verified_metadata_and_execute_the_target_abi() -> Re
         .as_str()
         .unwrap()
         .parse()?;
+    assert_eq!(LV_COLOR_T_SIZE, color_size);
+    assert_eq!(LV_PART_MAIN, selector);
 
     let mut runtime = Runtime::load(&core)?;
     let display: u32 = runtime.call_raw("lvw_display_create", (80u32, 60u32, 1u32))?;
@@ -81,18 +84,18 @@ fn generated_bindings_match_verified_metadata_and_execute_the_target_abi() -> Re
         let label = api.lv_label_create(button)?;
         api.lv_obj_set_size(button, 40, 30)?;
         api.lv_obj_set_pos(button, 4, 6)?;
-        let color = api.alloc(color_size)?;
+        let color = api.alloc(LV_COLOR_T_SIZE)?;
         api.lv_color_hex(color, 0x123456)?;
         assert_eq!(api.lv_color_to_int(color)?, 0x123456);
-        api.lv_obj_set_style_bg_color(button, color, selector)?;
-        api.lv_obj_get_style_bg_color(color, button, selector)?;
+        api.lv_obj_set_style_bg_color(button, color, LV_PART_MAIN)?;
+        api.lv_obj_get_style_bg_color(color, button, LV_PART_MAIN)?;
         assert_eq!(api.lv_color_to_int(color)?, 0x123456);
-        let text = b"Rust LVGL\0";
+        let text = LV_SYMBOL_OK;
         let scratch = api.alloc(text.len() as u32)?;
         api.write_memory(scratch, text)?;
         api.lv_label_set_text(label, scratch)?;
         let stored = api.lv_label_get_text(label)?;
-        let mut read = [0; 10];
+        let mut read = vec![0; text.len()];
         api.read_memory(stored, &mut read)?;
         assert_eq!(&read, text);
         assert_eq!(

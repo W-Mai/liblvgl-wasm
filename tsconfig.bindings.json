@@ -11,6 +11,7 @@
   },
   "files": [
     "bindings/typescript/src/index.ts",
-    "target/typescript/raw.ts"
+    "target/typescript/raw.ts",
+    "target/typescript/values.ts"
   ]
 }

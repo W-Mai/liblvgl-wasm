@@ -3,9 +3,11 @@ import {
   bindingIdentity, createUnsafeLvglApi,
   type UnsafeFunctionPointer, type UnsafeLvglApi, type UnsafePointer,
 } from "../../../target/typescript/raw.ts";
+import { valuesIdentity } from "../../../target/typescript/values.ts";
 
 export { bindingIdentity };
 export type { UnsafeFunctionPointer, UnsafeLvglApi, UnsafePointer };
+export * from "../../../target/typescript/values.ts";
 
 const ABI_VERSION = 1;
 const PIXEL_XRGB8888 = 1;
@@ -135,6 +137,10 @@ export class LvglRuntime {
     this.ensureActive();
     if (this.coreHash !== bindingIdentity.wasm_sha256) {
       throw new Error("LVGL bindings do not match this core; generate bindings for the selected core");
+    }
+    if (valuesIdentity.api_sha256 !== bindingIdentity.api_sha256
+        || valuesIdentity.wasm_sha256 !== bindingIdentity.wasm_sha256) {
+      throw new Error("LVGL constants and layouts do not match these bindings; regenerate the SDK");
     }
     if (!this.unsafeApi) {
       const runtime = this;

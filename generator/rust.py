@@ -6,6 +6,7 @@ from pathlib import Path
 
 from bindings import POINTER_KINDS, comment, function_signature, inventory
 from bindings import generate as generate_bindings
+from values import render_rust
 
 
 def rust_type(kind, value):
@@ -110,6 +111,9 @@ def render(report, identity):
         "    }\n\n"
         f"{methods}\n"
         "}\n"
+        "\npub mod values {\n"
+        + "".join("    " + line + "\n" if line else "\n" for line in render_rust(report).splitlines())
+        + "}\n"
     )
 
 

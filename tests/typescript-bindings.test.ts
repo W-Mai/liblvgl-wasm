@@ -1,5 +1,7 @@
 import { expect, test } from "bun:test";
-import { LvglRuntime, bindingIdentity } from "../bindings/typescript/src/index.ts";
+import {
+  LvglRuntime, bindingIdentity, LV_COLOR_T_SIZE, LV_PART_MAIN, LV_SYMBOL_OK,
+} from "../bindings/typescript/src/index.ts";
 import { apiExports, createUnsafeLvglApi } from "../target/typescript/raw.ts";
 
 test("generated TypeScript methods cover exactly the supported exports", async () => {
@@ -37,14 +39,6 @@ test("generated raw calls use the matching core's objects, memory, and aggregate
   const loading = LvglRuntime.load(view);
   padded.fill(0);
   const runtime = await loading;
-  const report = await Bun.file("target/wasm/api.json").json() as {
-    types: Record<string, { kind: string; name?: string; layout: { size: number | null } }>;
-    constants: { name: string; value?: string }[];
-  };
-  const layout = Object.values(report.types).find(
-    (node) => node.kind === "alias" && node.name === "lv_color_t",
-  )!;
-  const mainPart = Number(report.constants.find((entry) => entry.name === "LV_PART_MAIN")!.value);
   const api = runtime.unsafe;
   const pow = api.lv_pow;
   const allocate = api.lvw_alloc;
@@ -58,16 +52,16 @@ test("generated raw calls use the matching core's objects, memory, and aggregate
     const label = api.lv_label_create(button);
     api.lv_obj_set_size(button, 40, 30);
     api.lv_obj_set_pos(button, 4, 6);
-    const color = allocate(layout.layout.size!);
-    const text = new TextEncoder().encode("Raw LVGL\0");
+    const color = allocate(LV_COLOR_T_SIZE);
+    const text = LV_SYMBOL_OK;
     const textPointer = allocate(text.length);
     expect(color).toBeGreaterThan(0);
     expect(textPointer).toBeGreaterThan(0);
     try {
       api.lv_color_hex(color, 0x123456);
       expect(api.lv_color_to_int(color)).toBe(0x123456);
-      api.lv_obj_set_style_bg_color(button, color, mainPart);
-      api.lv_obj_get_style_bg_color(color, button, mainPart);
+      api.lv_obj_set_style_bg_color(button, color, LV_PART_MAIN);
+      api.lv_obj_get_style_bg_color(color, button, LV_PART_MAIN);
       expect(api.lv_color_to_int(color)).toBe(0x123456);
       new Uint8Array(api.memory.buffer, textPointer, text.length).set(text);
       api.lv_label_set_text(label, textPointer);
