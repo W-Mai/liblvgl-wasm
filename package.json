@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "generate:ts": "python3 -B generator/typescript.py --api target/wasm/api.json --wasm target/wasm/liblvgl.wasm --verification target/wasm/api-verification.json --output target/typescript/raw.ts",
+    "generate:rust": "python3 -B generator/rust.py --api target/wasm/api.json --wasm target/wasm/liblvgl.wasm --verification target/wasm/api-verification.json --output target/rust-bindings/raw.rs",
     "build:ts": "bun run generate:ts && bun build bindings/typescript/src/index.ts --target browser --outdir target/typescript",
     "build:browser": "bun run generate:ts && bun build examples/browser/main.ts --target browser --outfile target/browser/main.js",
     "build:studio-worker": "bun run generate:ts && bun build studio/src/worker.ts --target browser --format iife --outfile target/studio/worker.js",

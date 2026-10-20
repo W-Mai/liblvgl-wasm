@@ -48,6 +48,7 @@ python3 -B "$root/generator/signatures.py" \
     --output "$root/target/wasm/api-verification.json"
 cmake --build "$root/target/wasm" --target liblvgl_c_demo -j 4
 cd "$root"
+bun run generate:rust
 bun run build:ts
 bun run build:browser
 bun run build:studio

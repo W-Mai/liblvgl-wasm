@@ -2,7 +2,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
 
-use liblvgl_wasm_host::{Result, Runtime};
+use liblvgl_wasm_host::{Result, Runtime, UnsafePointer};
 
 fn put_u32(runtime: &mut Runtime, pointer: u32, offset: u32, value: u32) -> Result<()> {
     runtime.write_memory(pointer + offset, &value.to_le_bytes())
@@ -33,7 +33,9 @@ fn main() -> Result<()> {
     assert_ne!(display, 0);
     let pointer = runtime.call_raw::<(u32, u32), u32>("lvw_indev_create", (display, 1))?;
     assert_ne!(pointer, 0);
-    let screen = runtime.call_raw::<u32, u32>("lv_display_get_screen_active", display)?;
+    let screen = runtime
+        .raw()?
+        .lv_display_get_screen_active(UnsafePointer(display))?;
     let resource = include_bytes!("../../../examples/browser/red.bmp");
     let name = runtime.alloc(8)?;
     runtime.write_memory(name, b"red.bmp\0")?;
@@ -50,15 +52,17 @@ fn main() -> Result<()> {
     runtime.free(name)?;
     let image_path = runtime.alloc(10)?;
     runtime.write_memory(image_path, b"W:red.bmp\0")?;
-    let image = runtime.call_raw::<u32, u32>("lv_image_create", screen)?;
-    runtime.call_raw::<(u32, u32), ()>("lv_image_set_src", (image, image_path))?;
-    runtime.call_raw::<(u32, i32, i32), ()>("lv_obj_set_pos", (image, 8, 8))?;
-    let button = runtime.call_raw::<u32, u32>("lv_button_create", screen)?;
-    runtime.call_raw::<(u32, i32, i32), ()>("lv_obj_set_size", (button, 140, 60))?;
-    runtime.call_raw::<(u32, i32, i32), ()>("lv_obj_set_pos", (button, 90, 80))?;
+    let image = runtime.raw()?.lv_image_create(screen)?;
+    runtime
+        .raw()?
+        .lv_image_set_src(image, UnsafePointer(image_path))?;
+    runtime.raw()?.lv_obj_set_pos(image, 8, 8)?;
+    let button = runtime.raw()?.lv_button_create(screen)?;
+    runtime.raw()?.lv_obj_set_size(button, 140, 60)?;
+    runtime.raw()?.lv_obj_set_pos(button, 90, 80)?;
     let clicked_code = runtime.call_raw::<(), u32>("lvw_event_clicked", ())?;
     assert_eq!(
-        runtime.call_raw::<(u32, u32, u32), i32>("lvw_event_add", (button, clicked_code, 1))?,
+        runtime.call_raw::<(u32, u32, u32), i32>("lvw_event_add", (button.0, clicked_code, 1))?,
         0
     );
 

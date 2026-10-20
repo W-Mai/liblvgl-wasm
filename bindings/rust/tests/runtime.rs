@@ -2,7 +2,7 @@ use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
 
-use liblvgl_wasm_host::{Error, Result, Runtime};
+use liblvgl_wasm_host::{Error, Result, Runtime, UnsafePointer};
 
 fn load() -> Result<Runtime> {
     Runtime::from_file(Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/wasm/liblvgl.wasm"))
@@ -79,14 +79,18 @@ fn failed_or_panicking_synchronous_callbacks_poison_the_instance() -> Result<()>
             runtime.call_raw::<_, i32>("lvw_event_add", (object, code, 7u32))?,
             0
         );
-        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            runtime.call_raw::<_, u32>("lv_obj_send_event", (object, code, 0u32))
-        }));
-        if panics {
-            assert!(result.is_err());
-        } else {
-            let error = result.unwrap().unwrap_err();
-            assert!(format!("{error:#}").contains("callback failure"));
+        {
+            let mut raw = runtime.raw()?;
+            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                raw.lv_obj_send_event(UnsafePointer(object), code as i32, UnsafePointer(0))
+            }));
+            if panics {
+                assert!(result.is_err());
+            } else {
+                let error = result.unwrap().unwrap_err();
+                assert!(format!("{error:#}").contains("callback failure"));
+            }
+            assert!(raw.lv_pow(2, 3).is_err());
         }
         assert_eq!(count.load(Ordering::SeqCst), 1);
         assert_unavailable(&mut runtime, object, "poisoned");

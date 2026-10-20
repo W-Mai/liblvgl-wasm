@@ -28,6 +28,7 @@ Generated files stay under `target/`:
 | `target/browser/main.js` | Browser example bundle |
 | `target/typescript/index.js` | TypeScript host adapter bundle |
 | `target/typescript/raw.ts` | Generated typed `lv_*` calls, export mapping, and core identity |
+| `target/rust-bindings/raw.rs` | Generated Rust `lv_*` methods, pointer types, export mapping, and core identity |
 | `target/studio/{main,worker}.js` | Studio page and isolated runner bundles |
 | `target/apps/ts/app.js` | TypeScript sample application |
 | `target/apps/{c,cpp,rust}/app.wasm` | C, C++, and Rust sample applications |
@@ -110,19 +111,26 @@ liblvgl-wasm-host = { path = "/path/to/liblvgl-wasm/bindings/rust" }
 ```
 
 ```rust
-use liblvgl_wasm_host::{Result, Runtime};
+use liblvgl_wasm_host::{Result, Runtime, UnsafePointer};
 
 fn main() -> Result<()> {
     let mut runtime = Runtime::from_file("target/wasm/liblvgl.wasm")?;
     let display: u32 = runtime.call_raw("lvw_display_create", (320u32, 240u32, 1u32))?;
-    let screen: u32 = runtime.call_raw("lv_display_get_screen_active", display)?;
-    let button: u32 = runtime.call_raw("lv_button_create", screen)?;
-    runtime.call_raw::<_, ()>("lv_obj_set_size", (button, 180i32, 64i32))?;
+    let mut api = runtime.raw()?;
+    let screen = api.lv_display_get_screen_active(UnsafePointer(display))?;
+    let button = api.lv_button_create(screen)?;
+    api.lv_obj_set_size(button, 180, 64)?;
     runtime.shutdown()
 }
 ```
 
+`scripts/build.sh` generates the Rust bindings before building the hosts. `bun run generate:rust` regenerates them from an existing core, API report, and matching signature verification record. The Cargo build script copies the generated source into `OUT_DIR`; it does not download tools or build LVGL. Set `LVW_RUST_BINDINGS` to select a generated `raw.rs` outside the repository. Relative paths are resolved from the library's Cargo manifest directory.
+
+`Runtime::raw()` exposes all supported original `lv_*` names after checking the core SHA-256 against `BINDING_IDENTITY`. Its mutable borrow prevents other runtime access while the API remains in use. Methods return `Result` and share the runtime's failure guards. `UnsafePointer` holds a `u32` memory offset; `UnsafeFunctionPointer` holds a Wasm table index. These separate types do not check pointer validity or ownership. Aggregate shims take storage pointers, including an initial output pointer for aggregate results; use the layouts in `api.json`. Scalars retain the actual Wasm `i32`, `i64`, `f32`, and `f64` types. Calls are safe Rust methods; the caller maintains LVGL's guest-side preconditions.
+
 `Runtime::load` accepts Wasm bytes. Loading validates imports, initializes the reactor, and checks bridge ABI 1. The runtime owns the Wasmtime store and keeps instances isolated. `call_raw` checks the Wasm export type; it does not validate LVGL pointers, layouts, ownership, or lifecycle operations. Use `shutdown` for runtime cleanup. `alloc`/`free` manage scratch storage, and `read_memory`/`write_memory` copy bytes with bounds checks. Guest pointers are `u32` offsets, never host addresses.
+
+`RawApi` also provides `alloc`, `free`, `read_memory`, and `write_memory` using `UnsafePointer`. Core bytes are hashed and compiled from the same input. A different bridge-compatible core can use the generic `call_raw` interface, but obtaining this generated API reports a binding mismatch. The Rust crate needs the generated source at compile time; a relocated copy can use `LVW_RUST_BINDINGS` to locate it.
 
 `set_event_handler` receives synchronous `Event { callback_id, object, code }` notifications for IDs registered with `lvw_event_add`. A handler returns `Result<()>` and can capture application state; it has no runtime access for nested LVGL calls. Guest traps, handler errors, and handler panics poison the runtime, which then rejects calls and memory access. Successful shutdown closes it. Dropping a runtime releases its store without executing guest code or user callbacks.
 
@@ -130,7 +138,7 @@ fn main() -> Result<()> {
 
 The bridge ABI version is `1`. A Wasm instance owns one LVGL runtime and may create multiple displays. `lvw_step(elapsed_ms)` advances LVGL time and returns the next timer interval and frame count. Frames use XRGB8888 bytes in blue, green, red, unused order. Hosts must read or copy frame data before a call that can change the framebuffer. Each host must call `_initialize` before `lvw_init`.
 
-The generated API report classifies declarations as `direct_export`, `abi_shim`, `compile_disabled`, or `unsupported`. Direct functions keep their `lv_*` export names. Aggregate values and inline functions use generated `lvw_api_lv_*` wrappers: aggregate arguments are pointers into Wasm memory, and aggregate returns use an output pointer. Aggregate classification uses canonical types, including qualified records and typedef chains; wrapper storage preserves the record layout while removing top-level C qualifiers. `target/wasm/api.json` records each export name, wrapper signature, and unsupported reason. Installing host callbacks through raw function pointers and calling variadic functions remain unsupported by the generator. The TypeScript adapter provides typed raw calls for all supported APIs alongside the bridge convenience API.
+The generated API report classifies declarations as `direct_export`, `abi_shim`, `compile_disabled`, or `unsupported`. Direct functions keep their `lv_*` export names. Aggregate values and inline functions use generated `lvw_api_lv_*` wrappers: aggregate arguments are pointers into Wasm memory, and aggregate returns use an output pointer. Aggregate classification uses canonical types, including qualified records and typedef chains; wrapper storage preserves the record layout while removing top-level C qualifiers. `target/wasm/api.json` records each export name, wrapper signature, and unsupported reason. Installing host callbacks through raw function pointers and calling variadic functions remain unsupported by the generator. TypeScript and Rust provide typed raw calls for all supported APIs.
 
 The report also includes `constants` and `constant_summary` for active `LV_*` and `LVGL_*` enums and macros visible through the configured public header. Values are evaluated by the same Wasm target compiler as the core. Integers include the C type, bit width, signedness, and a decimal string value to preserve 64-bit precision. Strings include exact bytes in `bytes_hex`, their length and termination flag, and UTF-8 text when valid. Function macros, empty macros, and unsupported expressions have separate classifications; symbol addresses require an instance-specific accessor and are not exported as numeric constants. Private `_LV_*` names and declarations hidden by disabled configuration are outside this inventory. Function counts in `summary` remain separate from constant counts.
 

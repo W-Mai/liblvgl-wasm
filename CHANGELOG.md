@@ -14,6 +14,7 @@
 - Strict TypeScript checks for generated bindings and the runtime, with locked JavaScript dependencies.
 - Browser/Bun and Rust hosts using the same Wasm module, with resource and pointer interaction checks.
 - Reusable Rust host library with checked memory copies, synchronous event handlers, and runtime shutdown and failure guards.
+- Generated Rust `lv_*` methods with core identity checks, separate memory and function pointer types, and a configurable generated source path.
 - LVGL Studio with default or user-selected cores, application and resource uploads, interactive preview, console, and isolated browser runner.
 - JavaScript, TypeScript, C, C++, and Rust application samples and build commands. Compiled Wasm applications use a versioned host ABI.
 - Light and dark gray Studio themes with square controls and persistent theme selection.

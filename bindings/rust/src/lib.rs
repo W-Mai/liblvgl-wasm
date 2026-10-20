@@ -4,12 +4,21 @@
 
 use std::path::Path;
 
+use sha2::{Digest, Sha256};
 use wasmtime::{Caller, Engine, ExternType, Instance, Linker, Memory, Module, Store};
 use wasmtime::{WasmParams, WasmResults};
 use wasmtime_wasi::WasiCtxBuilder;
 use wasmtime_wasi::p1::{self, WasiP1Ctx};
 
 pub use wasmtime::{Error, Result};
+
+mod generated {
+    include!(concat!(env!("OUT_DIR"), "/raw.rs"));
+}
+
+pub use generated::{
+    API_EXPORTS, BINDING_IDENTITY, BindingIdentity, RawApi, UnsafeFunctionPointer, UnsafePointer,
+};
 
 /// A synchronous notification from the core's event bridge.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -39,11 +48,13 @@ pub struct Runtime {
     instance: Instance,
     memory: Memory,
     state: State,
+    core_hash: String,
 }
 
 impl Runtime {
     /// Instantiate core bytes, initialize the reactor, and validate bridge ABI 1.
     pub fn load(bytes: &[u8]) -> Result<Self> {
+        let core_hash = format!("{:x}", Sha256::digest(bytes));
         let engine = Engine::default();
         let module = Module::from_binary(&engine, bytes)?;
         for import in module.imports() {
@@ -96,6 +107,7 @@ impl Runtime {
             instance,
             memory,
             state: State::Ready,
+            core_hash,
         };
         runtime.call_raw::<(), ()>("_initialize", ())?;
         if runtime.call_raw::<(), u32>("lvw_abi_version", ())? != 1 {
@@ -121,6 +133,19 @@ impl Runtime {
             )),
             State::Closed => Err(Error::msg("LVGL runtime is closed")),
         }
+    }
+
+    /// Borrow generated LVGL methods for the exact core recorded in [`BINDING_IDENTITY`].
+    ///
+    /// The caller manages guest pointer ownership, bounds, alignment, and lifetime. A different core can still use the bridge through [`Self::call_raw`], but cannot use these generated methods.
+    pub fn raw(&mut self) -> Result<RawApi<'_>> {
+        self.ensure_ready()?;
+        if self.core_hash != BINDING_IDENTITY.wasm_sha256 {
+            return Err(Error::msg(
+                "LVGL bindings do not match this core; generate bindings for the selected core",
+            ));
+        }
+        Ok(RawApi { runtime: self })
     }
 
     /// Call an export using its Wasm parameter and result types.

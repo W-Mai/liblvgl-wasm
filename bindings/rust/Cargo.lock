@@ -834,6 +834,8 @@ checksum = "3eaf3ede3fee6db1a4c2ee091bf8a8b4dccdc6d17f656fb07896ee72867612f2"
 name = "liblvgl-wasm-host"
 version = "0.1.0"
 dependencies = [
+ "serde_json",
+ "sha2",
  "wasmtime",
  "wasmtime-wasi",
 ]
