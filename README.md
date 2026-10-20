@@ -100,6 +100,32 @@ Generated calls require the exact core SHA-256 embedded in `bindingIdentity`. Lo
 
 `bun run generate:ts` generates bindings from the existing API report, core, and signature verification record. Missing or stale verification stops generation and removes the previous generated source. `build:ts`, `build:browser`, and `build:studio-worker` run this check before bundling. `bun run typecheck` checks the generated source and runtime using the pinned TypeScript compiler. The bundle includes SHA-256 from `@noble/hashes`, allowing core checks in Studio's isolated worker without WebCrypto. The generated `raw.ts` is self-contained, and `index.js` can be copied with its matching core; the repository runtime source imports generated files and requires the repository build layout.
 
+### Rust host library
+
+`bindings/rust` provides the `liblvgl-wasm-host` library and a CLI that uses it. Add the library as a Cargo path dependency:
+
+```toml
+[dependencies]
+liblvgl-wasm-host = { path = "/path/to/liblvgl-wasm/bindings/rust" }
+```
+
+```rust
+use liblvgl_wasm_host::{Result, Runtime};
+
+fn main() -> Result<()> {
+    let mut runtime = Runtime::from_file("target/wasm/liblvgl.wasm")?;
+    let display: u32 = runtime.call_raw("lvw_display_create", (320u32, 240u32, 1u32))?;
+    let screen: u32 = runtime.call_raw("lv_display_get_screen_active", display)?;
+    let button: u32 = runtime.call_raw("lv_button_create", screen)?;
+    runtime.call_raw::<_, ()>("lv_obj_set_size", (button, 180i32, 64i32))?;
+    runtime.shutdown()
+}
+```
+
+`Runtime::load` accepts Wasm bytes. Loading validates imports, initializes the reactor, and checks bridge ABI 1. The runtime owns the Wasmtime store and keeps instances isolated. `call_raw` checks the Wasm export type; it does not validate LVGL pointers, layouts, ownership, or lifecycle operations. Use `shutdown` for runtime cleanup. `alloc`/`free` manage scratch storage, and `read_memory`/`write_memory` copy bytes with bounds checks. Guest pointers are `u32` offsets, never host addresses.
+
+`set_event_handler` receives synchronous `Event { callback_id, object, code }` notifications for IDs registered with `lvw_event_add`. A handler returns `Result<()>` and can capture application state; it has no runtime access for nested LVGL calls. Guest traps, handler errors, and handler panics poison the runtime, which then rejects calls and memory access. Successful shutdown closes it. Dropping a runtime releases its store without executing guest code or user callbacks.
+
 ## Interface
 
 The bridge ABI version is `1`. A Wasm instance owns one LVGL runtime and may create multiple displays. `lvw_step(elapsed_ms)` advances LVGL time and returns the next timer interval and frame count. Frames use XRGB8888 bytes in blue, green, red, unused order. Hosts must read or copy frame data before a call that can change the framebuffer. Each host must call `_initialize` before `lvw_init`.
