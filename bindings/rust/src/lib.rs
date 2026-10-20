@@ -2,9 +2,11 @@
 //!
 //! Guest calls are synchronous. A failed guest call poisons the runtime; dropping it releases the Wasmtime store without invoking guest cleanup. Call [`Runtime::shutdown`] for explicit cleanup.
 
+use std::collections::HashMap;
 use std::panic::{AssertUnwindSafe, catch_unwind, resume_unwind};
 use std::path::Path;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use sha2::{Digest, Sha256};
 use wasmtime::{
@@ -16,6 +18,9 @@ use wasmtime_wasi::WasiCtxBuilder;
 use wasmtime_wasi::p1::{self, WasiP1Ctx};
 
 pub use wasmtime::{Error, Result};
+
+mod timer;
+pub use timer::Timer;
 
 mod generated {
     include!(concat!(env!("OUT_DIR"), "/raw.rs"));
@@ -57,6 +62,9 @@ struct Host {
     state: State,
     guest_depth: usize,
     failure: Option<String>,
+    lifetime: Arc<AtomicBool>,
+    timers: HashMap<u32, timer::Registration>,
+    next_timer_id: u64,
 }
 
 #[derive(Clone, Copy)]
@@ -86,10 +94,17 @@ impl Host {
 
     fn poison(&mut self, reason: impl FnOnce() -> String) {
         self.state = State::Poisoned;
-        self.handler = None;
+        self.lifetime.store(false, Ordering::SeqCst);
+        self.clear_callbacks();
         if self.failure.is_none() {
             self.failure = Some(reason());
         }
+    }
+
+    fn clear_callbacks(&mut self) {
+        self.invalidate_timers();
+        self.timers.clear();
+        self.handler = None;
     }
 
     fn ensure_not_poisoned(&self) -> Result<()> {
@@ -97,6 +112,13 @@ impl Host {
             return Err(self.poison_error());
         }
         Ok(())
+    }
+}
+
+impl Drop for Host {
+    fn drop(&mut self) {
+        self.lifetime.store(false, Ordering::SeqCst);
+        self.invalidate_timers();
     }
 }
 
@@ -122,7 +144,8 @@ impl Runtime {
         for import in module.imports() {
             if !matches!(
                 (import.module(), import.name()),
-                ("lvw", "event") | ("wasi_snapshot_preview1", "fd_close" | "fd_write")
+                ("lvw", "event" | "timer" | "timer_release")
+                    | ("wasi_snapshot_preview1", "fd_close" | "fd_write")
             ) || !matches!(import.ty(), ExternType::Func(_))
             {
                 return Err(Error::msg(format!(
@@ -173,6 +196,7 @@ impl Runtime {
                 caller.data().ensure_not_poisoned()
             },
         )?;
+        timer::add_to_linker(&mut linker)?;
         let mut store = Store::new(
             &engine,
             Host {
@@ -183,6 +207,9 @@ impl Runtime {
                 state: State::Ready,
                 guest_depth: 0,
                 failure: None,
+                lifetime: Arc::new(AtomicBool::new(true)),
+                timers: HashMap::new(),
+                next_timer_id: 1,
             },
         );
         let instance = linker.instantiate(&mut store, &module)?;
@@ -337,6 +364,7 @@ impl<'a> CallbackContext<'a> {
         let closing = name == "lvw_shutdown";
         if closing {
             self.store.data_mut().state = State::Closing;
+            self.store.data().lifetime.store(false, Ordering::SeqCst);
         }
         self.store.data_mut().guest_depth += 1;
         let outcome = catch_unwind(AssertUnwindSafe(|| function.call(&mut self.store, params)));
@@ -346,7 +374,7 @@ impl<'a> CallbackContext<'a> {
                 self.store.data().ensure_not_poisoned()?;
                 if closing {
                     self.store.data_mut().state = State::Closed;
-                    self.store.data_mut().handler = None;
+                    self.store.data_mut().clear_callbacks();
                 }
                 Ok(value)
             }

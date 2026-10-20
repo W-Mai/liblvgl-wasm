@@ -17,6 +17,7 @@
 - Browser/Bun and Rust hosts using the same Wasm module, with resource and pointer interaction checks.
 - Reusable Rust host library with checked memory copies, synchronous event handlers, and runtime shutdown and failure guards.
 - Rust callback contexts with generated LVGL methods, synchronous nested notifications, shared failure state, and shutdown reentry guards.
+- Native LVGL timers in TypeScript and Rust, with independent user data, synchronous callbacks, idempotent cancellation, and handler release on explicit or automatic deletion. The core enables external-data destructors and imports `lvw.timer` and `lvw.timer_release`.
 - Generated Rust `lv_*` methods with core identity checks, separate memory and function pointer types, and a configurable generated source path.
 - TypeScript and Rust constants and named type layouts with exact integer and string values, field and bitfield metadata, and explicit opaque types.
 - LVGL Studio with default or user-selected cores, application and resource uploads, interactive preview, console, and isolated browser runner.
@@ -33,6 +34,8 @@
 - GitHub Actions quality workflow with pinned Bun, Rust, wasi-sdk, and wasm-tools versions and verified tool downloads.
 
 ### Fixed
+
+- Initialize the Rust example's complete input packet before sending it to the bridge.
 
 - Aggregate ABI wrappers recognize qualified record types and typedef chains through the canonical type graph.
 - Builds recover from missing cached LVGL sources and resolve SDK, source, and generator configuration paths when invoked outside the repository.

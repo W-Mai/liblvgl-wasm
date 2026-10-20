@@ -79,7 +79,7 @@ test("every supported API links with its recorded Wasm signature", async () => {
     ...section(1, vector(types)), ...section(2, vector(imports)),
   ]);
   const { instance } = await WebAssembly.instantiate(wasmBytes, {
-    lvw: { event() {} },
+    lvw: { event() {}, timer() {}, timer_release() {} },
     wasi_snapshot_preview1: { fd_close() { return 0; }, fd_write() { return 0; } },
   });
   await WebAssembly.instantiate(consumer, { api: instance.exports });

@@ -77,6 +77,7 @@ fn main() -> Result<()> {
     }
 
     let packet = runtime.alloc(32)?;
+    runtime.write_memory(packet, &[0; 32])?;
     put_u32(&mut runtime, packet, 0, 32)?;
     put_u32(&mut runtime, packet, 4, 1)?;
     put_u32(&mut runtime, packet, 8, 1)?;

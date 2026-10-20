@@ -1,5 +1,7 @@
 const requiredImports = new Set([
   "lvw.event",
+  "lvw.timer",
+  "lvw.timer_release",
   "wasi_snapshot_preview1.fd_close",
   "wasi_snapshot_preview1.fd_write",
 ]);

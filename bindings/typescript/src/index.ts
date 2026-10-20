@@ -33,6 +33,8 @@ interface RawExports {
   lvw_event_remove(object: number, callbackId: number): number;
   lvw_event_clicked(): number;
   lvw_event_delete(): number;
+  lvw_timer_create?(periodMs: number, userData: number, callbackId: number): number;
+  lvw_timer_delete?(timer: number, callbackId: number): number;
   lv_display_get_screen_active(display: number): number;
   lv_button_create(parent: number): number;
   lv_label_create(parent: number): number;
@@ -81,8 +83,18 @@ interface ObjectLifetime {
   ids: Set<number>;
 }
 
+interface TimerLifetime {
+  id: number;
+  handle: number;
+  alive: boolean;
+}
+
 export class LvglRuntime {
   private readonly callbacks = new Map<number, { owner: ObjectLifetime; callback: (code: number) => void }>();
+  private readonly timers = new Map<number, {
+    owner: TimerLifetime; timer: Timer; callback: (timer: Timer) => void;
+  }>();
+  private readonly timerRefs = new WeakMap<Timer, TimerLifetime>();
   private readonly objects = new WeakMap<ObjectRef, ObjectLifetime>();
   private readonly objectLifetimes = new Map<number, ObjectLifetime>();
   private readonly deletedObjects = new Set<ObjectLifetime>();
@@ -132,6 +144,8 @@ export class LvglRuntime {
 
   private clearCallbacks(): void {
     for (const { owner } of this.callbacks.values()) owner.ids.clear();
+    for (const { owner } of this.timers.values()) owner.alive = false;
+    this.timers.clear();
     this.callbacks.clear();
     this.deletedObjects.clear();
     this.objectLifetimes.clear();
@@ -156,7 +170,10 @@ export class LvglRuntime {
     const decoder = new TextDecoder();
     const module = await WebAssembly.compile(snapshot);
     const imports = WebAssembly.Module.imports(module).map((item) => `${item.module}.${item.name}`);
-    const expected = new Set(["lvw.event", "wasi_snapshot_preview1.fd_close", "wasi_snapshot_preview1.fd_write"]);
+    const expected = new Set([
+      "lvw.event", "lvw.timer", "lvw.timer_release",
+      "wasi_snapshot_preview1.fd_close", "wasi_snapshot_preview1.fd_write",
+    ]);
     for (const item of imports) {
       if (!expected.has(item)) throw new Error(`unsupported Wasm import: ${item}`);
     }
@@ -164,6 +181,13 @@ export class LvglRuntime {
       lvw: {
         event(callbackId: number, object: number, code: number) {
           runtime?.dispatch(callbackId, object, code);
+        },
+        timer(callbackId: number, pointer: number) {
+          if (!runtime) throw new Error("LVGL timer callback before runtime initialization");
+          runtime.dispatchTimer(callbackId, pointer);
+        },
+        timer_release(callbackId: number) {
+          runtime?.releaseTimer(callbackId);
         },
       },
       wasi_snapshot_preview1: {
@@ -278,6 +302,55 @@ export class LvglRuntime {
     const handle = this.raw.lvw_indev_create(display.handle, INPUT_POINTER);
     if (!handle) throw new Error("lvw_indev_create failed");
     return new PointerInput(this, handle, display);
+  }
+
+  /** Create a timer driven by step(). The callback must finish synchronously; userData remains available through the native LVGL API. */
+  createTimer(periodMs: number, callback: (timer: Timer) => void, userData = 0): Timer {
+    this.ensureActive();
+    for (const [name, value] of [["periodMs", periodMs], ["userData", userData]] as const) {
+      if (!Number.isInteger(value) || value < 0 || value > 0xffffffff) {
+        throw new RangeError(`${name} must be an unsigned 32-bit integer`);
+      }
+    }
+    for (const name of ["lvw_timer_create", "lvw_timer_delete"] as const) {
+      if (typeof this.raw[name] !== "function") {
+        throw new Error(`missing Wasm function: ${name} (required for timer callbacks)`);
+      }
+    }
+    const id = this.allocateCallbackId();
+    const owner: TimerLifetime = { id, handle: 0, alive: true };
+    const timer = new Timer(this);
+    this.timerRefs.set(timer, owner);
+    this.timers.set(id, { owner, timer, callback });
+    try {
+      const handle = this.raw.lvw_timer_create!(periodMs, userData, id) >>> 0;
+      if (!handle) throw new Error("lvw_timer_create failed");
+      if (!owner.alive) throw new Error("LVGL timer was deleted during creation");
+      owner.handle = handle;
+      return timer;
+    } catch (error) {
+      this.releaseTimer(id);
+      throw error;
+    }
+  }
+
+  /** Cancel a timer from this runtime. Repeated cancellation and cancellation after shutdown or failure do not enter the guest. */
+  cancelTimer(timer: Timer): void {
+    const owner = this.timerRefs.get(timer);
+    if (!owner) throw new Error("invalid LVGL timer reference");
+    if (!owner.alive) return;
+    if (this.state === "ready") {
+      check(this.raw.lvw_timer_delete!(owner.handle, owner.id), "lvw_timer_delete");
+    }
+    this.releaseTimer(owner.id);
+  }
+
+  /** @internal */
+  timerHandle(timer: Timer): number {
+    this.ensureActive();
+    const owner = this.timerRefs.get(timer);
+    if (!owner?.alive || !owner.handle) throw new Error("invalid LVGL timer reference");
+    return owner.handle;
   }
 
   screen(display: Display): ObjectRef {
@@ -401,8 +474,7 @@ export class LvglRuntime {
 
   private addEvent(owner: ObjectLifetime, code: number, callback: (code: number) => void): number {
     this.ensureActive();
-    if (this.nextCallbackId > 0xffffffff) throw new Error("LVGL callback IDs exhausted");
-    const id = this.nextCallbackId++;
+    const id = this.allocateCallbackId();
     this.callbacks.set(id, { owner, callback });
     owner.ids.add(id);
     try {
@@ -413,6 +485,11 @@ export class LvglRuntime {
       throw error;
     }
     return id;
+  }
+
+  private allocateCallbackId(): number {
+    if (this.nextCallbackId > 0xffffffff) throw new Error("LVGL callback IDs exhausted");
+    return this.nextCallbackId++;
   }
 
   onEvent(object: ObjectRef, code: number, callback: (code: number) => void): () => void {
@@ -436,6 +513,32 @@ export class LvglRuntime {
     this.rethrowFailure();
     this.callbacks.get(callbackId >>> 0)?.callback(code);
     this.rethrowFailure();
+  }
+
+  private dispatchTimer(callbackId: number, pointer: number): void {
+    this.rethrowFailure();
+    this.ensureActive();
+    const registration = this.timers.get(callbackId >>> 0);
+    if (!registration?.owner.alive || !registration.owner.handle
+        || registration.owner.handle !== (pointer >>> 0)) {
+      throw new Error("invalid LVGL timer callback");
+    }
+    const result: unknown = registration.callback(registration.timer);
+    if (result !== null && (typeof result === "object" || typeof result === "function")
+        && typeof (result as { then?: unknown }).then === "function") {
+      void Promise.resolve(result).catch(() => {});
+      this.rethrowFailure();
+      throw new Error("LVGL timer callbacks must finish synchronously; thenables are not supported");
+    }
+    this.rethrowFailure();
+  }
+
+  private releaseTimer(callbackId: number): void {
+    const id = callbackId >>> 0;
+    const registration = this.timers.get(id);
+    if (!registration) return;
+    registration.owner.alive = false;
+    this.timers.delete(id);
   }
 
   get clickedEvent(): number { return this.raw.lvw_event_clicked(); }
@@ -493,6 +596,15 @@ export class LvglRuntime {
       this.clearCallbacks();
     }
   }
+}
+
+/** A managed LVGL timer. Native deletion, automatic deletion, shutdown, and guest failure invalidate its handle. */
+export class Timer {
+  /** @internal Create timers through LvglRuntime.createTimer(). */
+  constructor(private readonly runtime: LvglRuntime) {}
+
+  get handle(): number { return this.runtime.timerHandle(this); }
+  cancel(): void { this.runtime.cancelTimer(this); }
 }
 
 export class Display {

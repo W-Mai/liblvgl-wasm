@@ -37,6 +37,12 @@ typedef struct lvw_indev_node {
     struct lvw_indev_node *next;
 } lvw_indev_node_t;
 
+typedef struct lvw_timer_node {
+    lv_timer_t *lvgl;
+    uint32_t callback_id;
+    struct lvw_timer_node *next;
+} lvw_timer_node_t;
+
 typedef struct lvw_resource {
     char name[LVW_RESOURCE_NAME_LEN + 1u];
     uint8_t *data;
@@ -51,6 +57,7 @@ typedef struct {
 
 static lvw_display_node_t *displays;
 static lvw_indev_node_t *indevs;
+static lvw_timer_node_t *timers;
 static lvw_resource_t *resources;
 static lv_fs_drv_t resource_driver;
 static uint32_t initialized;
@@ -59,6 +66,12 @@ static uint32_t callback_depth;
 
 __attribute__((import_module("lvw"), import_name("event")))
 extern void lvw_host_event(uint32_t callback_id, uint32_t object, uint32_t code);
+
+__attribute__((import_module("lvw"), import_name("timer")))
+extern void lvw_host_timer(uint32_t callback_id, uint32_t timer);
+
+__attribute__((import_module("lvw"), import_name("timer_release")))
+extern void lvw_host_timer_release(uint32_t callback_id);
 
 static uint32_t pointer_value(const void *pointer) {
     return (uint32_t)(uintptr_t)pointer;
@@ -131,6 +144,31 @@ static void event_callback(lv_event_t *event) {
     uint32_t object = pointer_value(lv_event_get_current_target_obj(event));
     callback_depth++;
     lvw_host_event(callback_id, object, (uint32_t)lv_event_get_code(event));
+    callback_depth--;
+}
+
+static void timer_callback(lv_timer_t *timer) {
+    for (lvw_timer_node_t *node = timers; node; node = node->next) {
+        if (node->lvgl != timer) continue;
+        uint32_t callback_id = node->callback_id;
+        uint32_t handle = pointer_value(timer);
+        callback_depth++;
+        lvw_host_timer(callback_id, handle);
+        callback_depth--;
+        return;
+    }
+}
+
+static void timer_release(void *data) {
+    lvw_timer_node_t *node = data;
+    lvw_timer_node_t **cursor = &timers;
+    while (*cursor && *cursor != node) cursor = &(*cursor)->next;
+    if (!*cursor) return;
+    *cursor = node->next;
+    uint32_t callback_id = node->callback_id;
+    free(node);
+    callback_depth++;
+    lvw_host_timer_release(callback_id);
     callback_depth--;
 }
 
@@ -220,6 +258,7 @@ LVW_EXPORT(lvw_shutdown) int32_t lvw_shutdown(void) {
         free(node->pixels);
         free(node);
     }
+    while (timers) lv_timer_delete(timers->lvgl);
     lv_deinit();
     while (resources) {
         lvw_resource_t *resource = resources;
@@ -432,3 +471,34 @@ LVW_EXPORT(lvw_event_remove) int32_t lvw_event_remove(uint32_t object, uint32_t 
 
 LVW_EXPORT(lvw_event_clicked) uint32_t lvw_event_clicked(void) { return LV_EVENT_CLICKED; }
 LVW_EXPORT(lvw_event_delete) uint32_t lvw_event_delete(void) { return LV_EVENT_DELETE; }
+
+LVW_EXPORT(lvw_timer_create) uint32_t lvw_timer_create(uint32_t period_ms, uint32_t user_data,
+                                                       uint32_t callback_id) {
+    if (!initialized || !callback_id) return 0;
+    for (lvw_timer_node_t *node = timers; node; node = node->next) {
+        if (node->callback_id == callback_id) return 0;
+    }
+    lvw_timer_node_t *node = malloc(sizeof(*node));
+    if (!node) return 0;
+    lv_timer_t *timer = lv_timer_create(timer_callback, period_ms, (void *)(uintptr_t)user_data);
+    if (!timer) {
+        free(node);
+        return 0;
+    }
+    *node = (lvw_timer_node_t){timer, callback_id, timers};
+    timers = node;
+    lv_timer_set_external_data(timer, node, timer_release);
+    return pointer_value(timer);
+}
+
+LVW_EXPORT(lvw_timer_delete) int32_t lvw_timer_delete(uint32_t timer, uint32_t callback_id) {
+    if (!initialized) return -1;
+    if (!timer || !callback_id) return -2;
+    for (lvw_timer_node_t *node = timers; node; node = node->next) {
+        if (pointer_value(node->lvgl) == timer && node->callback_id == callback_id) {
+            lv_timer_delete(node->lvgl);
+            return 0;
+        }
+    }
+    return 0;
+}

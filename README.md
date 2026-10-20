@@ -155,6 +155,36 @@ fn main() -> Result<()> {
 
 Guest traps, handler errors, and handler panics poison the Rust runtime. Catching an inner failure does not recover it; all later calls and memory access are rejected. Export lookup, signature mismatch, and checked memory range errors leave the instance usable. Calling `lvw_step` or `lvw_shutdown` during a guest call is rejected before guest entry. Shutdown DELETE handlers can update host data, but context calls and memory access are rejected while closing. Normal cleanup closes the runtime, including a nonzero cleanup status; a trap or panic poisons it. Calling `lvw_shutdown` through `call_raw` applies the same closing rules. Dropping a runtime releases its store without executing guest code or user callbacks.
 
+### Native timers
+
+`runtime.createTimer(periodMs, callback, userData = 0)` creates a TypeScript `Timer`. Its callback receives that timer and runs synchronously during LVGL timer handling. `timer.handle` returns its active native pointer; `timer.cancel()` and `runtime.cancelTimer(timer)` cancel it. Promise and thenable callback results are rejected and poison the runtime.
+
+```ts
+let ticks = 0;
+const timer = runtime.createTimer(100, () => { ticks++; });
+runtime.unsafe.lv_timer_set_repeat_count(timer.handle, 3);
+runtime.step(100);
+timer.cancel();
+```
+
+Rust exposes `Runtime::create_timer` and `CallbackContext::create_timer`. The handler receives its execution context and `&Timer`; `Timer::pointer()` returns a checked `UnsafePointer`. A cloned `Timer` shares the original lifetime. Dropping a handle alone does not cancel it.
+
+```rust
+let timer = runtime.create_timer(100, UnsafePointer(0), |context, timer| {
+    context.raw()?.lv_timer_set_period(timer.pointer()?, 200)
+})?;
+runtime.raw()?.lv_timer_set_repeat_count(timer.pointer()?, 3)?;
+runtime.cancel_timer(&timer)?;
+```
+
+Timers use the core's tick and native `lv_timer_handler`, advanced by `lvw_step`; they do not use host clocks. Generated `lv_timer_*` methods control period, pause, resume, repeat count, auto-delete, and user data. The native `user_data` field is independent of the host callback ID. A finite repeat count with auto-delete enabled releases the host handler and invalidates the timer, including repeat count zero. Disabling auto-delete preserves a paused timer that can be configured and resumed.
+
+Cancellation is idempotent and rejects timers from another runtime. Callbacks can delete themselves or other timers and create new timers. Native `lv_timer_delete`, shutdown, and runtime failure also invalidate managed handles and release host handlers; Rust runtime drop does the same without calling guest cleanup. Cancellation after invalidation does not enter the guest. During shutdown, cancellation only releases host records. Saved raw pointers remain subject to LVGL's lifetime rules.
+
+Managed timers reserve the external-data destructor slot enabled by `LV_USE_EXT_DATA`. Do not replace that slot, replace the callback trampoline, or manually deinitialize a managed runtime. Function-pointer setters remain unsupported in the raw bindings; supported callback getters return Wasm table indices.
+
+The core imports `lvw.timer(callback_id, timer)` for synchronous execution and `lvw.timer_release(callback_id)` for host bookkeeping. Hosts must implement both imports when loading this core. Updated hosts can still load older bridge-compatible cores; timer creation requires both `lvw_timer_create` and `lvw_timer_delete` and reports missing exports before registering a handler. The bridge ABI remains `1`, with existing signatures unchanged.
+
 ### Constants and layouts
 
 TypeScript exports constants and layouts from the SDK entry point; Rust exposes them through `liblvgl_wasm_host::values`. Integer constants retain their target C values. TypeScript uses `number` up to 32 bits and `bigint` for wider integers; Rust uses the corresponding signed or unsigned integer type. For example, `LV_ANIM_REPEAT_INFINITE` remains `4294967295`; a Rust raw method with an `i32` parameter needs an explicit `as i32` conversion.
@@ -188,7 +218,9 @@ Use these values with the matching generated API. TypeScript checks `valuesIdent
 
 ## Interface
 
-The bridge ABI version is `1`. A Wasm instance owns one LVGL runtime and may create multiple displays. `lvw_step(elapsed_ms)` advances LVGL time and returns the next timer interval and frame count. Frames use XRGB8888 bytes in blue, green, red, unused order. Hosts must read or copy frame data before a call that can change the framebuffer. Each host must call `_initialize` before `lvw_init`.
+The bridge ABI version is `1`. A Wasm instance owns one LVGL runtime and may create multiple displays. `lvw_step(elapsed_ms, out_result_ptr)` advances LVGL time and writes the next timer interval and frame count into `lvw_step_result_t`. Frames use XRGB8888 bytes in blue, green, red, unused order. Hosts must read or copy frame data before a call that can change the framebuffer. Each host must call `_initialize` before `lvw_init`.
+
+`lvw_timer_create(period_ms, user_data, callback_id)` returns a native timer pointer, or `0` for an uninitialized runtime, zero or duplicate active callback ID, or allocation failure. `lvw_timer_delete(timer, callback_id)` matches both pointer and ID; it returns `0` when the pair is already absent, `-1` before initialization, and `-2` for zero arguments. Host IDs must be nonzero `u32` values and must not be reused during an instance's lifetime.
 
 `lvw_event_remove(object, callback_id)` removes event descriptors registered by `lvw_event_add` for that object and callback ID. It returns `0` even when no matching descriptor remains, `-1` before initialization, and `-2` for a zero object or ID. The object must still be valid in that instance; raw hosts retain responsibility for its lifetime.
 

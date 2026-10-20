@@ -159,6 +159,8 @@ test("the bridge rejects step and shutdown inside raw event and DELETE callbacks
     await Bun.file("target/wasm/liblvgl.wasm").arrayBuffer(),
     {
       lvw: {
+        timer() {},
+        timer_release() {},
         event(id: number) {
           notifications.push(id);
           expect(core.lvw_step(1, result)).toBe(-1);

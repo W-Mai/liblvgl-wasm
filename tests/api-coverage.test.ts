@@ -44,7 +44,7 @@ test("aggregate value shims pass color values through Wasm memory", async () => 
   expect(colorType?.layout.status).toBe("complete");
   const bytes = await Bun.file("target/wasm/liblvgl.wasm").arrayBuffer();
   const { instance } = await WebAssembly.instantiate(bytes, {
-    lvw: { event() {} },
+    lvw: { event() {}, timer() {}, timer_release() {} },
     wasi_snapshot_preview1: { fd_close() { return 0; }, fd_write() { return 0; } },
   });
   const raw = instance.exports as unknown as {

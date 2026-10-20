@@ -21,7 +21,7 @@ export async function startCDemo(canvas: HTMLCanvasElement, signal: AbortSignal,
   const bytes = await response.arrayBuffer();
   let core: DemoCore;
   const { instance } = await WebAssembly.instantiate(bytes, {
-    lvw: { event() {} },
+    lvw: { event() {}, timer() {}, timer_release() {} },
     wasi_snapshot_preview1: {
       fd_close: () => 0,
       fd_write(_fd: number, iov: number, count: number, written: number) {
