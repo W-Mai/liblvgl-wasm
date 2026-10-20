@@ -29,12 +29,8 @@ def declarations(command, source: Path):
     output = subprocess.run(command, input='#include "lvgl/lvgl.h"\n',
                             text=True, capture_output=True, check=True).stdout
     by_name = {}
-    typedefs = {}
     header_root = (source / "include" / "lvgl").resolve()
     for node in json_nodes(output):
-        if node.get("kind") == "TypedefDecl":
-            typedefs[node.get("name", "")] = node.get("type", {}).get("qualType", "")
-            continue
         if node.get("kind") != "FunctionDecl":
             continue
         name = node.get("name", "")
@@ -59,7 +55,7 @@ def declarations(command, source: Path):
             "static": node.get("storageClass") == "static",
         }
         by_name.setdefault(name, result)
-    return by_name, typedefs
+    return by_name
 
 
 def definitions(nm: Path, archive: Path):
@@ -69,12 +65,11 @@ def definitions(nm: Path, archive: Path):
             if (match := re.match(r"^(lv_[A-Za-z0-9_]+) [TW] ", line))}
 
 
-def value_type(type_name, typedefs):
-    underlying = typedefs.get(type_name, type_name)
-    return underlying.startswith(("struct ", "union ")) and "*" not in type_name
+def value_type(reference, types):
+    return types[reference["id"]]["kind"] == "record"
 
 
-def classify(declaration, symbols, typedefs):
+def classify(declaration, symbols, function_type, types):
     name = declaration["name"]
     if not declaration["static"] and name not in symbols:
         return "compile_disabled", "no definition in the configured LVGL archive"
@@ -83,30 +78,29 @@ def classify(declaration, symbols, typedefs):
         return "unsupported", "variadic function requires a fixed-argument wrapper"
     if "(*" in signature or any("(*" in item for item in declaration["parameter_types"]):
         return "unsupported", "function pointer callback requires a synchronous trampoline"
-    result_type = signature.split("(", 1)[0].strip()
-    if declaration["static"] or value_type(result_type, typedefs) or any(
-            value_type(item, typedefs) for item in declaration["parameter_types"]):
+    if declaration["static"] or value_type(function_type["result"], types) or any(
+            value_type(item, types) for item in function_type["parameters"]):
         return "abi_shim", None
     return "direct_export", None
 
 
-def shim(declaration, typedefs):
+def shim(declaration, function_type, types):
     name = declaration["name"]
     export_name = f"lvw_api_{name}"
     result_type = declaration["signature"].split("(", 1)[0].strip()
-    value_result = value_type(result_type, typedefs)
+    value_result = value_type(function_type["result"], types)
     parameters = []
     arguments = []
-    for index, (type_name, underlying) in enumerate(zip(
-            declaration["parameters"], declaration["parameter_types"])):
-        if value_type(underlying, typedefs):
-            parameters.append(f"const {type_name} *arg{index}")
+    for index, (type_name, reference) in enumerate(zip(
+            declaration["parameters"], function_type["parameters"])):
+        if value_type(reference, types):
+            parameters.append(f"const __typeof_unqual__({type_name}) *arg{index}")
             arguments.append(f"*arg{index}")
         else:
             parameters.append(f"{type_name} arg{index}")
             arguments.append(f"arg{index}")
     if value_result:
-        parameters.insert(0, f"{result_type} *out")
+        parameters.insert(0, f"__typeof_unqual__({result_type}) *out")
     return_type = "void" if value_result else result_type
     call = f"{name}({', '.join(arguments)})"
     statement = f"*out = {call};" if value_result else (
@@ -129,7 +123,7 @@ def main():
     parser.add_argument("--shims", required=True, type=Path)
     args = parser.parse_args()
     command = compiler_command(args.sdk / "bin" / "clang", args.source, args.config.resolve())
-    found, typedefs = declarations(command, args.source)
+    found = declarations(command, args.source)
     constant_report = collect_constants(command, args.source, args.config.resolve())
     type_report = collect_layouts(command, args.sdk, args.source, args.config.resolve(),
                                   set(found), args.output.parent)
@@ -140,11 +134,12 @@ def main():
     shims = []
     prototypes = []
     for name, declaration in sorted(found.items()):
-        category, reason = classify(declaration, symbols, typedefs)
+        function_type = type_report["types"][type_report["function_types"][name]["canonical"]["id"]]
+        category, reason = classify(declaration, symbols, function_type, type_report["types"])
         export_name = name if category == "direct_export" else None
         abi_signature = None
         if category == "abi_shim":
-            export_name, abi_signature, source, prototype = shim(declaration, typedefs)
+            export_name, abi_signature, source, prototype = shim(declaration, function_type, type_report["types"])
             shims.append(source)
             prototypes.append(prototype)
         entries.append({**declaration, "category": category, "reason": reason,

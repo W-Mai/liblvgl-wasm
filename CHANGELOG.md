@@ -26,6 +26,7 @@
 
 ### Fixed
 
+- Aggregate ABI wrappers recognize qualified record types and typedef chains through the canonical type graph.
 - Builds recover from missing cached LVGL sources and resolve SDK, source, and generator configuration paths when invoked outside the repository.
 - LVGL source downloads use a SHA-256-verified release archive with a GitHub API download fallback.
 - Bun test discovery is restricted to repository tests, excluding copies under build directories.

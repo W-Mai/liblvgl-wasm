@@ -39,7 +39,7 @@ test("target type metadata forms a closed graph for every public function", asyn
       records: Record<string, number>;
       bitfields: number;
     };
-    declarations: { name: string }[];
+    declarations: { name: string; category: string }[];
   };
   const nodes = Object.values(report.types);
   expect(nodes.length).toBeGreaterThan(0);
@@ -128,6 +128,12 @@ test("target type metadata forms a closed graph for every public function", asyn
     for (const parameter of canonical.parameters!) {
       expect(parameter.qualifiers).toEqual([]);
       expect(["alias", "array", "function", "void"]).not.toContain(reference(parameter).kind);
+    }
+  }
+  for (const entry of report.declarations.filter((entry) => entry.category === "direct_export")) {
+    const canonical = reference(report.function_types[entry.name]!.canonical);
+    for (const value of [canonical.result!, ...canonical.parameters!]) {
+      expect(reference(value).kind).not.toBe("record");
     }
   }
 });
