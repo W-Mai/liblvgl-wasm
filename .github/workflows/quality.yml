@@ -22,7 +22,7 @@ jobs:
       - name: Install build tools
         run: |
           sudo apt-get update
-          sudo apt-get install --yes cmake ninja-build
+          sudo apt-get install --yes cmake ninja-build libtinfo6 libstdc++6 libgcc-s1
           rustup toolchain install 1.92.0 --profile minimal \
             --component rustfmt --component clippy --target wasm32-unknown-unknown
       - name: Install wasi-sdk and wasm-tools

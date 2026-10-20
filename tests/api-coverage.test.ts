@@ -35,6 +35,13 @@ test("API inventory matches the Wasm exports", async () => {
 });
 
 test("aggregate value shims pass color values through Wasm memory", async () => {
+  const report = await Bun.file("target/wasm/api.json").json() as {
+    types: Record<string, { kind: string; name?: string; layout: { status: string; size: number | null } }>;
+  };
+  const colorType = Object.values(report.types).find(
+    (node) => node.kind === "alias" && node.name === "lv_color_t",
+  );
+  expect(colorType?.layout.status).toBe("complete");
   const bytes = await Bun.file("target/wasm/liblvgl.wasm").arrayBuffer();
   const { instance } = await WebAssembly.instantiate(bytes, {
     lvw: { event() {} },
@@ -48,7 +55,7 @@ test("aggregate value shims pass color values through Wasm memory", async () => 
     lvw_api_lv_color_to_int(color: number): number;
   };
   raw._initialize();
-  const color = raw.lvw_alloc(4);
+  const color = raw.lvw_alloc(colorType!.layout.size!);
   expect(color).not.toBe(0);
   raw.lvw_api_lv_color_hex(color, 0x123456);
   expect(raw.lvw_api_lv_color_to_int(color)).toBe(0x123456);

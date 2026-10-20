@@ -4,7 +4,9 @@
 
 ## Build
 
-Requires CMake 3.25+, Ninja, Python 3.9+, Bun, Rust 1.92+ with the `wasm32-unknown-unknown` target, and wasi-sdk 34. Set `WASI_SDK_PATH` to the SDK root or add its `bin` directory to `PATH`. Existing builds can reuse the SDK path recorded in `target/wasm/CMakeCache.txt`. CMake downloads the official LVGL 9.6.0 lite source archive and verifies the SHA-256 pinned in `CMakeLists.txt`; set `LVGL_SOURCE_DIR` to use an existing source tree.
+Requires CMake 3.25+, Ninja, Python 3.9+, Bun, Rust 1.92+ with the `wasm32-unknown-unknown` target, and the complete wasi-sdk 34 distribution for macOS or Linux. API generation loads the SDK's bundled libclang and uses Python's standard library; keep the SDK's libraries and sysroot together. Set `WASI_SDK_PATH` to the SDK root or add its `bin` directory to `PATH`. Existing builds can reuse the SDK path recorded in `target/wasm/CMakeCache.txt`. CMake downloads the official LVGL 9.6.0 lite source archive and verifies the SHA-256 pinned in `CMakeLists.txt`; set `LVGL_SOURCE_DIR` to use an existing source tree.
+
+On Ubuntu 24.04, install `libtinfo6`, `libstdc++6`, and `libgcc-s1` for the SDK's shared libraries. Keep the bundled `libclang`, LLVM, and `libedit` libraries and their symlinks intact.
 
 ```sh
 WASI_SDK_PATH=/path/to/wasi-sdk ./scripts/build.sh
@@ -17,7 +19,7 @@ Generated files stay under `target/`:
 | Path | Content |
 | --- | --- |
 | `target/wasm/liblvgl.wasm` | WASIp1 library module |
-| `target/wasm/api.json` | Enabled functions, binding status, target information, and constant metadata |
+| `target/wasm/api.json` | Enabled functions, binding status, constants, and target type layouts |
 | `target/wasm/api-exports.txt` | Generated linker export flags |
 | `target/wasm/api-shims.c` | Generated wrappers for aggregate values and inline functions |
 | `target/wasm/examples/c/liblvgl-c-demo.wasm` | C demo linked with LVGL |
@@ -85,5 +87,7 @@ The bridge ABI version is `1`. A Wasm instance owns one LVGL runtime and may cre
 The generated API report classifies declarations as `direct_export`, `abi_shim`, `compile_disabled`, or `unsupported`. Direct functions keep their `lv_*` export names. Aggregate values and inline functions use generated `lvw_api_lv_*` wrappers: aggregate arguments are pointers into Wasm memory, and aggregate returns use an output pointer. `target/wasm/api.json` records each export name, wrapper signature, and unsupported reason. Function pointer callbacks and variadic functions remain unsupported by the raw API generator. The TypeScript adapter provides a typed interface for the bridge and the APIs used by its example.
 
 The report also includes `constants` and `constant_summary` for active `LV_*` and `LVGL_*` enums and macros visible through the configured public header. Values are evaluated by the same Wasm target compiler as the core. Integers include the C type, bit width, signedness, and a decimal string value to preserve 64-bit precision. Strings include exact bytes in `bytes_hex`, their length and termination flag, and UTF-8 text when valid. Function macros, empty macros, and unsupported expressions have separate classifications; symbol addresses require an instance-specific accessor and are not exported as numeric constants. Private `_LV_*` names and declarations hidden by disabled configuration are outside this inventory. Function counts in `summary` remain separate from constant counts.
+
+`types` describes the types reachable from public function declarations, including aliases, pointers, arrays, records, enums, and callback signatures. Each reference contains a stable `id` and its C qualifiers. Complete object layouts record byte sizes and alignments; record fields record bit offsets and optional bit widths. Opaque records, incomplete arrays, functions, and `void` have explicit layout statuses and null sizes. Hosts must use the target layouts when allocating aggregate values; `lv_color_t`, for example, occupies three bytes. Bitfields require masks or accessors, and opaque records expose no fields. `function_types` records both declared C signatures and canonical signatures with adjusted array and function parameters. These are C type descriptions, not Wasm function signatures. `type_summary` counts nodes, record layout statuses, and bitfields. The generator rejects disagreement between the compiler inventories and omits machine-specific paths from identifiers.
 
 The software configuration enables PNG, BMP, GIF, and TinyTTF. ThorVG, FreeType, SVG, Lottie, native windows, and hardware drawing backends are disabled. The Wasm linear memory maximum is 256 MiB.

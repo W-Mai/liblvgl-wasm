@@ -8,6 +8,7 @@ import subprocess
 from pathlib import Path
 
 from constants import collect_constants, json_nodes
+from layouts import collect_layouts
 
 
 def compiler_command(clang: Path, source: Path, config: Path):
@@ -128,6 +129,10 @@ def main():
     command = compiler_command(args.sdk / "bin" / "clang", args.source, args.config.resolve())
     found, typedefs = declarations(command, args.source)
     constant_report = collect_constants(command, args.source, args.config.resolve())
+    type_report = collect_layouts(command, args.sdk, args.source, args.config.resolve(),
+                                  set(found), args.output.parent)
+    if any(constant_report["target"].get(key) != value for key, value in type_report["target"].items()):
+        raise ValueError("constant and type compilers disagree on the target")
     symbols = definitions(args.sdk / "bin" / "llvm-nm", args.archive)
     entries = []
     shims = []
@@ -143,7 +148,7 @@ def main():
     counts = {category: sum(item["category"] == category for item in entries)
               for category in ("direct_export", "abi_shim", "compile_disabled", "unsupported")}
     args.output.parent.mkdir(parents=True, exist_ok=True)
-    args.output.write_text(json.dumps({**constant_report, "summary": {"total": len(entries), **counts},
+    args.output.write_text(json.dumps({**type_report, **constant_report, "summary": {"total": len(entries), **counts},
                                        "declarations": entries}, indent=2) + "\n")
     args.shims.write_text('#include "lvgl/lvgl.h"\n\n'
                           '#pragma clang diagnostic push\n'
@@ -154,6 +159,7 @@ def main():
     args.exports.write_text("\n".join(f"-Wl,--export={name}" for name in exports) + "\n")
     print(f"API inventory: {len(entries)} declarations, {counts}")
     print(f"Constant inventory: {constant_report['constant_summary']}")
+    print(f"Type inventory: {type_report['type_summary']}")
 
 
 if __name__ == "__main__":
