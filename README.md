@@ -4,11 +4,13 @@
 
 ## Build
 
-Requires CMake 3.25+, Ninja, Python 3, Bun, Rust with the `wasm32-unknown-unknown` target, and wasi-sdk 34. Set `WASI_SDK_PATH` to the SDK root or add its `bin` directory to `PATH`. Existing builds can reuse the SDK path recorded in `target/wasm/CMakeCache.txt`. LVGL is fetched at the commit pinned in `CMakeLists.txt`; set `LVGL_SOURCE_DIR` to use an existing checkout.
+Requires CMake 3.25+, Ninja, Python 3.9+, Bun, Rust with the `wasm32-unknown-unknown` target, and wasi-sdk 34. Set `WASI_SDK_PATH` to the SDK root or add its `bin` directory to `PATH`. Existing builds can reuse the SDK path recorded in `target/wasm/CMakeCache.txt`. CMake downloads the official LVGL 9.6.0 lite source archive and verifies the SHA-256 pinned in `CMakeLists.txt`; set `LVGL_SOURCE_DIR` to use an existing source tree.
 
 ```sh
 WASI_SDK_PATH=/path/to/wasi-sdk ./scripts/build.sh
 ```
+
+The build script can be invoked from another working directory. Relative SDK and source paths resolve from the caller's directory. A valid cached source override is reused; a missing cached source falls back to the pinned archive. An invalid explicit `LVGL_SOURCE_DIR` stops the build with an error.
 
 Generated files stay under `target/`:
 

@@ -3,7 +3,6 @@ project(liblvgl_wasm VERSION 0.1.0 LANGUAGES C CXX ASM)
 
 include(FetchContent)
 
-set(LVGL_COMMIT 80ca777e37a2b176770726a02e07a6fb79ef0b39)
 set(CONFIG_LV_BUILD_DEMOS OFF CACHE BOOL "" FORCE)
 set(CONFIG_LV_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 set(CONFIG_LV_USE_THORVG OFF CACHE BOOL "" FORCE)
@@ -14,8 +13,14 @@ set(LV_USE_PKG_CONFIG OFF CACHE BOOL "" FORCE)
 set(LV_FETCH_DEPENDENCIES OFF CACHE BOOL "" FORCE)
 
 FetchContent_Declare(lvgl
-    GIT_REPOSITORY https://github.com/lvgl/lvgl.git
-    GIT_TAG ${LVGL_COMMIT}
+    URL
+        https://github.com/lvgl/lvgl/releases/download/v9.6.0/lvgl-v9.6.0-lite.zip
+        https://api.github.com/repos/lvgl/lvgl/releases/assets/568163200
+    URL_HASH SHA256=3cbb7ddbedeb1672ad04908afe8ae290561d625d9307ea6a875d3863dae348ae
+    HTTP_HEADER "Accept: application/octet-stream"
+    DOWNLOAD_NAME lvgl-v9.6.0-lite.zip
+    DOWNLOAD_EXTRACT_TIMESTAMP FALSE
+    TLS_VERIFY ON
 )
 FetchContent_MakeAvailable(lvgl)
 

@@ -119,12 +119,13 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--source", required=True, type=Path)
     parser.add_argument("--sdk", required=True, type=Path)
+    parser.add_argument("--config", type=Path, default=Path(__file__).resolve().parents[1] / "config")
     parser.add_argument("--archive", required=True, type=Path)
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--exports", required=True, type=Path)
     parser.add_argument("--shims", required=True, type=Path)
     args = parser.parse_args()
-    found, typedefs = declarations(args.sdk / "bin" / "clang", args.source, Path("config").resolve())
+    found, typedefs = declarations(args.sdk / "bin" / "clang", args.source, args.config.resolve())
     symbols = definitions(args.sdk / "bin" / "llvm-nm", args.archive)
     entries = []
     shims = []

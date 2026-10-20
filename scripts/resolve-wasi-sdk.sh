@@ -33,4 +33,5 @@ if [ -z "$sdk" ] || [ ! -x "$sdk/bin/clang" ] || [ ! -f "$sdk/share/cmake/wasi-s
     exit 1
 fi
 
-printf '%s\n' "$sdk"
+CDPATH= cd -- "$sdk"
+pwd

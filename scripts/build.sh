@@ -5,30 +5,36 @@ root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 sdk=$(sh "$root/scripts/resolve-wasi-sdk.sh" "$root")
 ninja=${NINJA_BIN:-ninja}
 
-if [ -n "${LVGL_SOURCE_DIR:-}" ]; then
-    cmake -S "$root" -B "$root/target/wasm" -G Ninja \
-        -DCMAKE_MAKE_PROGRAM="$ninja" \
-        -DCMAKE_TOOLCHAIN_FILE="$sdk/share/cmake/wasi-sdk-p1.cmake" \
-        -DFETCHCONTENT_SOURCE_DIR_LVGL="$LVGL_SOURCE_DIR" \
-        -DCMAKE_BUILD_TYPE=Release
-else
-    cmake -S "$root" -B "$root/target/wasm" -G Ninja \
-        -DCMAKE_MAKE_PROGRAM="$ninja" \
-        -DCMAKE_TOOLCHAIN_FILE="$sdk/share/cmake/wasi-sdk-p1.cmake" \
-        -DCMAKE_BUILD_TYPE=Release
+source_dir=${LVGL_SOURCE_DIR:-}
+if [ -z "$source_dir" ] && [ -f "$root/target/wasm/CMakeCache.txt" ]; then
+    source_dir=$(sed -n 's/^FETCHCONTENT_SOURCE_DIR_LVGL:[^=]*=//p' "$root/target/wasm/CMakeCache.txt")
+fi
+if [ -n "$source_dir" ]; then
+    if [ ! -f "$source_dir/CMakeLists.txt" ] || [ ! -f "$source_dir/include/lvgl/lvgl.h" ]; then
+        if [ -n "${LVGL_SOURCE_DIR:-}" ]; then
+            printf 'invalid LVGL_SOURCE_DIR: %s\n' "$source_dir" >&2
+            exit 1
+        fi
+        printf 'Ignoring missing cached LVGL source: %s\n' "$source_dir" >&2
+        source_dir=
+    else
+        source_dir=$(CDPATH= cd -- "$source_dir" && pwd)
+    fi
 fi
 
+cmake -S "$root" -B "$root/target/wasm" -G Ninja \
+    -DCMAKE_MAKE_PROGRAM="$ninja" \
+    -DCMAKE_TOOLCHAIN_FILE="$sdk/share/cmake/wasi-sdk-p1.cmake" \
+    -DFETCHCONTENT_SOURCE_DIR_LVGL:PATH="$source_dir" \
+    -DCMAKE_BUILD_TYPE=Release
+
 cmake --build "$root/target/wasm" --target lvgl -j 4
-if [ -n "${LVGL_SOURCE_DIR:-}" ]; then
-    source_dir=$LVGL_SOURCE_DIR
-else
-    source_dir=$(sed -n 's/^FETCHCONTENT_SOURCE_DIR_LVGL:PATH=//p' "$root/target/wasm/CMakeCache.txt")
-    if [ -z "$source_dir" ]; then
-        source_dir="$root/target/wasm/_deps/lvgl-src"
-    fi
+if [ -z "$source_dir" ]; then
+    source_dir="$root/target/wasm/_deps/lvgl-src"
 fi
 python3 "$root/generator/api.py" \
     --source "$source_dir" --sdk "$sdk" \
+    --config "$root/config" \
     --archive "$root/target/wasm/_deps/lvgl-build/liblvgl.a" \
     --output "$root/target/wasm/api.json" \
     --exports "$root/target/wasm/api-exports.txt" \

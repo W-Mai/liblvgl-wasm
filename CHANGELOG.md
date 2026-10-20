@@ -18,3 +18,8 @@
 - Syntax highlighting for source files in both Studio side panels, with light and dark color palettes.
 - Open source panels refresh from repository files on localhost.
 - Build scripts resolve wasi-sdk from `WASI_SDK_PATH`, the existing CMake cache, or `PATH` instead of a machine-specific path.
+
+### Fixed
+
+- Builds recover from missing cached LVGL sources and resolve SDK, source, and generator configuration paths when invoked outside the repository.
+- LVGL source downloads use a SHA-256-verified release archive with a GitHub API download fallback.
