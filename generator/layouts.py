@@ -186,6 +186,45 @@ class TypeGraph:
             raise ValueError(f"unsupported type kind in public type graph: {label}")
         return {"id": identity, "qualifiers": sorted(qualifiers)}
 
+    def callback_types(self, cursors):
+        typedefs = {}
+        for cursor in cursors:
+            if cursor.kind == 20:
+                name = self.clang.string(self.clang.getCursorSpelling(cursor))
+                typedefs.setdefault(name, []).append(self.clang.getCanonicalCursor(cursor))
+
+        def unalias(reference):
+            seen = set()
+            while self.types[reference["id"]]["kind"] == "alias":
+                if reference["id"] in seen:
+                    raise ValueError("cyclic callback type aliases")
+                seen.add(reference["id"])
+                reference = self.types[reference["id"]]["underlying"]
+            return reference
+
+        callbacks = {}
+        names = {}
+        for identity, node in sorted(self.types.items()):
+            if node["kind"] != "alias" or not node["name"]:
+                continue
+            pointer = self.types[unalias(node["underlying"])["id"]]
+            if pointer["kind"] != "pointer":
+                continue
+            reference = unalias(pointer["pointee"])
+            if self.types[reference["id"]]["kind"] != "function":
+                continue
+            name = node["name"]
+            visible = typedefs.get(name, [])
+            declaration = self.declarations[identity]
+            if not visible or any(not self.clang.equalCursors(cursor, declaration)
+                                  for cursor in visible):
+                raise ValueError(f"callback typedef is not unambiguously visible: {identity}")
+            if name in names and names[name] != identity:
+                raise ValueError(f"callback typedef name collision: {name}")
+            names[name] = identity
+            callbacks[identity] = {"function_type": reference}
+        return callbacks
+
 
 def collect_layouts(command, sdk: Path, source: Path, config: Path,
                     function_names, output_dir: Path) -> dict:
@@ -193,7 +232,8 @@ def collect_layouts(command, sdk: Path, source: Path, config: Path,
     with TranslationUnit(sdk, command, output_dir) as clang:
         graph = TypeGraph(clang, sdk, source, config)
         functions = {}
-        for cursor in clang.children(clang.cursor):
+        cursors = clang.children(clang.cursor)
+        for cursor in cursors:
             if cursor.kind != 8:
                 continue
             name = clang.string(clang.getCursorSpelling(cursor))
@@ -231,6 +271,7 @@ def collect_layouts(command, sdk: Path, source: Path, config: Path,
             "target": clang.target,
             "types": dict(sorted(graph.types.items())),
             "function_types": dict(sorted(functions.items())),
+            "callback_types": graph.callback_types(cursors),
             "type_summary": {
                 "total": len(graph.types),
                 "kinds": dict(sorted(Counter(node["kind"] for node in graph.types.values()).items())),

@@ -42,6 +42,11 @@ def collect_signatures(command, declarations, prototypes, output_dir: Path):
             for name in expected
         ) + "\n"
     )
+    return probe_signatures(command, source, object_file, expected)
+
+
+def probe_signatures(command, source, object_file, expected):
+    object_file.unlink(missing_ok=True)
     subprocess.run(command + ["-Wall", "-Wextra", "-Werror", "-c", str(source),
                               "-o", str(object_file)], check=True)
     module = read_module(object_file.read_bytes())
@@ -58,6 +63,51 @@ def collect_signatures(command, declarations, prototypes, output_dir: Path):
                          f"missing={sorted(expected.keys() - actual.keys())}, "
                          f"extra={sorted(actual.keys() - expected.keys())}")
     return actual
+
+
+def collect_callback_signatures(command, types, callbacks, output_dir: Path):
+    expected = {}
+    declarations = []
+    for identity in callbacks:
+        name = types[identity]["name"]
+        probe = f"lvw_callback_probe_{name}"
+        if probe in expected:
+            raise ValueError(f"duplicate callback probe: {probe}")
+        expected[probe] = identity
+        declarations.extend([
+            f"#ifdef {name}",
+            f'#error "callback typedef is shadowed by a macro: {name}"',
+            "#endif",
+            f"extern __typeof__(*({name})0) {probe};",
+            f"__attribute__((used)) __typeof__(&{probe}) "
+            f"lvw_callback_address_{name} = &{probe};",
+        ])
+    source = output_dir / "callback-signatures.c"
+    object_file = output_dir / "callback-signatures.o"
+    source.write_text(
+        '#include "lvgl/lvgl.h"\n'
+        '#pragma clang diagnostic ignored "-Wdeprecated-declarations"\n'
+        + "\n".join(declarations) + "\n"
+    )
+    signatures = probe_signatures(command, source, object_file, expected)
+    result = {}
+    functions = {}
+    for probe, identity in expected.items():
+        reference = callbacks[identity]["function_type"]
+        signature = signatures[probe]
+        previous = functions.setdefault(reference["id"], signature)
+        if previous != signature:
+            raise ValueError(f"callback function type has inconsistent Wasm signatures: {identity}")
+        result[identity] = {"function_type": reference, "wasm_signature": signature}
+    return {
+        "callback_types": result,
+        "callback_summary": {
+            "typedefs": len(result),
+            "function_types": len(functions),
+            "wasm_signatures": len({json.dumps(signature, sort_keys=True)
+                                    for signature in signatures.values()}),
+        },
+    }
 
 
 def verify(api_path: Path, wasm_path: Path, output: Path):

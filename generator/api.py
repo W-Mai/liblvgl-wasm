@@ -9,7 +9,7 @@ from pathlib import Path
 
 from constants import collect_constants, json_nodes
 from layouts import collect_layouts
-from signatures import collect_signatures
+from signatures import collect_callback_signatures, collect_signatures
 
 
 def compiler_command(clang: Path, source: Path, config: Path):
@@ -148,10 +148,13 @@ def main():
               for category in ("direct_export", "abi_shim", "compile_disabled", "unsupported")}
     args.output.parent.mkdir(parents=True, exist_ok=True)
     signatures = collect_signatures(command, entries, prototypes, args.output.parent)
+    callback_report = collect_callback_signatures(
+        command, type_report["types"], type_report["callback_types"], args.output.parent)
     for entry in entries:
         entry["wasm_signature"] = signatures.get(entry["export_name"])
     args.output.write_text(json.dumps({
-        **type_report, **constant_report, "summary": {"total": len(entries), **counts},
+        **type_report, **constant_report, **callback_report,
+        "summary": {"total": len(entries), **counts},
         "wasm_summary": {"expected_functions": len(signatures)}, "declarations": entries,
     }, indent=2) + "\n")
     args.shims.write_text('#include "lvgl/lvgl.h"\n\n'
@@ -164,6 +167,7 @@ def main():
     print(f"API inventory: {len(entries)} declarations, {counts}")
     print(f"Constant inventory: {constant_report['constant_summary']}")
     print(f"Type inventory: {type_report['type_summary']}")
+    print(f"Callback inventory: {callback_report['callback_summary']}")
 
 
 if __name__ == "__main__":

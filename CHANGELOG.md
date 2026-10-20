@@ -10,6 +10,7 @@
 - Generated enum and macro constants evaluated by the Wasm target compiler, including integer types and widths, exact string bytes, and explicit classifications for unsupported expressions.
 - Generated target type graphs with record sizes, alignments, field offsets, bitfields, opaque types, aliases, and declared and canonical C function signatures.
 - Compiler-derived Wasm function signatures, linked-core signature checks, and verification records tied to API and core hashes.
+- Compiler-derived Wasm signatures for public callback typedefs, with type-graph references and engine-checked probe imports.
 - Generated TypeScript `lv_*` calls with aggregate pointer semantics, bigint arguments and results, exact-core identity checks, and guards after runtime shutdown.
 - Shared TypeScript guest-call failure guards, explicit closing state, and lifecycle reentry checks in the host and event bridge.
 - Idempotent event unsubscription, automatic host callback release on deletion, shared object lifetimes, and input references tied to their owning display. TypeScript and Studio require the `lvw_event_remove` core export.
