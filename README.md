@@ -431,3 +431,40 @@ Setting a source decodes its first frame synchronously. `step(ms)` advances the 
 `lv_gif_set_loop_count(gif, 0)` repeats indefinitely; a positive count limits the number of playback cycles. `LV_EVENT_READY` fires when the last frame is decoded, after updating its pixels and loop state. Its handler can delete the widget, replace its source, pause, or restart playback. A single-frame GIF can deliver this event inside `lv_gif_set_src`. `lv_gif_restart` rewinds, clears the canvas, and resets the loop count to `-1`; set the required loop count again. Pause/resume preserves the timer's elapsed time.
 
 Both hosts verify the same three-frame resource with distinct 80/120/160 ms delays, palette transparency, and disposal mode 2, plus a single-frame resource for synchronous completion. Disposal mode 3 (restore to previous) is unsupported. Automatic pausing when invisible requires an explicit resume after showing the widget. GIF decoding is synchronous, and `is_loaded` or `READY` is not a full-file integrity check.
+
+### TinyTTF fonts
+
+The generated TypeScript and Rust APIs expose `lv_tiny_ttf_create_data`, `lv_tiny_ttf_create_data_ex`, `lv_tiny_ttf_set_size`, and `lv_tiny_ttf_destroy`. Copy a complete TrueType font into guest memory and keep that allocation alive while any font created from it exists. A font can be shared by multiple labels; creating a label does not transfer ownership of the font.
+
+```ts
+import { LV_PART_MAIN, LV_STYLE_TEXT_FONT } from "./target/typescript/index.js";
+
+const raw = runtime.unsafe;
+const bytes = new Uint8Array(await (await fetch("fonts/app.ttf")).arrayBuffer());
+const data = raw.lvw_alloc(bytes.length);
+if (!data) throw new Error("Cannot allocate font data");
+new Uint8Array(raw.memory.buffer, data, bytes.length).set(bytes);
+const font = raw.lv_tiny_ttf_create_data(data, bytes.length, 24);
+if (!font) {
+  raw.lvw_free(data);
+  throw new Error("Cannot load font");
+}
+const label = runtime.createLabel(screen);
+raw.lv_obj_set_style_text_font(label.handle, font, LV_PART_MAIN);
+runtime.setText(label, "Hello");
+runtime.step(33);
+
+raw.lv_tiny_ttf_set_size(font, 32);
+raw.lv_obj_refresh_style(label.handle, LV_PART_MAIN, LV_STYLE_TEXT_FONT);
+runtime.step(33);
+
+label.delete();
+raw.lv_tiny_ttf_destroy(font);
+raw.lvw_free(data);
+```
+
+Font size is measured against the font's units per em; line height and baseline also depend on its vertical metrics. Changing size clears glyph, bitmap, and kerning caches. Refresh each label that uses the changed font so its layout is recalculated. The `_ex` constructor accepts a kerning mode and a glyph/bitmap cache entry count; a count of zero disables those two caches, while the separate kerning cache remains enabled.
+
+Release any manually acquired glyph draw data before changing size or destroying a font. Remove all label, style, and fallback references before calling `lv_tiny_ttf_destroy`; then free its borrowed bytes. Deleting labels or shutting down LVGL does not automatically destroy fonts created through these raw constructors. A fallback font must remain alive until its references and acquired glyphs have been released.
+
+Both hosts check geometric glyph pixels, fractional coverage, composite characters, kerning, fallback resolution, size changes, and shared font lifetimes. The default configuration disables TinyTTF file streaming, so `lv_tiny_ttf_create_file` is absent. The enabled memory parser ignores `data_size` and does not validate arbitrary malformed or truncated fonts; provide valid, complete font data. OpenType shaping is not supplied by this API.

@@ -4,6 +4,7 @@
 
 ### Added
 
+- TinyTTF rendering checks in both hosts for glyph coverage, metrics, kerning, fallback, cache invalidation, and font resource lifetimes.
 - GIF playback checks in both hosts for frame pixels, timing, queries, loops, source changes, and completion callbacks.
 - PNG rendering checks for RGB8, RGBA8, indexed transparency, and Adam7 input in both hosts, including malformed-image recovery and shared resource lifetimes.
 - Native image decoder callbacks in TypeScript and Rust, with synchronous session access, complete and incremental pixel buffers, managed cancellation, and native deletion tracking.
