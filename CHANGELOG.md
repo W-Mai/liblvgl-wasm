@@ -7,6 +7,7 @@
 
 ### Added
 
+- TypeScript application sample with generated LVGL calls, constants, color layouts, managed click callbacks, and application identity checks.
 - Studio library details with core and SDK identities, generated build configuration, and strict checks for browser and Worker code.
 - Immutable TypeScript runtime identity snapshots using the same core and values checks as generated API access.
 - Native Lottie playback from memory and uploaded resources, with generated APIs, timing controls, source replacement, premultiplied buffers, and lifetime checks in both hosts.

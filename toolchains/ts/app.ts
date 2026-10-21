@@ -1,22 +1,42 @@
-import type { LvglRuntime, ObjectRef, Display } from "../../bindings/typescript/src/index.ts";
+import {
+  LV_COLOR_T_SIZE, LV_EVENT_CLICKED, LV_PALETTE_BLUE, LV_PALETTE_GREEN,
+  LV_PART_MAIN, valuesIdentity,
+} from "../../target/typescript/values.ts";
+import type { AppApi } from "./api.ts";
 
-interface StudioApi {
-  runtime: LvglRuntime;
-  display: Display;
-  screen: ObjectRef;
-  log(message: unknown): void;
-}
+function main(api: AppApi): void {
+  const { runtime } = api;
+  const { identity } = runtime;
+  if (identity.sdk.status !== "matched"
+      || valuesIdentity.wasm_sha256 !== identity.coreSha256
+      || valuesIdentity.api_sha256 !== identity.sdk.apiSha256) {
+    throw new Error("TS SDK sample requires matching core and generated values; rebuild the application with the selected SDK");
+  }
 
-function main(api: StudioApi): void {
-  const button = api.runtime.createButton(api.screen);
-  button.setSize(180, 64);
-  button.setPosition(70, 88);
-  const label = api.runtime.createLabel(button);
-  api.runtime.setText(label, "TS application");
-  button.on(api.runtime.clickedEvent, () => {
-    api.runtime.setText(label, "TS clicked");
-    api.log("TS clicked");
+  const raw = runtime.unsafe;
+  const button = runtime.createButton(api.screen);
+  raw.lv_obj_set_size(button.handle, 180, 64);
+  raw.lv_obj_center(button.handle);
+  const label = runtime.createLabel(button);
+  let clicks = 0;
+
+  function update(): void {
+    const color = raw.lvw_alloc(LV_COLOR_T_SIZE);
+    if (!color) throw new Error("Color allocation failed");
+    // Aggregate results are written into caller-owned guest memory.
+    raw.lv_palette_main(color, clicks % 2 ? LV_PALETTE_GREEN : LV_PALETTE_BLUE);
+    raw.lv_obj_set_style_bg_color(button.handle, color, LV_PART_MAIN);
+    raw.lvw_free(color);
+    runtime.setText(label, `Clicks: ${clicks}`);
+    raw.lv_obj_center(label.handle);
+  }
+
+  update();
+  button.on(LV_EVENT_CLICKED, () => {
+    clicks++;
+    update();
+    api.log(`Clicks: ${clicks}`);
   });
 }
 
-(globalThis as typeof globalThis & { main?: (api: StudioApi) => void }).main = main;
+(globalThis as typeof globalThis & { main?: (api: AppApi) => void }).main = main;

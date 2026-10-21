@@ -21,10 +21,10 @@ const toolchains: Record<Language, {
   },
   ts: {
     name: "TypeScript", output: "Build to .js",
-    summary: "Write typed UI code, then bundle it into one browser-ready JavaScript file.",
+    summary: "Call LVGL APIs with generated constants and layouts. Handle clicks through the host SDK.",
     command: "bun run build:ts-app\n# upload target/apps/ts/app.js",
     sample: "/target/apps/ts/app.js", kind: "js",
-    links: [["app.ts", "/toolchains/ts/app.ts"]],
+    links: [["app.ts", "/toolchains/ts/app.ts"], ["api.ts", "/toolchains/ts/api.ts"]],
   },
   c: {
     name: "C", output: "Build to .wasm",

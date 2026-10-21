@@ -1,13 +1,7 @@
 import { LvglRuntime, type Display, type ObjectRef, type PointerInput } from "../../bindings/typescript/src/index.ts";
+import type { AppApi } from "../../toolchains/ts/api.ts";
 import { describeCore, inspectCore } from "./core.ts";
 import type { AppSource, RunnerInput, RunnerOutput } from "./protocol.ts";
-
-type AppApi = {
-  runtime: LvglRuntime;
-  display: Display;
-  screen: ObjectRef;
-  log(message: unknown): void;
-};
 
 const worker = self as DedicatedWorkerGlobalScope;
 let runtime: LvglRuntime | undefined;

@@ -12,7 +12,7 @@
     "build:studio-runtime": "bun run build:studio-worker && bun build studio/src/controller.ts --target browser --outfile target/studio/controller.js",
     "build:studio": "bun run build:studio-runtime && bun build studio/src/main.ts --target browser --outfile target/studio/main.js",
     "build:apps": "./toolchains/c/build.sh && ./toolchains/cpp/build.sh && ./toolchains/rust/build.sh",
-    "build:ts-app": "bun build toolchains/ts/app.ts --target browser --format iife --outfile target/apps/ts/app.js",
+    "build:ts-app": "bun run generate:ts && bun build toolchains/ts/app.ts --target browser --format iife --outfile target/apps/ts/app.js",
     "test": "bun test ./tests",
     "typecheck": "bun ./node_modules/typescript/bin/tsc --project tsconfig.bindings.json && bun ./node_modules/typescript/bin/tsc --project tsconfig.studio.json && bun ./node_modules/typescript/bin/tsc --project tsconfig.studio-worker.json",
     "quality": "./scripts/quality.sh"
