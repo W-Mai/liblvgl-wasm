@@ -46,6 +46,7 @@ Generated files stay under `target/`:
 | `target/apps/ts/app.js` | TypeScript sample application |
 | `target/apps/ts/samples/png.js` | PNG sample application |
 | `target/apps/ts/samples/gif.js` | GIF sample application |
+| `target/apps/ts/samples/freetype.js` | FreeType font sample application |
 | `target/apps/{c,cpp,rust}/app.wasm` | C, C++, and Rust sample applications |
 | `target/rust/` | Rust host build cache |
 
@@ -85,6 +86,7 @@ The toolchain panel shows sample source files with syntax highlighting in a side
 | TypeScript | `bun run build:ts-app` | `target/apps/ts/app.js` |
 | TypeScript PNG | `bun run build:ts-samples` | `target/apps/ts/samples/png.js` |
 | TypeScript GIF | `bun run build:ts-samples` | `target/apps/ts/samples/gif.js` |
+| TypeScript FreeType | `bun run build:ts-samples` | `target/apps/ts/samples/freetype.js` |
 | C | `./toolchains/c/build.sh` | `target/apps/c/app.wasm` |
 | C++ | `./toolchains/cpp/build.sh` | `target/apps/cpp/app.wasm` |
 | Rust | `./toolchains/rust/build.sh` | `target/apps/rust/app.wasm` |
@@ -93,9 +95,11 @@ JavaScript applications define `main(api)` and may use the runtime, display, scr
 
 The TypeScript sample and Studio worker share `AppApi` in `toolchains/ts/api.ts`. The sample calls `lv_obj_set_size`, `lv_obj_center`, `lv_palette_main`, and `lv_obj_set_style_bg_color` through `runtime.unsafe`, using generated constants and `LV_COLOR_T_SIZE` for the color result. Its managed click callback changes the color and count. Before accessing the guest, it checks its bundled `valuesIdentity` against the loaded core and host SDK; rebuild the application when those identities differ. Constants are imported from `target/typescript/values.ts` so the application does not bundle another host runtime. `bun run build:ts-app` verifies and regenerates the SDK inputs before bundling. In Studio, select **TypeScript** and run the sample; both `app.ts` and `api.ts` open in the source panel.
 
-The TypeScript **Sample** selector offers an API button, PNG, and GIF. Selecting an entry changes its source links and build command; **Load** runs it in the central canvas. The PNG example renders `tests/fixtures/png/rgba.png` through LVGL at 16× scale and switches between light and dark backgrounds to show alpha compositing. These examples use the identity check in `toolchains/ts/sdk.ts`. `bun run build:ts-samples` verifies the generated SDK inputs and builds the entries under `toolchains/ts/samples/`.
+The TypeScript **Sample** selector offers an API button, PNG, GIF, and FreeType. Selecting an entry changes its source links and build command; **Load** runs it in the central canvas. The PNG example renders `tests/fixtures/png/rgba.png` through LVGL at 16× scale and switches between light and dark backgrounds to show alpha compositing. These examples use the identity check in `toolchains/ts/sdk.ts`. `bun run build:ts-samples` verifies the generated SDK inputs and builds the entries under `toolchains/ts/samples/`.
 
 The GIF example plays `tests/fixtures/gif/playback.gif` at 16× scale using native `lv_gif_*` calls. **Pause** and **Resume** control playback; **Restart** starts another continuous loop. Resume preserves elapsed time and may advance immediately. Restart clears the image until the native timer decodes its first frame. The application retains its guest source path for the GIF object's lifetime; `lv_gif_set_src` borrows that pointer. For manual uploads, select `playback.gif` as a resource before uploading `gif.js`.
+
+The FreeType example displays `AB Á` from `tests/fixtures/tinyttf/geometry.ttf` with native bitmap fonts. Its button switches between 16 and 32 px by creating a new font, assigning it to the label, and deleting the old font. If replacement creation returns null, the existing text remains usable and the error appears in the console. This original fixture contains only space, A, B, and Á; captions and controls use LVGL's default font. For manual uploads, select `geometry.ttf` as a resource before uploading `freetype.js`.
 
 Built-in examples load their required files before starting. **Assets** lists these as **Sample** alongside user **Upload** files; browsing another language or sample does not change the running application's resources. Both sources share the resource name, count, and byte limits, and duplicate names are rejected. **Clear uploads** removes user files and restarts the selected application with its required sample resources. To upload a compiled example manually, upload the resource files shown in its toolchain details as well; uploading a `.js` file does not infer its dependencies. For the PNG example, select `rgba.png` as a resource before uploading `png.js`.
 

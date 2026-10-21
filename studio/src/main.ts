@@ -73,6 +73,14 @@ const tsSamples: Record<string, Toolchain> = {
     links: [["gif.ts", "/toolchains/ts/samples/gif.ts"], ["api.ts", "/toolchains/ts/api.ts"], ["sdk.ts", "/toolchains/ts/sdk.ts"]],
     resources: [{ name: "playback.gif", url: "/tests/fixtures/gif/playback.gif" }],
   },
+  freetype: {
+    ...toolchains.ts, sampleName: "FreeType",
+    summary: "Render a TrueType font from W: resources. Switch between 16 and 32 px.",
+    command: "bun run build:ts-samples\n# upload target/apps/ts/samples/freetype.js",
+    sample: "/target/apps/ts/samples/freetype.js",
+    links: [["freetype.ts", "/toolchains/ts/samples/freetype.ts"], ["api.ts", "/toolchains/ts/api.ts"], ["sdk.ts", "/toolchains/ts/sdk.ts"]],
+    resources: [{ name: "geometry.ttf", url: "/tests/fixtures/tinyttf/geometry.ttf" }],
+  },
 };
 
 function element<T extends HTMLElement>(selector: string): T {
