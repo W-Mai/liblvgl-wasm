@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { createWasiImports } from "../bindings/typescript/src/wasi.ts";
 
 interface ApiEntry {
   name: string;
@@ -51,7 +52,7 @@ test("aggregate value shims pass color values through Wasm memory", async () => 
       decoder_info() { return 0; }, decoder_open() { return 0; }, decoder_area() { return 0; },
       decoder_close() {}, decoder_release() {},
     },
-    wasi_snapshot_preview1: { fd_close() { return 0; }, fd_seek() { return 70; }, fd_write() { return 0; } },
+    wasi_snapshot_preview1: createWasiImports(() => instance.exports.memory as WebAssembly.Memory),
   });
   const raw = instance.exports as unknown as {
     _initialize(): void;

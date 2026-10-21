@@ -1,0 +1,26 @@
+{
+  "width": 64,
+  "height": 48,
+  "background": [24, 32, 40],
+  "solid": {
+    "rectangle": {"x": 4, "y": 4, "width": 12, "height": 10, "color": [212, 80, 36], "opacity": 255},
+    "triangle": {"points": [[28, 4], [44, 4], [28, 20]], "color": [36, 180, 92], "opacity": 160}
+  },
+  "fill": {
+    "outer": [0, 0, 12, 10],
+    "inner": [3, 3, 6, 4],
+    "scale": [1.5, 1.5],
+    "translations": [[4, 25], [34, 25]],
+    "color": [96, 160, 224],
+    "opacity": 255
+  },
+  "gradient": {
+    "rectangle": [8, 12, 32, 12],
+    "start": [8, 12],
+    "end": [40, 12],
+    "stops": [
+      {"fraction": 0, "color": [220, 40, 20], "opacity": 64},
+      {"fraction": 255, "color": [20, 100, 220], "opacity": 224}
+    ]
+  }
+}

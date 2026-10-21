@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 import { LvglRuntime, LV_EVENT_DELETE, LV_RESULT_OK } from "../bindings/typescript/src/index.ts";
+import { createWasiImports } from "../bindings/typescript/src/wasi.ts";
 
 async function setup() {
   const runtime = await LvglRuntime.load(await Bun.file("target/wasm/liblvgl.wasm").arrayBuffer());
@@ -175,7 +176,7 @@ test("the bridge rejects step and shutdown inside raw event and DELETE callbacks
           expect(core.lvw_shutdown()).toBe(-1);
         },
       },
-      wasi_snapshot_preview1: { fd_close: () => 0, fd_seek: () => 70, fd_write: () => 0 },
+      wasi_snapshot_preview1: createWasiImports(() => core?.memory),
     },
   );
   core = instance.exports as unknown as Bridge;

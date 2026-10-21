@@ -1,4 +1,5 @@
 import { sha256 } from "@noble/hashes/sha2.js";
+import { createWasiImports, WASI_IMPORT_NAMES } from "./wasi.ts";
 import {
   bindingIdentity, createUnsafeLvglApi,
   type UnsafeFunctionPointer, type UnsafeLvglApi, type UnsafePointer,
@@ -212,7 +213,6 @@ export class LvglRuntime {
     const coreHash = Array.from(sha256(snapshot), (byte) => byte.toString(16).padStart(2, "0")).join("");
     let memory: WebAssembly.Memory | undefined;
     let runtime: LvglRuntime | undefined;
-    const decoder = new TextDecoder();
     const module = await WebAssembly.compile(snapshot);
     const imports = WebAssembly.Module.imports(module).map((item) => `${item.module}.${item.name}`);
     const expected = new Set([
@@ -220,8 +220,7 @@ export class LvglRuntime {
       "lvw.anim_exec", "lvw.anim_query", "lvw.anim_notify", "lvw.anim_release",
       "lvw.observer", "lvw.observer_release",
       "lvw.decoder_info", "lvw.decoder_open", "lvw.decoder_area", "lvw.decoder_close", "lvw.decoder_release",
-      "wasi_snapshot_preview1.fd_close", "wasi_snapshot_preview1.fd_write",
-      "wasi_snapshot_preview1.fd_seek",
+      ...WASI_IMPORT_NAMES.map((name) => `wasi_snapshot_preview1.${name}`),
     ]);
     for (const item of imports) {
       if (!expected.has(item)) throw new Error(`unsupported Wasm import: ${item}`);
@@ -280,28 +279,7 @@ export class LvglRuntime {
           runtime?.decoders.release(id);
         },
       },
-      wasi_snapshot_preview1: {
-        fd_close() { return 0; },
-        fd_seek(fd: number, _offset: bigint, _whence: number, _result: number) {
-          return fd >= 0 && fd <= 2 ? 70 : 8;
-        },
-        fd_write(fd: number, iovPointer: number, iovCount: number, writtenPointer: number) {
-          if (!memory) return 8;
-          const view = new DataView(memory.buffer);
-          const chunks: Uint8Array[] = [];
-          let written = 0;
-          for (let index = 0; index < iovCount; index++) {
-            const pointer = view.getUint32(iovPointer + index * 8, true);
-            const length = view.getUint32(iovPointer + index * 8 + 4, true);
-            chunks.push(new Uint8Array(memory.buffer, pointer, length));
-            written += length;
-          }
-          view.setUint32(writtenPointer, written, true);
-          const line = decoder.decode(Uint8Array.from(chunks.flatMap((chunk) => [...chunk])));
-          if (line.trim()) (fd === 2 ? console.error : console.log)(line.trimEnd());
-          return 0;
-        },
-      },
+      wasi_snapshot_preview1: createWasiImports(() => memory),
     });
     const raw = instance.exports as unknown as RawExports;
     if (typeof raw.lvw_event_remove !== "function") {

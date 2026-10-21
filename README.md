@@ -6,7 +6,7 @@
 
 Requires CMake 3.25+, Ninja, Python 3.9+, Bun, Rust 1.92+ with the `wasm32-unknown-unknown` target, and the complete wasi-sdk 34 distribution for macOS or Linux. API generation loads the SDK's bundled libclang and uses Python's standard library; keep the SDK's libraries and sysroot together. Set `WASI_SDK_PATH` to the SDK root or add its `bin` directory to `PATH`. Existing builds can reuse the SDK path recorded in `target/wasm/CMakeCache.txt`. CMake downloads the official LVGL 9.6.0 lite and FreeType 2.14.3 source archives and verifies their pinned SHA-256 values; set `LVGL_SOURCE_DIR` to use an existing LVGL source tree.
 
-The core and C demo require standard WebAssembly exception handling for FreeType's font validation. The Rust host enables this feature in Wasmtime. FreeType uses LVGL's memory and resource filesystem, with host environment configuration and external zlib, bzip2, PNG, HarfBuzz, and Brotli dependencies disabled. Its bundled zlib remains enabled.
+The core and C demo require standard WebAssembly exception handling for FreeType's font validation, ThorVG's rasterizer, and the C++ runtime. The Rust host enables this feature in Wasmtime. The build uses the SDK's exception-enabled C++ libraries, `setjmp`, and `unwind`. FreeType uses LVGL's memory and resource filesystem, with host environment configuration and external zlib, bzip2, PNG, HarfBuzz, and Brotli dependencies disabled. Its bundled zlib remains enabled. WASI environment queries return an empty environment in both hosts; `proc_exit` fails the current instance without exiting the host process.
 
 On Ubuntu 24.04, install `libtinfo6`, `libstdc++6`, and `libgcc-s1` for the SDK's shared libraries. Keep the bundled `libclang`, LLVM, and `libedit` libraries and their symlinks intact.
 
@@ -399,7 +399,7 @@ Each supported declaration has a `wasm_signature` with the parameter and result 
 
 ## Software rendering
 
-The software configuration enables PNG, BMP, GIF, TinyTTF, and FreeType bitmap fonts. ThorVG, SVG, Lottie, native windows, and hardware drawing backends are disabled. The Wasm linear memory maximum is 256 MiB.
+The software configuration enables PNG, BMP, GIF, TinyTTF, FreeType fonts, and ThorVG vector rendering. SVG, Lottie, native windows, and hardware drawing backends are disabled. The Wasm linear memory maximum is 256 MiB.
 
 ### PNG resources
 
@@ -502,7 +502,38 @@ Resource upload copies the font bytes, and font creation copies its path. Resour
 
 The simple constructor disables kerning. To enable it, initialize an `lv_font_info_t`, set its `name`, `size`, and `kerning = LV_FONT_KERNING_NORMAL`, then call `lv_freetype_font_create_with_info`; generated layouts describe this structure. `lv_font_set_kerning` can toggle a font created with kerning enabled. FreeType's hinted metrics and small-size kerning can differ from TinyTTF.
 
-Both hosts verify TrueType glyph metrics, fractional bitmap coverage, composite characters, fallback, different sizes sharing a face, and recovery after missing or malformed font resources. Bitmap rendering does not synthesize bold outlines for ordinary non-variable fonts. Outline drawing, embedded PNG glyphs, WOFF2, and complex text shaping are not provided by this configuration.
+Both hosts verify TrueType glyph metrics, fractional bitmap coverage, composite characters, fallback, different sizes sharing a face, and recovery after missing or malformed font resources. Bitmap rendering does not synthesize bold outlines for ordinary non-variable fonts. Outline rendering is not covered by these bitmap checks. Embedded PNG glyphs, WOFF2, and complex text shaping are not provided by this configuration.
+
+### Vector drawing
+
+The software backend uses ThorVG 0.15.3 from the pinned LVGL archive, with one draw unit and no worker threads. Generated TypeScript and Rust methods expose the original `lv_vector_path_*`, `lv_draw_vector_dsc_*`, `lv_draw_vector`, and `lv_matrix_*` APIs. A native C draw callback can submit paths directly:
+
+```c
+static void draw_vector(lv_event_t *event) {
+    lv_draw_vector_dsc_t *draw = lv_draw_vector_dsc_create(lv_event_get_layer(event));
+    lv_vector_path_t *path = lv_vector_path_create(LV_VECTOR_PATH_QUALITY_HIGH);
+    lv_vector_path_append_rectangle(path, 8.0f, 12.0f, 32.0f, 20.0f, 0, 0);
+    lv_draw_vector_dsc_set_fill_color(draw, lv_color_hex(0xd45024));
+    lv_draw_vector_dsc_set_stroke_opa(draw, LV_OPA_TRANSP);
+    lv_draw_vector_dsc_add_path(draw, path);
+    lv_vector_path_delete(path);
+    lv_draw_vector(draw);
+    lv_draw_vector_dsc_delete(draw);
+}
+
+/* Register on the object that owns the drawing. */
+lv_obj_add_event_cb(object, draw_vector, LV_EVENT_DRAW_MAIN_END, NULL);
+```
+
+In host callbacks, obtain the event with TypeScript `runtime.eventPointer()` or Rust `context.event_pointer()`, then use `lv_event_get_layer`. The layer is borrowed only for that synchronous draw event. Drawing callbacks must obey the object and layout restrictions described under native drawing events.
+
+`lv_draw_vector_dsc_add_path` copies the path and current drawing state. Gradient stops are copied by the setter. Source paths can be cleared or deleted after insertion, and a descriptor can be deleted after `lv_draw_vector` submits its tasks. Image fill descriptors still borrow their image source through rendering. Delete unused descriptors to release their pending tasks.
+
+Both hosts verify actual framebuffer pixels for solid and antialiased paths, alpha compositing, nonzero/even-odd fills, fractional transforms, and two-stop linear gradients. The fixed backend uses integer opacity and gradient quantization: solid fill opacity mixes the color alpha and requested opacity with a right shift by eight, including `255 × 255 → 254`. Blend modes `SRC_IN`, `DST_OVER`, `DST_IN`, and `SUBTRACTIVE` fall back to normal blending in this backend.
+
+`LV_USE_FLOAT=1` makes `lv_value_precise_t` and the coordinate fields of `lv_point_precise_t` floating-point values; arc angle arguments and results use `f32`. Regenerate bindings when changing this configuration and keep the generated core identity checks enabled. `lv_matrix_transform_point` preserves fractional coordinates; `lv_matrix_transform_precise_point` rounds its result despite the floating-point fields. SVG parsing, Lottie playback, and FreeType outline rendering are not included in this vector verification.
+
+ThorVG is distributed under its [MIT license](third_party/thorvg/LICENSE.txt). Its rasterizer also contains code covered by the [included FreeType notice](third_party/thorvg/NOTICES.txt). Preserve these files when distributing the core or C demo.
 
 ### FreeType license
 

@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 import { createHash } from "node:crypto";
+import { createWasiImports } from "../bindings/typescript/src/wasi.ts";
 
 interface Signature {
   params: ("i32" | "i64" | "f32" | "f64")[];
@@ -86,7 +87,7 @@ test("every supported API links with its recorded Wasm signature", async () => {
       decoder_info() { return 0; }, decoder_open() { return 0; }, decoder_area() { return 0; },
       decoder_close() {}, decoder_release() {},
     },
-    wasi_snapshot_preview1: { fd_close() { return 0; }, fd_seek() { return 70; }, fd_write() { return 0; } },
+    wasi_snapshot_preview1: createWasiImports(() => instance.exports.memory as WebAssembly.Memory),
   });
   await WebAssembly.instantiate(consumer, { api: instance.exports });
 });

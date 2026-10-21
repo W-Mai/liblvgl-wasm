@@ -1,3 +1,5 @@
+import { createWasiImports } from "../../bindings/typescript/src/wasi.ts";
+
 type DemoCore = {
   memory: WebAssembly.Memory;
   _initialize(): void;
@@ -28,21 +30,7 @@ export async function startCDemo(canvas: HTMLCanvasElement, signal: AbortSignal,
       decoder_info() { return 0; }, decoder_open() { return 0; }, decoder_area() { return 0; },
       decoder_close() {}, decoder_release() {},
     },
-    wasi_snapshot_preview1: {
-      fd_close: () => 0,
-      fd_seek(fd: number, _offset: bigint, _whence: number, _result: number) {
-        return fd >= 0 && fd <= 2 ? 70 : 8;
-      },
-      fd_write(_fd: number, iov: number, count: number, written: number) {
-        const view = new DataView(core.memory.buffer);
-        let length = 0;
-        for (let index = 0; index < count; index++) {
-          length += view.getUint32(iov + index * 8 + 4, true);
-        }
-        view.setUint32(written, length, true);
-        return 0;
-      },
-    },
+    wasi_snapshot_preview1: createWasiImports(() => core?.memory),
   });
   if (signal.aborted) return () => {};
   core = instance.exports as unknown as DemoCore;

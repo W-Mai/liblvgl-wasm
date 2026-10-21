@@ -185,7 +185,12 @@ impl Runtime {
                         | "decoder_release"
                 ) | (
                     "wasi_snapshot_preview1",
-                    "fd_close" | "fd_write" | "fd_seek"
+                    "fd_close"
+                        | "fd_write"
+                        | "fd_seek"
+                        | "environ_get"
+                        | "environ_sizes_get"
+                        | "proc_exit"
                 )
             ) || !matches!(import.ty(), ExternType::Func(_))
             {

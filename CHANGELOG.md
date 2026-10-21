@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- ThorVG software vector rendering with generated floating-point APIs, path snapshots, fill rules, transforms, and gradient pixel checks in both hosts.
+- Standard Wasm C++ exception support, empty WASI environments, and instance-local process exit errors.
+
 ### Added
 
 - FreeType 2.14.3 bitmap fonts from uploaded resources, with generated APIs, shared font caches, and glyph, kerning, fallback, and lifetime checks in both hosts.

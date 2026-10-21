@@ -1,3 +1,5 @@
+import { WASI_IMPORT_NAMES } from "../../bindings/typescript/src/wasi.ts";
+
 const requiredImports = new Set([
   "lvw.event",
   "lvw.timer",
@@ -13,9 +15,7 @@ const requiredImports = new Set([
   "lvw.decoder_area",
   "lvw.decoder_close",
   "lvw.decoder_release",
-  "wasi_snapshot_preview1.fd_close",
-  "wasi_snapshot_preview1.fd_seek",
-  "wasi_snapshot_preview1.fd_write",
+  ...WASI_IMPORT_NAMES.map((name) => `wasi_snapshot_preview1.${name}`),
 ]);
 
 const requiredExports = [

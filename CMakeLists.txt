@@ -3,9 +3,17 @@ project(liblvgl_wasm VERSION 0.1.0 LANGUAGES C CXX ASM)
 
 include(FetchContent)
 
+add_library(lvw_wasm_sjlj INTERFACE)
+target_compile_options(lvw_wasm_sjlj INTERFACE
+    "SHELL:-mllvm -wasm-enable-sjlj -mllvm -wasm-use-legacy-eh=false"
+    "$<$<COMPILE_LANGUAGE:CXX>:-fwasm-exceptions>")
+target_link_options(lvw_wasm_sjlj INTERFACE -fwasm-exceptions)
+target_link_libraries(lvw_wasm_sjlj INTERFACE setjmp unwind)
+
 set(CONFIG_LV_BUILD_DEMOS OFF CACHE BOOL "" FORCE)
 set(CONFIG_LV_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
-set(CONFIG_LV_USE_THORVG OFF CACHE BOOL "" FORCE)
+set(CONFIG_LV_USE_THORVG ON CACHE BOOL "" FORCE)
+set(CONFIG_LV_USE_THORVG_INTERNAL ON CACHE BOOL "" FORCE)
 set(LV_BUILD_INSTALL OFF CACHE BOOL "" FORCE)
 set(LV_BUILD_CONF_PATH "${CMAKE_CURRENT_SOURCE_DIR}/config/lv_conf.h" CACHE FILEPATH "" FORCE)
 set(LV_USE_FIND_PACKAGE OFF CACHE BOOL "" FORCE)
@@ -23,6 +31,9 @@ FetchContent_Declare(lvgl
     TLS_VERIFY ON
 )
 FetchContent_MakeAvailable(lvgl)
+target_compile_options(lvgl_thorvg PRIVATE
+    "SHELL:-include \"${CMAKE_CURRENT_SOURCE_DIR}/config/lvw_thorvg.h\"")
+target_link_libraries(lvgl_thorvg PRIVATE lvw_wasm_sjlj)
 include(cmake/freetype.cmake)
 include(cmake/observer.cmake)
 include(cmake/decoder.cmake)
