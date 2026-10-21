@@ -65,6 +65,14 @@ const tsSamples: Record<string, Toolchain> = {
     links: [["png.ts", "/toolchains/ts/samples/png.ts"], ["api.ts", "/toolchains/ts/api.ts"], ["sdk.ts", "/toolchains/ts/sdk.ts"]],
     resources: [{ name: "rgba.png", url: "/tests/fixtures/png/rgba.png" }],
   },
+  gif: {
+    ...toolchains.ts, sampleName: "GIF",
+    summary: "Play a GIF from W: resources. Pause, resume, or restart playback.",
+    command: "bun run build:ts-samples\n# upload target/apps/ts/samples/gif.js",
+    sample: "/target/apps/ts/samples/gif.js",
+    links: [["gif.ts", "/toolchains/ts/samples/gif.ts"], ["api.ts", "/toolchains/ts/api.ts"], ["sdk.ts", "/toolchains/ts/sdk.ts"]],
+    resources: [{ name: "playback.gif", url: "/tests/fixtures/gif/playback.gif" }],
+  },
 };
 
 function element<T extends HTMLElement>(selector: string): T {

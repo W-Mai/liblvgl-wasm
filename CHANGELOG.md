@@ -7,6 +7,7 @@
 
 ### Added
 
+- GIF application sample with native playback, pause, resume, and restart controls in Studio.
 - PNG application sample with background switching, bound sample resources, shared upload limits, and resource conflict recovery in Studio.
 - TypeScript application sample with generated LVGL calls, constants, color layouts, managed click callbacks, and application identity checks.
 - Studio library details with core and SDK identities, generated build configuration, and strict checks for browser and Worker code.
