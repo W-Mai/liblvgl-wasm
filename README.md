@@ -402,7 +402,7 @@ Each supported declaration has a `wasm_signature` with the parameter and result 
 
 ## Software rendering
 
-The software configuration enables PNG, BMP, GIF, SVG geometry, TinyTTF, FreeType fonts, and ThorVG vector rendering. Lottie, native windows, and hardware drawing backends are disabled. The Wasm linear memory maximum is 256 MiB.
+The software configuration enables PNG, BMP, GIF, SVG geometry, Lottie playback, TinyTTF, FreeType fonts, and ThorVG vector rendering. Native windows and hardware drawing backends are disabled. The Wasm linear memory maximum is 256 MiB.
 
 ### PNG resources
 
@@ -538,9 +538,9 @@ In host callbacks, obtain the event with TypeScript `runtime.eventPointer()` or 
 
 Both hosts verify actual framebuffer pixels for solid and antialiased paths, alpha compositing, nonzero/even-odd fills, fractional transforms, and two-stop linear gradients. The fixed backend uses integer opacity and gradient quantization: solid fill opacity mixes the color alpha and requested opacity with a right shift by eight, including `255 × 255 → 254`. Blend modes `SRC_IN`, `DST_OVER`, `DST_IN`, and `SUBTRACTIVE` fall back to normal blending in this backend.
 
-`LV_USE_FLOAT=1` makes `lv_value_precise_t` and the coordinate fields of `lv_point_precise_t` floating-point values; arc angle arguments and results use `f32`. Regenerate bindings when changing this configuration and keep the generated core identity checks enabled. `lv_matrix_transform_point` preserves fractional coordinates; `lv_matrix_transform_precise_point` rounds its result despite the floating-point fields. Lottie playback is disabled.
+`LV_USE_FLOAT=1` makes `lv_value_precise_t` and the coordinate fields of `lv_point_precise_t` floating-point values; arc angle arguments and results use `f32`. Regenerate bindings when changing this configuration and keep the generated core identity checks enabled. `lv_matrix_transform_point` preserves fractional coordinates; `lv_matrix_transform_precise_point` rounds its result despite the floating-point fields.
 
-ThorVG is distributed under its [MIT license](third_party/thorvg/LICENSE.txt). Its rasterizer also contains code covered by the [included FreeType notice](third_party/thorvg/NOTICES.txt). Preserve these files when distributing the core or C demo.
+ThorVG is distributed under its [MIT license](third_party/thorvg/LICENSE.txt), with component notices in [NOTICES.txt](third_party/thorvg/NOTICES.txt). Its enabled loaders include RapidJSON 1.1.0, Samsung MIT and EFL BSD code, and an MPL-2.0 interpolation source. Preserve the complete `third_party/thorvg/` directory, including both additional license texts and the supplied interpolation source, when distributing the core or C demo.
 
 ### SVG geometry
 
@@ -558,6 +558,31 @@ Both hosts check rectangles, straight and quadratic/cubic paths, group translati
 Uploaded resource bytes remain available until shutdown, and file paths are copied by `lv_image_set_src`. Variable image descriptors and their SVG bytes are borrowed: keep both alive until the image source is replaced or the image is deleted. The default image and header caches are disabled. File dimensions come from the parsed viewport; variable sources retain the descriptor's dimensions. Image width is limited to 16,383 and height to 65,535 by the header's 16-bit ARGB stride and dimension fields.
 
 SVG text and embedded images have no rendering callbacks installed. Preserve-aspect-ratio meet/slice, group opacity, gradient transforms, spread modes, and external resources are unsupported. The parser accepts a subset of XML syntax. Fixed-source adaptations in `cmake/svg.cmake` operate on build-directory copies; the pinned LVGL source remains unchanged.
+
+### Lottie playback
+
+Lottie uses the pinned ThorVG 0.15.3 loader and LVGL animation clock. The generated TypeScript and Rust APIs expose the original `lv_lottie_*` names. Upload a JSON resource, allocate a pixel buffer, and set the source with native C calls:
+
+```c
+lv_draw_buf_t * pixels = lv_draw_buf_create(32, 24, LV_COLOR_FORMAT_ARGB8888, 0);
+if(pixels) {
+    lv_obj_t * lottie = lv_lottie_create(lv_screen_active());
+    lv_lottie_set_draw_buf(lottie, pixels);
+    lv_lottie_set_src_file(lottie, "W:animation.json");
+
+    /* Keep lottie and pixels alive during playback. On removal: */
+    lv_obj_delete(lottie);
+    lv_draw_buf_destroy(pixels);
+}
+```
+
+Both `lv_lottie_set_src_data` and `lv_lottie_set_src_file` read and parse the complete JSON synchronously. Shape type fields may appear after their properties. Data input is copied; its guest allocation can be released after the call. A temporary filename can also be released after the file setter returns. File loading uses LVGL resource drivers, including `W:`, without host filesystem imports. Uploaded resource bytes remain available until shutdown. A successful replacement displays its first frame, resets the clock, and resumes playback. A failed load retains the existing scene and timing; these void setters have no success result.
+
+The caller owns the pixel storage. `lv_lottie_set_buffer` needs enough space for the configured alignment and stride; `lv_lottie_set_draw_buf` accepts an initialized ARGB8888 or ARGB8888_PREMULTIPLIED draw buffer with a nonzero size and stride divisible by four, then marks its output as premultiplied. Invalid target dimensions or stride leave the existing canvas unchanged. Keep the active buffer alive until replacement or widget deletion, then release it. Rebinding a buffer preserves the current frame and playback position. Buffer dimensions determine the rendered size.
+
+`lv_lottie_get_anim` returns a borrowed native animation pointer. Use it for `lv_anim_pause`, `lv_anim_resume`, duration, repeat count, and repeat delay controls. Do not copy/start that descriptor or replace its variable and private callbacks. Playback repeats indefinitely by default. A finite repeat count includes the current pass; on completion the animation is removed and the getter returns null. A successful source assignment then creates another animation. Discard earlier borrowed pointers after completion, deletion, or widget removal. The final visible frame precedes the composition's exclusive out frame; repeat delay holds that final frame before restarting.
+
+`step(ms)` advances the clock and performs one timer-handler pass; it does not replay every missed frame. Both hosts verify the same original rectangle animation against independently calculated position, opacity, and composited pixels, including pause/resume, repeat delay, finite completion, source replacement, truncated-input recovery, shared resources, and buffer ownership. Expressions are disabled. External assets, fonts, effects, and general Lottie format conformance are outside this verified playback contract. Fixed-source adaptations in `cmake/lottie.cmake` operate only on build-directory copies.
 
 ### FreeType license
 

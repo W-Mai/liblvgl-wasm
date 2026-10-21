@@ -40,6 +40,7 @@ include(cmake/decoder.cmake)
 include(cmake/gif.cmake)
 include(cmake/outline.cmake)
 include(cmake/svg.cmake)
+include(cmake/lottie.cmake)
 
 add_executable(liblvgl bridge/lvw.c)
 if(EXISTS "${CMAKE_BINARY_DIR}/api-shims.c")

@@ -7,6 +7,7 @@
 
 ### Added
 
+- Native Lottie playback from memory and uploaded resources, with generated APIs, timing controls, source replacement, premultiplied buffers, and lifetime checks in both hosts.
 - SVG geometry through native LVGL document and image APIs, with checks for pixels, source lifetimes, and recovery after decoding errors in both hosts.
 - FreeType outline checks in both hosts for TrueType and CFF curves, text opacity, font sizes, shared paths, and bitmap/outline fallback chains.
 - FreeType 2.14.3 bitmap fonts from uploaded resources, with generated APIs, shared font caches, and glyph, kerning, fallback, and lifetime checks in both hosts.

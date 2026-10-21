@@ -22,6 +22,6 @@
 #define LV_USE_FREETYPE 1
 #define LV_FREETYPE_USE_LVGL_PORT 1
 #define LV_USE_SVG 1
-#define LV_USE_LOTTIE 0
+#define LV_USE_LOTTIE 1
 
 #endif
