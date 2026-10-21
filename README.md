@@ -44,6 +44,7 @@ Generated files stay under `target/`:
 | `target/rust-bindings/raw.rs` | Generated Rust `lv_*` methods, values module, pointer types, export mapping, and core identity |
 | `target/studio/{main,worker}.js` | Studio page and isolated runner bundles |
 | `target/apps/ts/app.js` | TypeScript sample application |
+| `target/apps/ts/samples/png.js` | PNG sample application |
 | `target/apps/{c,cpp,rust}/app.wasm` | C, C++, and Rust sample applications |
 | `target/rust/` | Rust host build cache |
 
@@ -81,6 +82,7 @@ The toolchain panel shows sample source files with syntax highlighting in a side
 | --- | --- | --- |
 | JavaScript | No build step; use `toolchains/js/app.js` | `.js` |
 | TypeScript | `bun run build:ts-app` | `target/apps/ts/app.js` |
+| TypeScript PNG | `bun run build:ts-samples` | `target/apps/ts/samples/png.js` |
 | C | `./toolchains/c/build.sh` | `target/apps/c/app.wasm` |
 | C++ | `./toolchains/cpp/build.sh` | `target/apps/cpp/app.wasm` |
 | Rust | `./toolchains/rust/build.sh` | `target/apps/rust/app.wasm` |
@@ -88,6 +90,10 @@ The toolchain panel shows sample source files with syntax highlighting in a side
 JavaScript applications define `main(api)` and may use the runtime, display, screen, resources, and log function passed in `api`; see `toolchains/js/app.js`. TypeScript applications bundle to a single JavaScript file with the same entry point; see `toolchains/ts/app.ts`. C, C++, and Rust applications use application ABI 1 through `toolchains/include/lvw_app.h` or equivalent imports. They export `memory`, `app_abi_version()`, `app_init()`, and `app_event(id, code)`. The sample source files show the required imports and event handling. Application Wasm modules use their own memory; Studio copies text and resources through the bridge.
 
 The TypeScript sample and Studio worker share `AppApi` in `toolchains/ts/api.ts`. The sample calls `lv_obj_set_size`, `lv_obj_center`, `lv_palette_main`, and `lv_obj_set_style_bg_color` through `runtime.unsafe`, using generated constants and `LV_COLOR_T_SIZE` for the color result. Its managed click callback changes the color and count. Before accessing the guest, it checks its bundled `valuesIdentity` against the loaded core and host SDK; rebuild the application when those identities differ. Constants are imported from `target/typescript/values.ts` so the application does not bundle another host runtime. `bun run build:ts-app` verifies and regenerates the SDK inputs before bundling. In Studio, select **TypeScript** and run the sample; both `app.ts` and `api.ts` open in the source panel.
+
+The TypeScript **Sample** selector offers an API button and a PNG example. Selecting an entry changes its source links and build command; **Load** runs it in the central canvas. The PNG example renders `tests/fixtures/png/rgba.png` through LVGL at 16× scale and switches between light and dark backgrounds to show alpha compositing. Both examples use the identity check in `toolchains/ts/sdk.ts`. `bun run build:ts-samples` verifies the generated SDK inputs and builds the entries under `toolchains/ts/samples/`.
+
+Built-in examples load their required files before starting. **Assets** lists these as **Sample** alongside user **Upload** files; browsing another language or sample does not change the running application's resources. Both sources share the resource name, count, and byte limits, and duplicate names are rejected. **Clear uploads** removes user files and restarts the selected application with its required sample resources. To upload a compiled example manually, upload the resource files shown in its toolchain details as well; uploading a `.js` file does not infer its dependencies. For the PNG example, select `rgba.png` as a resource before uploading `png.js`.
 
 ## Other hosts
 
@@ -128,7 +134,7 @@ Object aliases share a lifetime. DELETE invalidates them before user handlers ru
 
 The TypeScript runtime and Studio require the `lvw_event_remove` export for managed subscriptions and reject cores without it before initialization. This is an additional ABI 1 export; existing bridge signatures are unchanged. Rust callers can use `call_raw("lvw_event_remove", (object, callback_id))` with a core that provides it.
 
-`bun run generate:ts` generates bindings, constants, and layouts from the existing API report, core, and signature verification record. Missing or stale verification stops generation and removes the affected previous generated source. `build:ts`, `build:browser`, `build:studio-worker`, and `build:ts-app` run this check before bundling. `bun run typecheck` checks the generated sources, runtime, Studio, browser example, and TypeScript application template using the pinned TypeScript compiler, with separate DOM and Worker environments. The bundle includes SHA-256 from `@noble/hashes`, allowing core checks in Studio's isolated worker without WebCrypto. The generated sources are self-contained, and `index.js` can be copied with its matching core; the repository runtime source imports generated files and requires the repository build layout.
+`bun run generate:ts` generates bindings, constants, and layouts from the existing API report, core, and signature verification record. Missing or stale verification stops generation and removes the affected previous generated source. `build:ts`, `build:browser`, `build:studio-worker`, `build:ts-app`, and `build:ts-samples` run this check before bundling. `bun run typecheck` checks the generated sources, runtime, Studio, browser example, and TypeScript applications using the pinned TypeScript compiler, with separate DOM and Worker environments. The bundle includes SHA-256 from `@noble/hashes`, allowing core checks in Studio's isolated worker without WebCrypto. The generated sources are self-contained, and `index.js` can be copied with its matching core; the repository runtime source imports generated files and requires the repository build layout.
 
 ### Rust host library
 

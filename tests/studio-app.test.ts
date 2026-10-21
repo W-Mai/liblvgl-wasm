@@ -56,8 +56,8 @@ test("the built TypeScript application uses the host SDK and releases callbacks 
   }
 });
 
-test("application values and host identity must agree before any guest access", async () => {
-  const source = await Bun.file("target/apps/ts/app.js").text();
+test.each(["app.js", "samples/png.js"])("%s values and host identity must agree before any guest access", async (artifact) => {
+  const source = await Bun.file(`target/apps/ts/${artifact}`).text();
   const runtime = await LvglRuntime.load(await Bun.file("target/wasm/liblvgl.wasm").bytes());
   try {
     const identity = runtime.identity;

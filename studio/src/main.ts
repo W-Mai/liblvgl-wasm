@@ -2,16 +2,22 @@ import { StudioController } from "./controller.ts";
 import { startCDemo } from "./c-demo.ts";
 import { inspectCore, type CoreReport } from "./core.ts";
 import { renderHighlighted } from "./highlight.ts";
-import { readResources } from "./resources.ts";
+import { loadResources, readResources, type ResourceFile } from "./resources.ts";
 import type { AppSource, RunnerOutput } from "./protocol.ts";
 
 type Language = "js" | "ts" | "c" | "cpp" | "rust";
-type Source = { name: string; origin: string; load(): Promise<AppSource> };
+type Source = {
+  name: string; origin: string; resources?: readonly ResourceFile[];
+  load(): Promise<AppSource>;
+};
 
-const toolchains: Record<Language, {
+type Toolchain = {
   name: string; output: string; summary: string; command: string;
   sample: string; kind: "js" | "wasm"; links: [string, string][];
-}> = {
+  sampleName?: string; resources?: readonly ResourceFile[];
+};
+
+const toolchains: Record<Language, Toolchain> = {
   js: {
     name: "JavaScript", output: "Upload .js",
     summary: "Write a single JavaScript file with a main(api) entry point. No compilation needed.",
@@ -20,11 +26,11 @@ const toolchains: Record<Language, {
     links: [["app.js", "/toolchains/js/app.js"]],
   },
   ts: {
-    name: "TypeScript", output: "Build to .js",
+    name: "TypeScript", output: "Build to .js", sampleName: "API button",
     summary: "Call LVGL APIs with generated constants and layouts. Handle clicks through the host SDK.",
     command: "bun run build:ts-app\n# upload target/apps/ts/app.js",
     sample: "/target/apps/ts/app.js", kind: "js",
-    links: [["app.ts", "/toolchains/ts/app.ts"], ["api.ts", "/toolchains/ts/api.ts"]],
+    links: [["app.ts", "/toolchains/ts/app.ts"], ["api.ts", "/toolchains/ts/api.ts"], ["sdk.ts", "/toolchains/ts/sdk.ts"]],
   },
   c: {
     name: "C", output: "Build to .wasm",
@@ -49,6 +55,18 @@ const toolchains: Record<Language, {
   },
 };
 
+const tsSamples: Record<string, Toolchain> = {
+  api: toolchains.ts,
+  png: {
+    ...toolchains.ts, sampleName: "PNG",
+    summary: "Render a PNG from W: resources with alpha transparency.",
+    command: "bun run build:ts-samples\n# upload target/apps/ts/samples/png.js",
+    sample: "/target/apps/ts/samples/png.js",
+    links: [["png.ts", "/toolchains/ts/samples/png.ts"], ["api.ts", "/toolchains/ts/api.ts"], ["sdk.ts", "/toolchains/ts/sdk.ts"]],
+    resources: [{ name: "rgba.png", url: "/tests/fixtures/png/rgba.png" }],
+  },
+};
+
 function element<T extends HTMLElement>(selector: string): T {
   const value = document.querySelector<T>(selector);
   if (!value) throw new Error(`Missing element: ${selector}`);
@@ -69,6 +87,11 @@ const coreFile = element<HTMLInputElement>("#core-file");
 const appFile = element<HTMLInputElement>("#app-file");
 const resourceFiles = element<HTMLInputElement>("#resource-files");
 const resourceList = element<HTMLUListElement>("#resource-list");
+const clearResources = element<HTMLButtonElement>("#clear-resources");
+const tsSample = element<HTMLSelectElement>("#ts-sample");
+for (const [value, sample] of Object.entries(tsSamples)) {
+  tsSample.add(new Option(sample.sampleName, value));
+}
 const viewportSelect = element<HTMLSelectElement>("#viewport-select");
 const stage = element<HTMLElement>(".stage");
 const device = element<HTMLElement>(".device-wrap");
@@ -190,12 +213,15 @@ function stop(): void {
 async function run(): Promise<"started" | "failed" | "cancelled"> {
   stop();
   const runId = generation;
+  const source = selectedApp;
+  const uploads = [...resources];
+  const library = selectedCore;
   setStatus("starting", "Loading application");
-  appendLog(`Starting ${selectedApp.name} with ${selectedCore?.name || "default liblvgl.wasm"}…`);
+  appendLog(`Starting ${source.name} with ${library?.name || "default liblvgl.wasm"}…`);
   try {
     const [core, app, assets] = await Promise.all([
-      selectedCore ? selectedCore.arrayBuffer() : fetchBuffer("/target/wasm/liblvgl.wasm"),
-      selectedApp.load(), readResources(resources),
+      library ? library.arrayBuffer() : fetchBuffer("/target/wasm/liblvgl.wasm"),
+      source.load(), loadResources(source.resources ?? [], uploads),
     ]);
     if (runId !== generation) return "cancelled";
     await controller.start({ core, app, resources: assets, width, height });
@@ -260,12 +286,10 @@ async function chooseApp(file: File): Promise<void> {
   };
   const previous = selectedApp;
   selectedApp = candidate;
-  appName.textContent = candidate.name;
-  appOrigin.textContent = candidate.origin;
+  showAppSource();
   if (await run() === "failed" && selectedApp === candidate) {
     selectedApp = previous;
-    appName.textContent = previous.name;
-    appOrigin.textContent = previous.origin;
+    showAppSource();
     await run();
   }
 }
@@ -290,22 +314,33 @@ function fileDrop(target: HTMLElement, onFile: (file: File) => void): void {
   });
 }
 
+function showAppSource(): void {
+  appName.textContent = selectedApp.name;
+  appOrigin.textContent = selectedApp.origin;
+  renderResources();
+}
+
 function renderResources(): void {
   resourceList.replaceChildren();
-  if (!resources.length) {
+  clearResources.disabled = resources.length === 0;
+  const entries = [
+    ...(selectedApp.resources ?? []).map(({ name }) => ({ name, detail: "Sample" })),
+    ...resources.map(({ name, size }) => ({ name, detail: `Upload · ${Math.max(1, Math.ceil(size / 1024))} KB` })),
+  ];
+  if (!entries.length) {
     const item = document.createElement("li");
     item.className = "empty-resource";
     item.textContent = "No assets added";
     resourceList.append(item);
     return;
   }
-  for (const file of resources) {
+  for (const entry of entries) {
     const item = document.createElement("li");
     const name = document.createElement("span");
-    name.textContent = file.name;
-    const size = document.createElement("span");
-    size.textContent = `${Math.max(1, Math.ceil(file.size / 1024))} KB`;
-    item.append(name, size);
+    name.textContent = entry.name;
+    const detail = document.createElement("span");
+    detail.textContent = entry.detail;
+    item.append(name, detail);
     resourceList.append(item);
   }
 }
@@ -326,9 +361,14 @@ async function chooseResources(files: File[]): Promise<void> {
   await run();
 }
 
+function currentToolchain(language: Language): Toolchain {
+  return language === "ts" ? tsSamples[tsSample.value] ?? toolchains.ts : toolchains[language];
+}
+
 function showToolchain(language: Language): void {
   selectedLanguage = language;
-  const tool = toolchains[language];
+  const tool = currentToolchain(language);
+  element<HTMLElement>("#sample-picker").hidden = language !== "ts";
   for (const button of document.querySelectorAll<HTMLButtonElement>("[data-language]")) {
     const active = button.dataset.language === language;
     button.classList.toggle("active", active);
@@ -339,7 +379,10 @@ function showToolchain(language: Language): void {
   element<HTMLElement>("#language-output").textContent = tool.output;
   element<HTMLElement>("#language-summary").textContent = tool.summary;
   element<HTMLElement>("#build-command").textContent = tool.command;
-  element<HTMLElement>("#sample-button").innerHTML = `<span aria-hidden="true">◈</span> Load ${tool.name} sample <span aria-hidden="true">→</span>`;
+  element<HTMLElement>("#sample-button").innerHTML = `<span aria-hidden="true">◈</span> Load ${tool.sampleName ?? tool.name} sample <span aria-hidden="true">→</span>`;
+  const required = element<HTMLElement>("#sample-resources");
+  required.hidden = !tool.resources?.length;
+  required.textContent = (tool.resources ?? []).map(({ name, url }) => `${url.slice(1)} → W:${name}`).join("\n");
   const links = element<HTMLElement>("#template-links");
   links.replaceChildren();
   for (const [name, path] of tool.links) {
@@ -359,13 +402,13 @@ function showToolchain(language: Language): void {
 }
 
 async function chooseSample(language: Language): Promise<void> {
-  const tool = toolchains[language];
+  const tool = currentToolchain(language);
   selectedApp = {
-    name: `${tool.name} sample application`, origin: "SAMPLE",
+    name: `${tool.name}${tool.sampleName ? ` ${tool.sampleName}` : ""} sample application`, origin: "SAMPLE",
+    resources: tool.resources,
     load: () => fetchApp(tool.sample, tool.kind),
   };
-  appName.textContent = selectedApp.name;
-  appOrigin.textContent = selectedApp.origin;
+  showAppSource();
   await run();
 }
 
@@ -378,11 +421,31 @@ element<HTMLButtonElement>("#core-custom").addEventListener("click", () => {
   coreDrop.classList.remove("is-hidden");
   coreFile.click();
 });
-coreFile.addEventListener("change", () => { if (coreFile.files?.[0]) void chooseCore(coreFile.files[0]); });
-appFile.addEventListener("change", () => { if (appFile.files?.[0]) void chooseApp(appFile.files[0]); });
+coreFile.addEventListener("change", () => {
+  const file = coreFile.files?.[0];
+  coreFile.value = "";
+  if (file) void chooseCore(file);
+});
+appFile.addEventListener("change", () => {
+  const file = appFile.files?.[0];
+  appFile.value = "";
+  if (file) void chooseApp(file);
+});
 fileDrop(coreDrop, (file) => { void chooseCore(file); });
 fileDrop(element<HTMLElement>("#app-drop"), (file) => { void chooseApp(file); });
-resourceFiles.addEventListener("change", () => { void chooseResources(Array.from(resourceFiles.files || [])); });
+resourceFiles.addEventListener("change", () => {
+  const files = Array.from(resourceFiles.files || []);
+  resourceFiles.value = "";
+  if (files.length) void chooseResources(files);
+});
+clearResources.addEventListener("click", () => {
+  resourceChoice++;
+  resourceFiles.value = "";
+  resources = [];
+  renderResources();
+  void run();
+});
+tsSample.addEventListener("change", () => showToolchain(selectedLanguage));
 const resourceCard = element<HTMLElement>(".resources-card");
 resourceCard.addEventListener("dragover", (event) => { event.preventDefault(); resourceCard.classList.add("dragging"); });
 resourceCard.addEventListener("dragleave", () => resourceCard.classList.remove("dragging"));
@@ -635,7 +698,7 @@ window.addEventListener("keydown", (event) => {
 });
 element<HTMLButtonElement>("#copy-command").addEventListener("click", async () => {
   try {
-    await navigator.clipboard.writeText(toolchains[selectedLanguage].command);
+    await navigator.clipboard.writeText(currentToolchain(selectedLanguage).command);
     appendLog(`${toolchains[selectedLanguage].name} build command copied`);
   } catch {
     appendLog("Clipboard is unavailable in this browser", "error");

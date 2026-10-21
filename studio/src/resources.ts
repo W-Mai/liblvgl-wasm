@@ -5,6 +5,20 @@ const maxFileBytes = 16 * 1024 * 1024;
 const maxTotalBytes = 32 * 1024 * 1024;
 const encoder = new TextEncoder();
 
+export interface ResourceFile {
+  name: string;
+  url: string;
+}
+
+export async function loadResources(sample: readonly ResourceFile[], uploads: readonly File[]): Promise<ResourceSource[]> {
+  const files = await Promise.all(sample.map(async ({ name, url }) => {
+    const response = await fetch(url, { cache: "no-store" });
+    if (!response.ok) throw new Error(`Could not load resource ${name} (${response.status})`);
+    return new File([await response.blob()], name);
+  }));
+  return readResources([...files, ...uploads]);
+}
+
 export async function readResources(files: readonly File[]): Promise<ResourceSource[]> {
   if (files.length > maxFiles) throw new Error(`Choose at most ${maxFiles} resource files`);
   const names = new Set<string>();

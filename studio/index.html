@@ -71,9 +71,10 @@
           <section class="setup-card resources-card" aria-labelledby="resources-title">
             <div class="card-top"><span class="step-number">03</span><h2 id="resources-title">Assets</h2><span class="card-icon" aria-hidden="true">▤</span></div>
             <p class="card-note">Images and fonts are copied into the library’s <code>W:</code> resource drive.</p>
-            <label class="resource-button" for="resource-files"><span aria-hidden="true">＋</span> Add resource files</label>
+            <label class="resource-button" for="resource-files"><span aria-hidden="true">＋</span> Choose upload files</label>
             <input id="resource-files" class="sr-only" type="file" multiple aria-label="Choose resource files">
             <ul id="resource-list" class="resource-list" aria-label="Selected resources"><li class="empty-resource">No assets added</li></ul>
+            <button id="clear-resources" class="text-action" type="button" disabled>Clear uploads</button>
           </section>
         </aside>
 
@@ -131,10 +132,12 @@
           </div>
           <div class="toolchain-detail">
             <div class="toolchain-badge"><span id="language-symbol">JS</span><div><strong id="language-name">JavaScript</strong><small id="language-output">Upload .js</small></div></div>
+            <div id="sample-picker" class="sample-picker" hidden><label for="ts-sample">Sample</label><select id="ts-sample" aria-label="TypeScript sample"></select></div>
             <p id="language-summary">Write a single JavaScript file with a main(api) entry point.</p>
             <div class="command-head"><span>BUILD COMMAND</span><button id="copy-command" type="button" aria-label="Copy build command">Copy <span aria-hidden="true">↗</span></button></div>
             <pre id="build-command" class="command-block"><code>No build step — upload toolchains/js/app.js</code></pre>
             <div id="template-links" class="template-links"></div>
+            <p id="sample-resources" class="sample-resources" aria-label="Required sample resources" hidden></p>
             <button id="sample-button" class="sample-button" type="button"><span aria-hidden="true">◈</span> Load JS sample <span aria-hidden="true">→</span></button>
           </div>
           <div class="toolchain-tip"><span aria-hidden="true">ⓘ</span><p>C, C++ and Rust apps use a small, versioned application ABI. Build locally, then drop the resulting Wasm here.</p></div>

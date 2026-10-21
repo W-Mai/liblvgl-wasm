@@ -3,5 +3,6 @@
   "compilerOptions": {
     "lib": ["ES2022", "WebWorker"]
   },
-  "files": ["studio/src/worker.ts"]
+  "files": ["studio/src/worker.ts"],
+  "include": ["toolchains/ts/**/*.ts"]
 }

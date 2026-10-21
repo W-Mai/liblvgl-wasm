@@ -136,7 +136,8 @@ button:focus-visible, a:focus-visible, select:focus-visible, label[tabindex]:foc
 .upload-target strong { font-size: 11px; font-weight: 600; }
 .upload-target small { color: var(--quiet); font-size: 10px; }
 .text-action { border: 0; background: transparent; color: var(--ink); padding: 0; margin-top: 12px; font: 11px var(--mono); }
-.text-action:hover { text-decoration: underline; }
+.text-action:hover:not(:disabled) { text-decoration: underline; }
+.text-action:disabled { color: var(--quiet); cursor: default; }
 .resources-card { padding-bottom: 14px; }
 .resources-card.dragging { border-color: var(--ink); background: var(--surface-hover); }
 .resources-card .card-top { margin-bottom: 8px; }
@@ -147,6 +148,7 @@ button:focus-visible, a:focus-visible, select:focus-visible, label[tabindex]:foc
 .resource-list li { display: flex; justify-content: space-between; gap: 8px; color: var(--muted); font: 10px var(--mono); padding: 4px 0; }
 .resource-list li span:first-child { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .resource-list li span:last-child, .resource-list .empty-resource { color: var(--quiet); }
+.resource-list li span:last-child { flex: none; white-space: nowrap; }
 .preview-panel { min-width: 0; display: flex; flex-direction: column; background: var(--preview); }
 .preview-toolbar { min-height: 88px; padding: 20px 30px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--line); gap: 16px; }
 .preview-title-row { display: flex; align-items: center; gap: 14px; }
@@ -201,7 +203,11 @@ button:focus-visible, a:focus-visible, select:focus-visible, label[tabindex]:foc
 .toolchain-badge > span { display: grid; place-items: center; width: 37px; height: 37px; flex: none; color: var(--accent-ink); background: var(--accent); font: 700 11px var(--mono); }
 .toolchain-badge strong { display: block; font-size: 13px; }
 .toolchain-badge small { display: block; color: var(--muted); margin-top: 3px; font: 10px var(--mono); }
+.sample-picker:not([hidden]) { display: flex; align-items: center; gap: 12px; margin-top: 18px; font: 11px var(--mono); }
+.sample-picker label { color: var(--muted); }
+.sample-picker select { flex: 1; min-width: 0; padding: 7px; border: 1px solid var(--line-strong); border-radius: 0; background: var(--field); color: var(--ink); font: inherit; }
 .toolchain-detail > p { color: var(--muted); font-size: 11px; line-height: 1.6; margin: 17px 0 22px; min-height: 36px; }
+.toolchain-detail > .sample-resources { margin: 12px 0 0; min-height: 0; white-space: pre-line; overflow-wrap: anywhere; font: 10px/1.6 var(--mono); }
 .command-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; color: var(--quiet); font: 9px var(--mono); letter-spacing: .09em; }
 .command-head button { border: 0; background: transparent; color: var(--ink); font: 10px var(--mono); }
 .command-block { min-height: 77px; margin: 0; padding: 14px 12px; background: var(--field); border: 1px solid var(--line); color: var(--code); white-space: pre-wrap; overflow-wrap: anywhere; font: 10px/1.55 var(--mono); }

@@ -6,7 +6,6 @@
   "files": [],
   "include": [
     "studio/src/**/*.ts",
-    "toolchains/ts/app.ts",
     "examples/browser/main.ts"
   ],
   "exclude": ["studio/src/worker.ts"]

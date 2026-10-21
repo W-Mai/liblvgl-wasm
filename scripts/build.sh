@@ -54,3 +54,4 @@ bun run build:browser
 bun run build:studio
 bun run build:apps
 bun run build:ts-app
+bun run build:ts-samples

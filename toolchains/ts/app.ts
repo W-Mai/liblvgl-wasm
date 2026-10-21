@@ -1,19 +1,13 @@
 import {
   LV_COLOR_T_SIZE, LV_EVENT_CLICKED, LV_PALETTE_BLUE, LV_PALETTE_GREEN,
-  LV_PART_MAIN, valuesIdentity,
+  LV_PART_MAIN,
 } from "../../target/typescript/values.ts";
 import type { AppApi } from "./api.ts";
+import { requireSdk } from "./sdk.ts";
 
 function main(api: AppApi): void {
   const { runtime } = api;
-  const { identity } = runtime;
-  if (identity.sdk.status !== "matched"
-      || valuesIdentity.wasm_sha256 !== identity.coreSha256
-      || valuesIdentity.api_sha256 !== identity.sdk.apiSha256) {
-    throw new Error("TS SDK sample requires matching core and generated values; rebuild the application with the selected SDK");
-  }
-
-  const raw = runtime.unsafe;
+  const raw = requireSdk(runtime);
   const button = runtime.createButton(api.screen);
   raw.lv_obj_set_size(button.handle, 180, 64);
   raw.lv_obj_center(button.handle);
