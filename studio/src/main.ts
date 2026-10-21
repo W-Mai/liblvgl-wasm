@@ -81,6 +81,14 @@ const tsSamples: Record<string, Toolchain> = {
     links: [["freetype.ts", "/toolchains/ts/samples/freetype.ts"], ["api.ts", "/toolchains/ts/api.ts"], ["sdk.ts", "/toolchains/ts/sdk.ts"]],
     resources: [{ name: "geometry.ttf", url: "/tests/fixtures/tinyttf/geometry.ttf" }],
   },
+  tinyttf: {
+    ...toolchains.ts, sampleName: "TinyTTF",
+    summary: "Load TrueType font bytes from W: resources. Resize the font between 16 and 32 px.",
+    command: "bun run build:ts-samples\n# upload target/apps/ts/samples/tinyttf.js",
+    sample: "/target/apps/ts/samples/tinyttf.js",
+    links: [["tinyttf.ts", "/toolchains/ts/samples/tinyttf.ts"], ["api.ts", "/toolchains/ts/api.ts"], ["sdk.ts", "/toolchains/ts/sdk.ts"]],
+    resources: [{ name: "geometry.ttf", url: "/tests/fixtures/tinyttf/geometry.ttf" }],
+  },
 };
 
 function element<T extends HTMLElement>(selector: string): T {

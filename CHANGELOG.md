@@ -7,6 +7,7 @@
 
 ### Added
 
+- TinyTTF application sample with font resource loading, native resizing, and label layout updates in Studio.
 - FreeType application sample with native bitmap glyphs and 16/32 px font replacement in Studio.
 - GIF application sample with native playback, pause, resume, and restart controls in Studio.
 - PNG application sample with background switching, bound sample resources, shared upload limits, and resource conflict recovery in Studio.
