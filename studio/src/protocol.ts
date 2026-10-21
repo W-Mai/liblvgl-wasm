@@ -1,3 +1,5 @@
+import type { CoreReport } from "./core.ts";
+
 export type AppSource = { kind: "js"; source: string } | { kind: "wasm"; bytes: ArrayBuffer };
 
 export interface ResourceSource {
@@ -12,7 +14,7 @@ export type RunnerInput =
   | { type: "stop" };
 
 export type RunnerOutput =
-  | { type: "ready"; width: number; height: number; coreExports: number }
+  | { type: "ready"; width: number; height: number; core: CoreReport }
   | { type: "frame"; width: number; height: number; frameId: number; pixels: ArrayBuffer }
   | { type: "log"; message: string }
   | { type: "error"; message: string };

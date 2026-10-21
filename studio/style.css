@@ -127,6 +127,9 @@ button:focus-visible, a:focus-visible, select:focus-visible, label[tabindex]:foc
 .file-dot.app-dot { background: var(--mark); }
 .card-note { margin: 12px 0 0; color: var(--muted); font-size: 11px; line-height: 1.5; }
 .card-note code { color: var(--mark); font: 11px var(--mono); }
+.core-details { display: flex; justify-content: space-between; gap: 8px; width: 100%; margin-top: 12px; padding: 8px 0; border: 0; border-top: 1px solid var(--line); background: transparent; color: var(--ink); font: 11px var(--mono); text-align: left; }
+.core-details:hover:not(:disabled) { text-decoration: underline; }
+.core-details:disabled { color: var(--quiet); cursor: default; }
 .upload-target { display: flex; align-items: center; flex-direction: column; justify-content: center; gap: 3px; min-height: 94px; border: 1px dashed var(--line-strong); background: var(--field); text-align: center; cursor: pointer; }
 .upload-target:hover, .upload-target.dragging { border-color: var(--ink); background: var(--surface-hover); }
 .upload-glyph { color: var(--mark); font: 28px var(--mono); line-height: 1; }
@@ -240,6 +243,15 @@ body.nested-source-open #nested-source-panel { visibility: visible; transform: t
 .syntax-string { color: var(--syntax-string); }
 .syntax-type { color: var(--syntax-type); }
 .source-view .demo-error { padding: 20px; }
+.library-view { flex: 1; min-height: 0; overflow: auto; padding: 24px 20px; }
+.library-view h3 { margin: 24px 0 12px; padding-top: 20px; border-top: 1px solid var(--line); font: 11px var(--mono); text-transform: uppercase; letter-spacing: .06em; }
+.library-view dl { display: grid; grid-template-columns: 1fr auto; gap: 12px 20px; margin: 0; font: 12px/1.5 var(--mono); }
+.library-view dt, .library-view p { color: var(--muted); }
+.library-view dd { margin: 0; text-align: right; }
+.library-view .library-hashes { display: block; }
+.library-hashes dt { margin-top: 16px; font-size: 10px; }
+.library-hashes dd { margin-top: 5px; text-align: left; overflow-wrap: anywhere; font-size: 11px; }
+.library-view p { font-size: 12px; line-height: 1.6; }
 .demo-error { margin: 12px 0 0; color: var(--error); font: 11px var(--mono); overflow-wrap: anywhere; }
 
 @media (max-width: 1180px) {

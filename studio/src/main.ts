@@ -1,6 +1,6 @@
 import { StudioController } from "./controller.ts";
 import { startCDemo } from "./c-demo.ts";
-import { inspectCore } from "./core.ts";
+import { inspectCore, type CoreReport } from "./core.ts";
 import { renderHighlighted } from "./highlight.ts";
 import { readResources } from "./resources.ts";
 import type { AppSource, RunnerOutput } from "./protocol.ts";
@@ -98,6 +98,8 @@ let width = 320;
 let height = 240;
 let generation = 0;
 let running = false;
+let coreChoice = 0;
+let resourceChoice = 0;
 
 function fitDevice(): void {
   const stageStyle = getComputedStyle(stage);
@@ -143,8 +145,9 @@ function setStatus(value: "starting" | "running" | "stopped" | "error", label: s
 function onOutput(message: RunnerOutput): void {
   if (message.type === "ready") {
     running = true;
+    renderCore(message.core);
     setStatus("running", "Application running");
-    appendLog(`Core ABI 1 ready · ${message.coreExports} exports · ${message.width} × ${message.height}`, "success");
+    appendLog(`Core ABI ${message.core.identity.bridgeAbi} ready · ${message.core.exports} exports · ${message.width} × ${message.height}`, "success");
   } else if (message.type === "frame") {
     if (canvas.width !== message.width || canvas.height !== message.height) {
       canvas.width = message.width;
@@ -156,6 +159,8 @@ function onOutput(message: RunnerOutput): void {
     appendLog(message.message);
   } else if (message.type === "error") {
     running = false;
+    renderCore();
+    controller.stop();
     setStatus("error", "Application error");
     appendLog(message.message, "error");
   }
@@ -164,7 +169,7 @@ function onOutput(message: RunnerOutput): void {
 const controller = new StudioController(onOutput);
 
 async function fetchBuffer(path: string): Promise<ArrayBuffer> {
-  const response = await fetch(path);
+  const response = await fetch(path, { cache: "no-store" });
   if (!response.ok) throw new Error(`Could not load ${path} (${response.status})`);
   return response.arrayBuffer();
 }
@@ -178,10 +183,11 @@ function stop(): void {
   generation++;
   controller.stop();
   running = false;
+  renderCore();
   setStatus("stopped", "Application stopped");
 }
 
-async function run(): Promise<boolean> {
+async function run(): Promise<"started" | "failed" | "cancelled"> {
   stop();
   const runId = generation;
   setStatus("starting", "Loading application");
@@ -191,15 +197,16 @@ async function run(): Promise<boolean> {
       selectedCore ? selectedCore.arrayBuffer() : fetchBuffer("/target/wasm/liblvgl.wasm"),
       selectedApp.load(), readResources(resources),
     ]);
-    if (runId !== generation) return false;
+    if (runId !== generation) return "cancelled";
     await controller.start({ core, app, resources: assets, width, height });
-    return true;
+    return runId === generation ? "started" : "cancelled";
   } catch (error) {
-    if (runId !== generation) return false;
+    if (runId !== generation) return "cancelled";
     controller.stop();
+    renderCore();
     setStatus("error", "Application failed to start");
     appendLog(error instanceof Error ? error.message : String(error), "error");
-    return false;
+    return "failed";
   }
 }
 
@@ -215,6 +222,8 @@ function showCoreSource(): void {
 }
 
 async function chooseCore(file: File): Promise<void> {
+  const choice = ++coreChoice;
+  const runId = generation;
   if (!file.name.toLowerCase().endsWith(".wasm") || file.size === 0 || file.size > 32 * 1024 * 1024) {
     appendLog("Choose a .wasm library between 1 byte and 32 MiB", "error");
     return;
@@ -222,13 +231,15 @@ async function chooseCore(file: File): Promise<void> {
   try {
     await inspectCore(await file.arrayBuffer());
   } catch (error) {
+    if (choice !== coreChoice || runId !== generation) return;
     appendLog(`Library rejected: ${error instanceof Error ? error.message : String(error)}`, "error");
     return;
   }
+  if (choice !== coreChoice || runId !== generation) return;
   const previous = selectedCore;
   selectedCore = file;
   showCoreSource();
-  if (!await run() && selectedCore === file) {
+  if (await run() === "failed" && selectedCore === file) {
     selectedCore = previous;
     showCoreSource();
     await run();
@@ -251,7 +262,7 @@ async function chooseApp(file: File): Promise<void> {
   selectedApp = candidate;
   appName.textContent = candidate.name;
   appOrigin.textContent = candidate.origin;
-  if (!await run() && selectedApp === candidate) {
+  if (await run() === "failed" && selectedApp === candidate) {
     selectedApp = previous;
     appName.textContent = previous.name;
     appOrigin.textContent = previous.origin;
@@ -300,12 +311,16 @@ function renderResources(): void {
 }
 
 async function chooseResources(files: File[]): Promise<void> {
+  const choice = ++resourceChoice;
+  const runId = generation;
   try {
     await readResources(files);
   } catch (error) {
+    if (choice !== resourceChoice || runId !== generation) return;
     appendLog(error instanceof Error ? error.message : String(error), "error");
     return;
   }
+  if (choice !== resourceChoice || runId !== generation) return;
   resources = files;
   renderResources();
   await run();
@@ -404,6 +419,8 @@ const panelTitle = element<HTMLElement>("#panel-title");
 const panelDemo = element<HTMLElement>("#panel-demo");
 const panelDemoFooter = element<HTMLElement>("#panel-demo-footer");
 const panelSource = element<HTMLElement>("#panel-source");
+const panelLibrary = element<HTMLElement>("#panel-library");
+const coreDetails = element<HTMLButtonElement>("#core-details");
 const sourcePath = element<HTMLElement>("#source-path");
 const sourceCode = element<HTMLElement>("#source-code");
 const sourceError = element<HTMLElement>("#source-error");
@@ -417,6 +434,64 @@ let nestedSourceAbort: AbortController | undefined;
 let closeTimer: ReturnType<typeof setTimeout> | undefined;
 let nestedCloseTimer: ReturnType<typeof setTimeout> | undefined;
 let panelTrigger: HTMLElement | undefined;
+function renderCore(info?: CoreReport): void {
+  coreDetails.disabled = !info;
+  const sdkStatus = info?.identity.sdk.status;
+  element<HTMLElement>("#core-sdk-status").textContent = !info ? "No active library"
+    : sdkStatus === "matched" ? "Host SDK matched"
+    : sdkStatus === "core-mismatch" ? "Bridge only" : "Host SDK mismatch";
+  panelLibrary.replaceChildren();
+  const paragraph = (text: string): void => {
+    const node = document.createElement("p");
+    node.textContent = text;
+    panelLibrary.append(node);
+  };
+  if (!info) return paragraph("No active library.");
+  const heading = (text: string): void => {
+    const node = document.createElement("h3");
+    node.textContent = text;
+    panelLibrary.append(node);
+  };
+  const rows = (items: [string, string][], className = ""): void => {
+    const list = document.createElement("dl");
+    list.className = className;
+    for (const [name, value] of items) {
+      const term = document.createElement("dt");
+      term.textContent = name;
+      const description = document.createElement("dd");
+      description.textContent = value;
+      list.append(term, description);
+    }
+    panelLibrary.append(list);
+  };
+  rows([
+    ["Bridge ABI", String(info.identity.bridgeAbi)],
+    ["Host SDK", sdkStatus === "matched" ? "Matched" : "Mismatch"],
+    ["Imports / exports", `${info.imports} / ${info.exports}`],
+  ]);
+  if (sdkStatus !== "matched") paragraph("Generated APIs need a matching SDK. Bridge applications remain available.");
+  heading("Build configuration");
+  if (info.build) {
+    rows([["LVGL", info.build.version],
+      ["Generated APIs", String(info.identity.sdk.verifiedFunctions)],
+      ...info.build.features.map(({ name, enabled }): [string, string] => [name, enabled ? "Enabled" : "Disabled"])]);
+  } else paragraph("Unknown for this core.");
+  heading("Identity");
+  const hashes: [string, string][] = [["Loaded core · SHA-256", info.identity.coreSha256]];
+  if (sdkStatus !== "matched") hashes.push(["SDK core · SHA-256", info.identity.sdk.coreSha256]);
+  hashes.push(["SDK API · SHA-256", info.identity.sdk.apiSha256]);
+  rows(hashes, "library-hashes");
+}
+function openCoreDetails(): void {
+  stopPanelContent();
+  showPanel();
+  panelTitle.textContent = "Library details";
+  panelDemo.hidden = true;
+  panelDemoFooter.hidden = true;
+  panelSource.hidden = true;
+  panelLibrary.hidden = false;
+}
+coreDetails.addEventListener("click", openCoreDetails);
 function showPanel(): void {
   if (document.body.classList.contains("panel-open")) return;
   if (closeTimer) clearTimeout(closeTimer);
@@ -445,6 +520,7 @@ async function openCDemo(): Promise<void> {
   showPanel();
   panelTitle.textContent = "C API demo";
   panelSource.hidden = true;
+  panelLibrary.hidden = true;
   panelDemo.hidden = false;
   panelDemoFooter.hidden = false;
   demoError.hidden = true;
@@ -504,6 +580,7 @@ async function openSource(name: string, path: string): Promise<void> {
   panelDemo.hidden = true;
   panelDemoFooter.hidden = true;
   panelSource.hidden = false;
+  panelLibrary.hidden = true;
   sourcePath.textContent = path.slice(1);
   const abort = new AbortController();
   sourceAbort = abort;
@@ -545,7 +622,7 @@ function closePanel(): void {
     sidePanel.inert = true;
     sidePanel.setAttribute("aria-hidden", "true");
     appShell.inert = false;
-    if (panelTrigger?.isConnected) panelTrigger.focus();
+    if (panelTrigger?.isConnected && !panelTrigger.matches(":disabled")) panelTrigger.focus();
     else document.querySelector<HTMLButtonElement>(`[data-language="${selectedLanguage}"]`)?.focus();
     closeTimer = undefined;
   }, 360);

@@ -65,12 +65,24 @@ export interface Frame {
   height: number;
   frameId: number;
   dirty: DirtyRect[];
-  rgba: Uint8ClampedArray;
+  rgba: Uint8ClampedArray<ArrayBuffer>;
 }
 
 export interface StepResult {
   nextMs: number;
   framesChanged: number;
+}
+
+/** Immutable load-time facts. Reading this snapshot does not call the guest and remains valid after shutdown. */
+export interface RuntimeIdentity {
+  readonly bridgeAbi: number;
+  readonly coreSha256: string;
+  readonly sdk: {
+    readonly status: "matched" | "core-mismatch" | "values-mismatch";
+    readonly coreSha256: string;
+    readonly apiSha256: string;
+    readonly verifiedFunctions: number;
+  };
 }
 
 /** Calls use pointers into this core's memory. The caller owns bounds, alignment, initialization, and lifetime. Recreate memory views after memory growth. Pair scratch allocations with lvw_free; use runtime methods for lifecycle. */
@@ -114,9 +126,23 @@ export class LvglRuntime {
   private readonly animations: AnimationRegistry;
   private readonly observers: ObserverRegistry;
   private readonly decoders: DecoderRegistry;
+  private readonly identitySnapshot: RuntimeIdentity;
   private unsafeApi?: UnsafeLvgl;
 
-  private constructor(exports: RawExports, private readonly coreHash: string) {
+  private constructor(exports: RawExports, coreHash: string, bridgeAbi: number) {
+    const status = coreHash !== bindingIdentity.wasm_sha256 ? "core-mismatch"
+      : valuesIdentity.api_sha256 !== bindingIdentity.api_sha256
+        || valuesIdentity.wasm_sha256 !== bindingIdentity.wasm_sha256 ? "values-mismatch" : "matched";
+    this.identitySnapshot = Object.freeze({
+      bridgeAbi,
+      coreSha256: coreHash,
+      sdk: Object.freeze({
+        status,
+        coreSha256: bindingIdentity.wasm_sha256,
+        apiSha256: bindingIdentity.api_sha256,
+        verifiedFunctions: bindingIdentity.verified_functions,
+      }),
+    });
     this.raw = Object.fromEntries(Object.entries(exports).map(([name, value]) => [
       name, typeof value === "function"
         ? (...args: unknown[]) => this.invoke(name, () => value(...args))
@@ -287,20 +313,24 @@ export class LvglRuntime {
     }
     memory = raw.memory;
     raw._initialize();
-    if (raw.lvw_abi_version() !== ABI_VERSION) throw new Error("unsupported bridge ABI");
+    const bridgeAbi = raw.lvw_abi_version();
+    if (bridgeAbi !== ABI_VERSION) throw new Error("unsupported bridge ABI");
     check(raw.lvw_init(), "lvw_init");
-    runtime = new LvglRuntime(raw, coreHash);
+    runtime = new LvglRuntime(raw, coreHash, bridgeAbi);
     return runtime;
+  }
+
+  get identity(): RuntimeIdentity {
+    return this.identitySnapshot;
   }
 
   /** Generated lv_* calls for the exact core recorded in bindingIdentity. */
   get unsafe(): UnsafeLvgl {
     this.ensureActive();
-    if (this.coreHash !== bindingIdentity.wasm_sha256) {
+    if (this.identitySnapshot.sdk.status === "core-mismatch") {
       throw new Error("LVGL bindings do not match this core; generate bindings for the selected core");
     }
-    if (valuesIdentity.api_sha256 !== bindingIdentity.api_sha256
-        || valuesIdentity.wasm_sha256 !== bindingIdentity.wasm_sha256) {
+    if (this.identitySnapshot.sdk.status === "values-mismatch") {
       throw new Error("LVGL constants and layouts do not match these bindings; regenerate the SDK");
     }
     if (!this.unsafeApi) {

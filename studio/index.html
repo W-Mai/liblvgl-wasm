@@ -53,7 +53,7 @@
             </label>
             <input id="core-file" class="sr-only" type="file" accept=".wasm,application/wasm" aria-label="Choose custom LVGL Wasm library">
             <div class="file-state"><span class="file-dot"></span><span id="core-name">liblvgl.wasm</span><span id="core-origin">BUILT-IN</span></div>
-            <p class="card-note">Bridge ABI 1 is checked before your app starts.</p>
+            <button id="core-details" class="core-details" type="button" aria-label="Library details" disabled><span id="core-sdk-status">No active library</span><span aria-hidden="true">→</span></button>
           </section>
 
           <section class="setup-card" aria-labelledby="app-title">
@@ -163,6 +163,7 @@
         <pre><code id="source-code"></code></pre>
         <p id="source-error" class="demo-error" role="alert" hidden></p>
       </div>
+      <div id="panel-library" class="library-view" hidden></div>
     </aside>
     <aside id="nested-source-panel" class="side-panel nested-source-panel" aria-labelledby="nested-source-title" aria-hidden="true" inert>
       <div class="side-panel-head">

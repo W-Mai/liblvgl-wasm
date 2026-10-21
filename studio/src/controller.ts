@@ -24,7 +24,7 @@ export class StudioController {
   async start(config: RunConfig): Promise<void> {
     this.stop();
     const generation = this.generation;
-    const response = await fetch("/target/studio/worker.js");
+    const response = await fetch("/target/studio/worker.js", { cache: "no-store" });
     if (!response.ok) throw new Error(`Unable to load runner (${response.status})`);
     const workerSource = await response.text();
     if (generation !== this.generation) throw new DOMException("Run cancelled", "AbortError");
@@ -64,12 +64,12 @@ export class StudioController {
     return new Promise<void>((resolve, reject) => {
       this.rejectStart = reject;
       this.onMessage = (event) => {
+        if (generation !== this.generation) return;
         if (event.source !== frame.contentWindow || event.data?.token !== token) return;
         if (event.data.type === "frame-ready") {
           frame.contentWindow?.postMessage({ token, type: "boot", workerSource, start: startMessage }, "*");
         } else if (event.data.type === "runner") {
           const output = event.data.data;
-          this.onOutput(output);
           if (output.type === "ready") {
             this.rejectStart = undefined;
             resolve();
@@ -78,6 +78,7 @@ export class StudioController {
             this.rejectStart = undefined;
             reject(new Error(output.message));
           }
+          this.onOutput(output);
         }
       };
       window.addEventListener("message", this.onMessage);

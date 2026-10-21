@@ -10,8 +10,8 @@ const runtime = await LvglRuntime.load(bytes);
 const display = runtime.createDisplay(canvas.width, canvas.height);
 const pointer = runtime.createPointer(display);
 const screen = runtime.screen(display);
-runtime.putResource("red.bmp", new Uint8Array(await fetch("/examples/browser/red.bmp")
-  .then((response) => response.arrayBuffer())));
+const bitmap = await fetch("/examples/browser/red.bmp").then((response) => response.arrayBuffer());
+runtime.putResource("red.bmp", new Uint8Array(bitmap));
 const image = runtime.createImage(screen);
 runtime.setImageSource(image, "W:red.bmp");
 image.setPosition(8, 8);

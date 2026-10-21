@@ -1,5 +1,5 @@
 import { LvglRuntime, type Display, type ObjectRef, type PointerInput } from "../../bindings/typescript/src/index.ts";
-import { inspectCore } from "./core.ts";
+import { describeCore, inspectCore } from "./core.ts";
 import type { AppSource, RunnerInput, RunnerOutput } from "./protocol.ts";
 
 type AppApi = {
@@ -130,8 +130,14 @@ async function runApplication(app: AppSource, api: AppApi): Promise<void> {
 }
 
 async function start(input: Extract<RunnerInput, { type: "start" }>): Promise<void> {
-  const info = await inspectCore(input.core);
-  runtime = await LvglRuntime.load(input.core);
+  let info;
+  try {
+    const preflight = await inspectCore(input.core);
+    runtime = await LvglRuntime.load(input.core);
+    info = describeCore(runtime.identity, preflight);
+  } catch (error) {
+    throw new Error(`Library failed to load: ${error instanceof Error ? error.message : String(error)}`);
+  }
   display = runtime.createDisplay(input.width, input.height);
   pointer = runtime.createPointer(display);
   for (const resource of input.resources) {
@@ -143,8 +149,12 @@ async function start(input: Extract<RunnerInput, { type: "start" }>): Promise<vo
     screen: runtime.screen(display),
     log: (message) => send({ type: "log", message: String(message) }),
   };
-  await runApplication(input.app, api);
-  send({ type: "ready", width: input.width, height: input.height, coreExports: info.exports.length });
+  try {
+    await runApplication(input.app, api);
+  } catch (error) {
+    throw new Error(`Application failed to start: ${error instanceof Error ? error.message : String(error)}`);
+  }
+  send({ type: "ready", width: input.width, height: input.height, core: info });
   last = performance.now();
   tick();
 }

@@ -14,7 +14,7 @@
     "build:apps": "./toolchains/c/build.sh && ./toolchains/cpp/build.sh && ./toolchains/rust/build.sh",
     "build:ts-app": "bun build toolchains/ts/app.ts --target browser --format iife --outfile target/apps/ts/app.js",
     "test": "bun test ./tests",
-    "typecheck": "bun ./node_modules/typescript/bin/tsc --project tsconfig.bindings.json",
+    "typecheck": "bun ./node_modules/typescript/bin/tsc --project tsconfig.bindings.json && bun ./node_modules/typescript/bin/tsc --project tsconfig.studio.json && bun ./node_modules/typescript/bin/tsc --project tsconfig.studio-worker.json",
     "quality": "./scripts/quality.sh"
   },
   "dependencies": {

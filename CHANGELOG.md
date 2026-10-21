@@ -7,6 +7,8 @@
 
 ### Added
 
+- Studio library details with core and SDK identities, generated build configuration, and strict checks for browser and Worker code.
+- Immutable TypeScript runtime identity snapshots using the same core and values checks as generated API access.
 - Native Lottie playback from memory and uploaded resources, with generated APIs, timing controls, source replacement, premultiplied buffers, and lifetime checks in both hosts.
 - SVG geometry through native LVGL document and image APIs, with checks for pixels, source lifetimes, and recovery after decoding errors in both hosts.
 - FreeType outline checks in both hosts for TrueType and CFF curves, text opacity, font sizes, shared paths, and bitmap/outline fallback chains.
@@ -52,6 +54,7 @@
 
 ### Fixed
 
+- Cancelled Studio loads remain stopped, retired runners cannot restore stale library details, and closing details restores keyboard focus after application errors.
 - SVG viewBox attribute ordering, percentage gradient stops, long root headers, document completion checks, and decoder failure cleanup.
 - Premultiplied alpha compositing and exact font-size scaling for software outline glyphs.
 - GIF playback stops before releasing a source, applies the final frame's delay, preserves decoder state during frame-count queries, and finishes frame processing before completion callbacks can delete or replace the widget.
