@@ -402,7 +402,7 @@ Each supported declaration has a `wasm_signature` with the parameter and result 
 
 ## Software rendering
 
-The software configuration enables PNG, BMP, GIF, TinyTTF, FreeType fonts, and ThorVG vector rendering. SVG, Lottie, native windows, and hardware drawing backends are disabled. The Wasm linear memory maximum is 256 MiB.
+The software configuration enables PNG, BMP, GIF, SVG geometry, TinyTTF, FreeType fonts, and ThorVG vector rendering. Lottie, native windows, and hardware drawing backends are disabled. The Wasm linear memory maximum is 256 MiB.
 
 ### PNG resources
 
@@ -538,9 +538,26 @@ In host callbacks, obtain the event with TypeScript `runtime.eventPointer()` or 
 
 Both hosts verify actual framebuffer pixels for solid and antialiased paths, alpha compositing, nonzero/even-odd fills, fractional transforms, and two-stop linear gradients. The fixed backend uses integer opacity and gradient quantization: solid fill opacity mixes the color alpha and requested opacity with a right shift by eight, including `255 × 255 → 254`. Blend modes `SRC_IN`, `DST_OVER`, `DST_IN`, and `SUBTRACTIVE` fall back to normal blending in this backend.
 
-`LV_USE_FLOAT=1` makes `lv_value_precise_t` and the coordinate fields of `lv_point_precise_t` floating-point values; arc angle arguments and results use `f32`. Regenerate bindings when changing this configuration and keep the generated core identity checks enabled. `lv_matrix_transform_point` preserves fractional coordinates; `lv_matrix_transform_precise_point` rounds its result despite the floating-point fields. SVG parsing and Lottie playback are disabled.
+`LV_USE_FLOAT=1` makes `lv_value_precise_t` and the coordinate fields of `lv_point_precise_t` floating-point values; arc angle arguments and results use `f32`. Regenerate bindings when changing this configuration and keep the generated core identity checks enabled. `lv_matrix_transform_point` preserves fractional coordinates; `lv_matrix_transform_precise_point` rounds its result despite the floating-point fields. Lottie playback is disabled.
 
 ThorVG is distributed under its [MIT license](third_party/thorvg/LICENSE.txt). Its rasterizer also contains code covered by the [included FreeType notice](third_party/thorvg/NOTICES.txt). Preserve these files when distributing the core or C demo.
+
+### SVG geometry
+
+SVG uses LVGL's native parser and vector renderer with ThorVG rasterization. Upload an `.svg` file as a `W:` resource, then use the ordinary image APIs. Native C code calls:
+
+```c
+lv_obj_t * image = lv_image_create(lv_screen_active());
+lv_image_set_src(image, "W:artwork.svg");
+```
+
+The generated TypeScript and Rust APIs also expose `lv_svg_load_data`, `lv_svg_node_create`, `lv_svg_node_delete`, and `lv_draw_svg`. Loading a document copies its parsed data; the input bytes may be released after loading returns. Pass the document to `lv_draw_svg` only with a layer borrowed from the current synchronous drawing event. Submitted vector tasks retain their geometry, so the document may be deleted after that call. Keep a document alive if it will be used for later redraws.
+
+Both hosts check rectangles, straight and quadratic/cubic paths, group translation, viewBox scaling with `preserveAspectRatio="none"`, nonzero/even-odd fills, fill opacity, and two-stop linear gradients against mathematical pixel bounds. ViewBox scaling is independent of XML attribute order. Percentage gradient stops are normalized to `0..1`. The decoder reads the complete file to determine its dimensions, including roots whose attributes exceed 512 bytes; invalid roots, mismatched tags, incomplete documents, and multiple roots are rejected. Empty closed and self-closing roots are accepted. A valid replacement renders on the same image after a failed source.
+
+Uploaded resource bytes remain available until shutdown, and file paths are copied by `lv_image_set_src`. Variable image descriptors and their SVG bytes are borrowed: keep both alive until the image source is replaced or the image is deleted. The default image and header caches are disabled. File dimensions come from the parsed viewport; variable sources retain the descriptor's dimensions. Image width is limited to 16,383 and height to 65,535 by the header's 16-bit ARGB stride and dimension fields.
+
+SVG text and embedded images have no rendering callbacks installed. Preserve-aspect-ratio meet/slice, group opacity, gradient transforms, spread modes, and external resources are unsupported. The parser accepts a subset of XML syntax. Fixed-source adaptations in `cmake/svg.cmake` operate on build-directory copies; the pinned LVGL source remains unchanged.
 
 ### FreeType license
 

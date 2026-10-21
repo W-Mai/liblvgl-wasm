@@ -7,6 +7,7 @@
 
 ### Added
 
+- SVG geometry through native LVGL document and image APIs, with checks for pixels, source lifetimes, and recovery after decoding errors in both hosts.
 - FreeType outline checks in both hosts for TrueType and CFF curves, text opacity, font sizes, shared paths, and bitmap/outline fallback chains.
 - FreeType 2.14.3 bitmap fonts from uploaded resources, with generated APIs, shared font caches, and glyph, kerning, fallback, and lifetime checks in both hosts.
 - Standard WebAssembly exception handling for font validation, Wasmtime configuration, and exception tag metadata parsing.
@@ -50,6 +51,7 @@
 
 ### Fixed
 
+- SVG viewBox attribute ordering, percentage gradient stops, long root headers, document completion checks, and decoder failure cleanup.
 - Premultiplied alpha compositing and exact font-size scaling for software outline glyphs.
 - GIF playback stops before releasing a source, applies the final frame's delay, preserves decoder state during frame-count queries, and finishes frame processing before completion callbacks can delete or replace the widget.
 - Initialize the Rust example's complete input packet before sending it to the bridge.

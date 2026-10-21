@@ -1,0 +1,6 @@
+<svg width="32" height="24" viewBox="0 0 16 12" preserveAspectRatio="none">
+  <g transform="translate(1 1)">
+    <rect x="1" y="1" width="5" height="3" fill="#e06020"/>
+    <path d="M1 5L7 5L1 11Z" fill="#20a0e0" fill-opacity=".5"/>
+  </g>
+</svg>
