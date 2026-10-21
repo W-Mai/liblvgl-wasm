@@ -21,6 +21,8 @@ CMake compiles adapted copies of the pinned `lv_observer.c` and `lv_image_decode
 
 The pinned `lv_gif.c` also compiles from an adapted copy that preserves playback during frame-count queries, applies each frame's delay, stops timers before closing sources, and delivers completion events after frame processing.
 
+The adapted `lv_draw_sw_letter.c` composites FreeType outline glyphs as premultiplied images and scales cached paths by the exact font-size ratio. The original source is checked against its pinned hash before adaptation.
+
 Generated files stay under `target/`:
 
 | Path | Content |
@@ -33,6 +35,7 @@ Generated files stay under `target/`:
 | `target/wasm/lvgl-adapted/lv_observer.c` | Observer deletion notification added to the pinned source |
 | `target/wasm/lvgl-adapted/lv_image_decoder.c` | Decoder deletion notifications and deinitialization cleanup |
 | `target/wasm/lvgl-adapted/lv_gif.c` | GIF playback timing, queries, and callback lifetime fixes |
+| `target/wasm/lvgl-adapted/lv_draw_sw_letter.c` | Outline glyph alpha compositing and font-size scaling |
 | `target/wasm/examples/c/liblvgl-c-demo.wasm` | C demo linked with LVGL |
 | `target/browser/main.js` | Browser example bundle |
 | `target/typescript/index.js` | TypeScript host adapter bundle |
@@ -498,11 +501,15 @@ label.delete();
 raw.lv_freetype_font_delete(font);
 ```
 
-Resource upload copies the font bytes, and font creation copies its path. Resources remain available until shutdown. Fonts using the same path and style share a face and caches; create separate fonts for different sizes. Remove all label, style, and fallback references and release manually acquired glyph draw data before deleting a font. Deleting a label does not delete its font.
+Resource upload copies the font bytes, and font creation copies its path. Resources remain available until shutdown. Fonts using the same path, style, render mode, and weight share a face and caches; create separate fonts for different sizes. Remove all label, style, and fallback references and release manually acquired glyph draw data before deleting a font. Deleting a label does not delete its font.
 
 The simple constructor disables kerning. To enable it, initialize an `lv_font_info_t`, set its `name`, `size`, and `kerning = LV_FONT_KERNING_NORMAL`, then call `lv_freetype_font_create_with_info`; generated layouts describe this structure. `lv_font_set_kerning` can toggle a font created with kerning enabled. FreeType's hinted metrics and small-size kerning can differ from TinyTTF.
 
-Both hosts verify TrueType glyph metrics, fractional bitmap coverage, composite characters, fallback, different sizes sharing a face, and recovery after missing or malformed font resources. Bitmap rendering does not synthesize bold outlines for ordinary non-variable fonts. Outline rendering is not covered by these bitmap checks. Embedded PNG glyphs, WOFF2, and complex text shaping are not provided by this configuration.
+Both hosts verify TrueType glyph metrics, fractional bitmap coverage, composite characters, fallback, different sizes sharing a face, and recovery after missing or malformed font resources. Bitmap rendering does not synthesize bold outlines for ordinary non-variable fonts. Embedded PNG glyphs, WOFF2, and complex text shaping are not provided by this configuration.
+
+Use `LV_FREETYPE_FONT_RENDER_MODE_OUTLINE` to render glyph paths through ThorVG. For `lv_font_info_t`, set `render_mode` to this value before creation. Outline and bitmap fonts can coexist, including fallback chains across modes. Outline checks cover TrueType quadratic curves, OpenType/CFF cubic curves, fractional pixel coverage, text opacity, shared paths, and 16, 17, and 32 pixel sizes. The software renderer uses the exact size ratio; the public `lv_freetype_outline_get_scale` still returns an integer F26DOT6 ratio and can lose precision.
+
+Outline glyph draw data is a borrowed native vector path, not an A8 bitmap or `lv_draw_buf_t`. Refresh a label before manually acquiring outline draw data so that the software renderer has installed its native outline callback. Release it with `lv_font_glyph_release_draw_data` using the same glyph descriptor before deleting any referenced font. Do not replace the renderer's callback with `lv_freetype_outline_add_event`. Runtime initialization and shutdown form one lifecycle; raw deinitialization and reinitialization inside the same runtime are not supported.
 
 ### Vector drawing
 
@@ -531,7 +538,7 @@ In host callbacks, obtain the event with TypeScript `runtime.eventPointer()` or 
 
 Both hosts verify actual framebuffer pixels for solid and antialiased paths, alpha compositing, nonzero/even-odd fills, fractional transforms, and two-stop linear gradients. The fixed backend uses integer opacity and gradient quantization: solid fill opacity mixes the color alpha and requested opacity with a right shift by eight, including `255 × 255 → 254`. Blend modes `SRC_IN`, `DST_OVER`, `DST_IN`, and `SUBTRACTIVE` fall back to normal blending in this backend.
 
-`LV_USE_FLOAT=1` makes `lv_value_precise_t` and the coordinate fields of `lv_point_precise_t` floating-point values; arc angle arguments and results use `f32`. Regenerate bindings when changing this configuration and keep the generated core identity checks enabled. `lv_matrix_transform_point` preserves fractional coordinates; `lv_matrix_transform_precise_point` rounds its result despite the floating-point fields. SVG parsing, Lottie playback, and FreeType outline rendering are not included in this vector verification.
+`LV_USE_FLOAT=1` makes `lv_value_precise_t` and the coordinate fields of `lv_point_precise_t` floating-point values; arc angle arguments and results use `f32`. Regenerate bindings when changing this configuration and keep the generated core identity checks enabled. `lv_matrix_transform_point` preserves fractional coordinates; `lv_matrix_transform_precise_point` rounds its result despite the floating-point fields. SVG parsing and Lottie playback are disabled.
 
 ThorVG is distributed under its [MIT license](third_party/thorvg/LICENSE.txt). Its rasterizer also contains code covered by the [included FreeType notice](third_party/thorvg/NOTICES.txt). Preserve these files when distributing the core or C demo.
 
