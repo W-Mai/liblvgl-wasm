@@ -1,5 +1,5 @@
 import { StudioController } from "./controller.ts";
-import { startCDemo } from "./c-demo.ts";
+import { startCDemo, type CDemo } from "./c-demo.ts";
 import { inspectCore, type CoreReport } from "./core.ts";
 import { renderHighlighted } from "./highlight.ts";
 import { loadResources, readResources, type ResourceFile } from "./resources.ts";
@@ -110,6 +110,11 @@ const tsSamples: Record<string, Toolchain> = {
       ["translation-opacity.json", "/tests/fixtures/lottie/translation-opacity.json"]],
     resources: [{ name: "translation-opacity.json", url: "/tests/fixtures/lottie/translation-opacity.json" }],
   },
+};
+
+const rustHost: Pick<Toolchain, "command" | "links"> = {
+  command: "./scripts/build.sh\nenv CARGO_TARGET_DIR=target/rust cargo run --manifest-path bindings/rust/Cargo.toml --locked -- target/wasm/liblvgl.wasm",
+  links: [["main.rs", "/bindings/rust/src/main.rs"], ["Cargo.toml", "/bindings/rust/Cargo.toml"]],
 };
 
 function element<T extends HTMLElement>(selector: string): T {
@@ -410,6 +415,18 @@ function currentToolchain(language: Language): Toolchain {
   return language === "ts" ? tsSamples[tsSample.value] ?? toolchains.ts : toolchains[language];
 }
 
+function renderSourceLinks(container: HTMLElement, links: Toolchain["links"]): void {
+  container.replaceChildren();
+  for (const [name, path] of links) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.textContent = `${name} →`;
+    button.title = path.slice(1);
+    button.addEventListener("click", () => { void openSource(name, path); });
+    container.append(button);
+  }
+}
+
 function showToolchain(language: Language): void {
   selectedLanguage = language;
   const tool = currentToolchain(language);
@@ -429,14 +446,10 @@ function showToolchain(language: Language): void {
   required.hidden = !tool.resources?.length;
   required.textContent = (tool.resources ?? []).map(({ name, url }) => `${url.slice(1)} → W:${name}`).join("\n");
   const links = element<HTMLElement>("#template-links");
-  links.replaceChildren();
-  for (const [name, path] of tool.links) {
-    const button = document.createElement("button");
-    button.type = "button";
-    button.textContent = `${name} →`;
-    button.addEventListener("click", () => { void openSource(name, path); });
-    links.append(button);
-  }
+  renderSourceLinks(links, tool.links);
+  element<HTMLElement>("#rust-host").hidden = language !== "rust";
+  element<HTMLElement>("#host-command").textContent = rustHost.command;
+  renderSourceLinks(element<HTMLElement>("#host-links"), rustHost.links);
   if (language === "c") {
     const preview = document.createElement("button");
     preview.type = "button";
@@ -537,6 +550,7 @@ const sourceError = element<HTMLElement>("#source-error");
 const nestedSourceCode = element<HTMLElement>("#nested-source-code");
 const nestedSourceError = element<HTMLElement>("#nested-source-error");
 const demoError = element<HTMLElement>("#c-demo-error");
+const demoIdentity = element<HTMLElement>("#c-demo-identity");
 let demoAbort: AbortController | undefined;
 let stopDemo: (() => void) | undefined;
 let sourceAbort: AbortController | undefined;
@@ -544,6 +558,12 @@ let nestedSourceAbort: AbortController | undefined;
 let closeTimer: ReturnType<typeof setTimeout> | undefined;
 let nestedCloseTimer: ReturnType<typeof setTimeout> | undefined;
 let panelTrigger: HTMLElement | undefined;
+function renderDemoIdentity(info?: CDemo["identity"]): void {
+  demoIdentity.classList.toggle("is-loaded", Boolean(info));
+  element<HTMLElement>("#c-demo-path").textContent = info?.path.slice(1) ?? "";
+  element<HTMLElement>("#c-demo-abi").textContent = info ? String(info.bridgeAbi) : "";
+  element<HTMLElement>("#c-demo-hash").textContent = info?.coreSha256 ?? "";
+}
 function renderCore(info?: CoreReport): void {
   coreDetails.disabled = !info;
   const sdkStatus = info?.identity.sdk.status;
@@ -619,8 +639,10 @@ function stopPanelContent(): void {
   demoAbort = undefined;
   stopDemo?.();
   stopDemo = undefined;
+  renderDemoIdentity();
 }
 function showDemoError(error: unknown): void {
+  renderDemoIdentity();
   demoError.textContent = error instanceof Error ? error.message : String(error);
   demoError.hidden = false;
 }
@@ -635,14 +657,25 @@ async function openCDemo(): Promise<void> {
   panelDemoFooter.hidden = false;
   demoError.hidden = true;
   demoError.textContent = "";
+  const preview = element<HTMLCanvasElement>("#c-demo-screen");
+  preview.getContext("2d")?.clearRect(0, 0, preview.width, preview.height);
   const abort = new AbortController();
   demoAbort = abort;
+  const failed = (error: unknown): void => {
+    if (abort.signal.aborted || demoAbort !== abort) return;
+    abort.abort();
+    stopDemo = undefined;
+    showDemoError(error);
+  };
   try {
-    const stop = await startCDemo(element<HTMLCanvasElement>("#c-demo-screen"), abort.signal, showDemoError);
-    if (abort.signal.aborted) stop();
-    else stopDemo = stop;
+    const demo = await startCDemo(preview, abort.signal, failed);
+    if (abort.signal.aborted) demo.stop();
+    else {
+      stopDemo = demo.stop;
+      renderDemoIdentity(demo.identity);
+    }
   } catch (error) {
-    if (!abort.signal.aborted) showDemoError(error);
+    failed(error);
   }
 }
 async function loadSource(name: string, path: string, code: HTMLElement, errorMessage: HTMLElement,
@@ -743,14 +776,16 @@ element<HTMLButtonElement>("#panel-demo-source").addEventListener("click", () =>
 window.addEventListener("keydown", (event) => {
   if (event.key === "Escape" && document.body.classList.contains("panel-open")) closePanel();
 });
-element<HTMLButtonElement>("#copy-command").addEventListener("click", async () => {
-  try {
-    await navigator.clipboard.writeText(currentToolchain(selectedLanguage).command);
-    appendLog(`${toolchains[selectedLanguage].name} build command copied`);
-  } catch {
-    appendLog("Clipboard is unavailable in this browser", "error");
-  }
-});
+for (const [button, command] of [["#copy-command", "#build-command"], ["#copy-host-command", "#host-command"]]) {
+  element<HTMLButtonElement>(button).addEventListener("click", async () => {
+    try {
+      await navigator.clipboard.writeText(element<HTMLElement>(command).textContent || "");
+      appendLog("Command copied");
+    } catch {
+      appendLog("Clipboard is unavailable in this browser", "error");
+    }
+  });
+}
 
 function point(event: PointerEvent): { x: number; y: number } {
   const bounds = canvas.getBoundingClientRect();

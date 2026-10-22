@@ -1,8 +1,11 @@
+import { sha256 } from "@noble/hashes/sha2.js";
+import { bytesToHex } from "@noble/hashes/utils.js";
 import { createWasiImports } from "../../bindings/typescript/src/wasi.ts";
 
 type DemoCore = {
   memory: WebAssembly.Memory;
   _initialize(): void;
+  lvw_abi_version(): number;
   lvw_init(): number;
   lvw_shutdown(): number;
   lvw_display_create(width: number, height: number, format: number): number;
@@ -14,13 +17,21 @@ type DemoCore = {
   lvw_frame_get(display: number, result: number): number;
 };
 
+export interface CDemo {
+  identity: { path: string; bridgeAbi: number; coreSha256: string };
+  stop(): void;
+}
+
 export async function startCDemo(canvas: HTMLCanvasElement, signal: AbortSignal,
-                                 onError: (error: unknown) => void): Promise<() => void> {
+                                 onError: (error: unknown) => void): Promise<CDemo> {
   const context = canvas.getContext("2d");
   if (!context) throw new Error("Canvas 2D context is unavailable");
-  const response = await fetch("/target/wasm/examples/c/liblvgl-c-demo.wasm", { signal });
+  const path = "/target/wasm/examples/c/liblvgl-c-demo.wasm";
+  const response = await fetch(path, { signal, cache: "no-store" });
   if (!response.ok) throw new Error(`Could not load C demo (${response.status})`);
   const bytes = await response.arrayBuffer();
+  signal.throwIfAborted();
+  const coreSha256 = bytesToHex(sha256(new Uint8Array(bytes)));
   let core: DemoCore;
   const { instance } = await WebAssembly.instantiate(bytes, {
     lvw: {
@@ -32,9 +43,11 @@ export async function startCDemo(canvas: HTMLCanvasElement, signal: AbortSignal,
     },
     wasi_snapshot_preview1: createWasiImports(() => core?.memory),
   });
-  if (signal.aborted) return () => {};
+  signal.throwIfAborted();
   core = instance.exports as unknown as DemoCore;
   core._initialize();
+  const bridgeAbi = core.lvw_abi_version();
+  if (bridgeAbi !== 1) throw new Error(`Unsupported C demo bridge ABI: ${bridgeAbi}`);
   if (core.lvw_init() !== 0) throw new Error("LVGL initialization failed");
 
   const display = core.lvw_display_create(canvas.width, canvas.height, 1);
@@ -52,38 +65,53 @@ export async function startCDemo(canvas: HTMLCanvasElement, signal: AbortSignal,
     view().setUint32(address + 4, 1, true);
   }
 
+  let last = performance.now();
+  let request = 0;
+  let stopped = false;
+  function fail(error: unknown): void {
+    if (stopped) return;
+    stopped = true;
+    cancelAnimationFrame(request);
+    // A failed guest must never be entered again, including for shutdown.
+    onError(error);
+  }
+  function stop(): void {
+    if (stopped) return;
+    stopped = true;
+    cancelAnimationFrame(request);
+    try {
+      if (core.lvw_shutdown() !== 0) throw new Error("LVGL shutdown failed");
+    } catch (error) {
+      onError(error);
+    }
+  }
   function pushPointer(event: PointerEvent, pressed: boolean): void {
-    const bounds = canvas.getBoundingClientRect();
-    const x = Math.max(0, Math.min(canvas.width - 1,
-      Math.floor((event.clientX - bounds.left) * canvas.width / bounds.width)));
-    const y = Math.max(0, Math.min(canvas.height - 1,
-      Math.floor((event.clientY - bounds.top) * canvas.height / bounds.height)));
-    view().setUint32(input + 8, 1, true);
-    view().setInt32(input + 12, x, true);
-    view().setInt32(input + 16, y, true);
-    view().setUint32(input + 20, pressed ? 1 : 0, true);
-    if (core.lvw_indev_push(pointer, input, 32) !== 0) throw new Error("Pointer input failed");
+    if (stopped) return;
+    try {
+      if (event.type === "pointerdown") canvas.setPointerCapture(event.pointerId);
+      const bounds = canvas.getBoundingClientRect();
+      const x = Math.max(0, Math.min(canvas.width - 1,
+        Math.floor((event.clientX - bounds.left) * canvas.width / bounds.width)));
+      const y = Math.max(0, Math.min(canvas.height - 1,
+        Math.floor((event.clientY - bounds.top) * canvas.height / bounds.height)));
+      view().setUint32(input + 8, 1, true);
+      view().setInt32(input + 12, x, true);
+      view().setInt32(input + 16, y, true);
+      view().setUint32(input + 20, pressed ? 1 : 0, true);
+      if (core.lvw_indev_push(pointer, input, 32) !== 0) throw new Error("Pointer input failed");
+    } catch (error) {
+      fail(error);
+    }
   }
 
-  canvas.addEventListener("pointerdown", (event) => {
-    canvas.setPointerCapture(event.pointerId);
-    pushPointer(event, true);
-  }, { signal });
+  canvas.addEventListener("pointerdown", (event) => pushPointer(event, true), { signal });
   canvas.addEventListener("pointermove", (event) => {
     if (event.buttons & 1) pushPointer(event, true);
   }, { signal });
   canvas.addEventListener("pointerup", (event) => pushPointer(event, false), { signal });
   canvas.addEventListener("pointercancel", (event) => pushPointer(event, false), { signal });
+  signal.addEventListener("abort", stop, { once: true });
 
-  let last = performance.now();
-  let request = 0;
-  let stopped = false;
-  function stop(): void {
-    if (stopped) return;
-    stopped = true;
-    cancelAnimationFrame(request);
-    core.lvw_shutdown();
-  }
   function tick(now: number): void {
     if (stopped) return;
     try {
@@ -105,10 +133,9 @@ export async function startCDemo(canvas: HTMLCanvasElement, signal: AbortSignal,
       }
       request = requestAnimationFrame(tick);
     } catch (error) {
-      stop();
-      onError(error);
+      fail(error);
     }
   }
   request = requestAnimationFrame(tick);
-  return stop;
+  return { identity: { path, bridgeAbi, coreSha256 }, stop };
 }

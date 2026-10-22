@@ -12,6 +12,8 @@ const sources = [
   "toolchains/rust/build.sh",
   "toolchains/include/lvw_app.h",
   "toolchains/rust/Cargo.toml",
+  "bindings/rust/src/main.rs",
+  "bindings/rust/Cargo.toml",
   "examples/c/direct_api.c",
   "toolchains/ts/samples/svg.ts",
   "tests/fixtures/svg/geometry.svg",

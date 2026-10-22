@@ -7,6 +7,7 @@
 
 ### Added
 
+- Rust native host commands and source links, plus independent C preview module identities in Studio.
 - Lottie application sample with JSON resource loading, vector scaling, and native playback controls in Studio.
 - SVG application sample with geometry/gradient switching, vector scaling, and SVG/XML source highlighting in Studio.
 - TinyTTF application sample with font resource loading, native resizing, and label layout updates in Studio.
@@ -61,6 +62,7 @@
 
 ### Fixed
 
+- Stop C preview input and frame callbacks after guest errors without calling back into the failed instance.
 - Reapplying the current Studio resolution preserves the displayed frame.
 - SVG image transform clipping, child-layer coordinates, and image drawing without an attached object; transformed bounds include complete pixel cells for invalidation.
 - Cancelled Studio loads remain stopped, retired runners cannot restore stale library details, and closing details restores keyboard focus after application errors.

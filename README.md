@@ -90,6 +90,7 @@ The toolchain panel shows sample source files with syntax highlighting in a side
 | TypeScript FreeType | `bun run build:ts-samples` | `target/apps/ts/samples/freetype.js` |
 | TypeScript TinyTTF | `bun run build:ts-samples` | `target/apps/ts/samples/tinyttf.js` |
 | TypeScript SVG | `bun run build:ts-samples` | `target/apps/ts/samples/svg.js` |
+| TypeScript Lottie | `bun run build:ts-samples` | `target/apps/ts/samples/lottie.js` |
 | C | `./toolchains/c/build.sh` | `target/apps/c/app.wasm` |
 | C++ | `./toolchains/cpp/build.sh` | `target/apps/cpp/app.wasm` |
 | Rust | `./toolchains/rust/build.sh` | `target/apps/rust/app.wasm` |
@@ -116,13 +117,15 @@ Built-in examples load their required files before starting. **Assets** lists th
 
 ```sh
 bun run test
-CARGO_TARGET_DIR=target/rust cargo run --manifest-path bindings/rust/Cargo.toml
+env CARGO_TARGET_DIR=target/rust cargo run --manifest-path bindings/rust/Cargo.toml --locked -- target/wasm/liblvgl.wasm
 python3 -m http.server 8765
 ```
 
 Open `http://127.0.0.1:8765/examples/browser/` after starting the server. The browser example renders a button and a BMP resource; pointer input changes the button label. The Rust example checks rendering, resource pixels, input, callbacks, and shutdown.
 
-Select the C toolchain in Studio and open **C API preview**. The Studio workspace shifts left to show the preview panel. Opening `direct_api.c` shifts the workspace and preview left again, with the source in a second panel on the right. [`examples/c/direct_api.c`](examples/c/direct_api.c) creates the button and handles its click with native `lv_*` calls. `scripts/build.sh` links that C source and LVGL into a separate Wasm module at `target/wasm/examples/c/liblvgl-c-demo.wasm`. This linked module is separate from Studio's uploaded application ABI, which uses `lvw_app` imports.
+Studio's Rust toolchain includes **Rust host · LVGL API**, with the terminal command and source files for `bindings/rust/src/main.rs`. This executable calls the generated `lv_*` APIs through Wasmtime and prints its check results in the terminal. Run `./scripts/build.sh` first to generate the matching core and bindings, and use Rust 1.92+ from the repository root. The **Load Rust sample** button runs the independent `lvw_app` application template in the central canvas.
+
+Select the C toolchain in Studio and open **C API preview**. The Studio workspace shifts left to show the preview panel. Opening `direct_api.c` shifts the workspace and preview left again, with the source in a second panel on the right. [`examples/c/direct_api.c`](examples/c/direct_api.c) creates the button and handles its click with native `lv_*` calls. `scripts/build.sh` links that C source and LVGL into a separate Wasm module at `target/wasm/examples/c/liblvgl-c-demo.wasm`. The preview shows this module's actual loaded SHA-256 and bridge ABI; it has its own instance and does not use the central canvas's library selection. Closing, cancelling, or failing the preview clears its identity. Guest failures stop input and drawing without entering the failed instance again. This linked module is separate from Studio's uploaded application ABI, which uses `lvw_app` imports.
 
 ### TypeScript raw API
 

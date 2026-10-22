@@ -139,6 +139,13 @@
             <div id="template-links" class="template-links"></div>
             <p id="sample-resources" class="sample-resources" aria-label="Required sample resources" hidden></p>
             <button id="sample-button" class="sample-button" type="button"><span aria-hidden="true">◈</span> Load JS sample <span aria-hidden="true">→</span></button>
+            <details id="rust-host" class="native-host" hidden>
+              <summary>Rust host · LVGL API</summary>
+              <p>Prints rendering and input checks to the terminal. Run from the repository root with Rust 1.92+.</p>
+              <div class="command-head"><span>RUN COMMAND</span><button id="copy-host-command" type="button" aria-label="Copy Rust host command">Copy <span aria-hidden="true">↗</span></button></div>
+              <pre id="host-command" class="command-block"></pre>
+              <div id="host-links" class="template-links"></div>
+            </details>
           </div>
           <div class="toolchain-tip"><span aria-hidden="true">ⓘ</span><p>C, C++ and Rust apps use a small, versioned application ABI. Build locally, then drop the resulting Wasm here.</p></div>
         </aside>
@@ -160,6 +167,11 @@
       <div id="panel-demo-footer" class="c-demo-footer" hidden>
         <button id="panel-demo-source" type="button">direct_api.c →</button>
         <code>./scripts/build.sh</code>
+        <dl id="c-demo-identity" class="demo-identity">
+          <dt>Module</dt><dd id="c-demo-path" class="identity-path"></dd>
+          <dt>Bridge ABI</dt><dd id="c-demo-abi"></dd>
+          <dt>SHA-256</dt><dd id="c-demo-hash" class="identity-hash"></dd>
+        </dl>
       </div>
       <div id="panel-source" class="source-view" hidden>
         <div id="source-path" class="source-path"></div>
