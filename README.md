@@ -87,6 +87,28 @@ python3 -B "$ndk/generator/rust.py" --api "$ndk/metadata/api.json" \
 
 These commands generate the core-specific binding sources. The TypeScript runtime must be built with both matching generated TypeScript files; the Rust host accepts the matching Rust file through `LVW_RUST_BINDINGS`. The NDK does not contain prebuilt host SDKs for arbitrary application reactors.
 
+### Native Zig applications
+
+The NDK includes `examples/zig` and `lvw_add_zig_reactor`, using Zig 0.15.2 to compile a C-ABI object and wasi-sdk 34 to link the reactor. Prepare Zig and select the paths reported by `doctor --with-zig --json`:
+
+```sh
+python3 -B toolchains/lvw.py prepare --with-zig
+python3 -B toolchains/lvw.py doctor --with-zig --json
+cmake -S target/ndk/examples/zig -B target/apps/native-zig -G Ninja \
+    -DCMAKE_TOOLCHAIN_FILE=/path/to/wasi-sdk/share/cmake/wasi-sdk-p1.cmake \
+    -DCMAKE_PREFIX_PATH="$PWD/target/ndk" -DCMAKE_BUILD_TYPE=Release \
+    -DLVW_ZIG=/path/to/zig
+cmake --build target/apps/native-zig
+```
+
+Export a new NDK from the current checkout if the existing package lacks the Zig example. `LVW_ZIG` is a CMake cache variable; if omitted, CMake searches `PATH`. Other Zig versions are rejected. The output is `target/apps/native-zig/lvgl_zig_example.wasm`; it has the same `lvw_demo_create(display)` native entry as the C example. Its Zig source calls `lv_*` directly, passes `lv_color_t` by value, and registers a `callconv(.c)` click callback. It is a complete reactor and cannot use Studio's `lvw_app` application upload slot.
+
+An external project can call `lvw_add_zig_reactor(application main.zig)`, then select its exports with `target_link_options(application PRIVATE -Wl,--export=my_entry)`. Extra arguments to `lvw_add_zig_reactor` are dependency files, such as imported Zig modules; list them so CMake rebuilds the object when they change. Public header changes also invalidate the object. Translation uses `@cImport`, the NDK's include directories and configuration definitions, and the SDK's WASIp1 libc headers. Both Zig caches and intermediate files stay in the consumer's CMake binary directory; the package can remain read-only.
+
+Zig objects use `ReleaseSafe` checks, with stack-protector instrumentation disabled to match the C runtime's import contract. The example uses Zig's trap-only panic handler. Final links use the CMake `Release` configuration and the NDK's standard exception/SJLJ libraries; Zig's compiler runtime is not linked. A new reactor requires a newly generated host SDK, as described below.
+
+Zig's C translator does not represent C bitfields as Zig values. Records containing them, including several draw descriptors, can also be unusable through translated callback signatures. Zig 0.15.2 additionally reports a dependency cycle for `lv_color_filter_cb_t` and `lv_color_filter_dsc_t`. Use C accessors for those types; successful import of `lvgl.h` does not make every declaration usable. The native contract checks compare seven color, point, area, matrix, and gradient-stop layouts with compiler-derived metadata, and exercise color values, `i64`, `f32`, native callbacks, and calls into the standard exception/SJLJ runtime.
+
 ### Independent host SDKs
 
 `export-sdk` creates TypeScript and Rust host packages for a selected core. It checks the NDK's file hashes, validates the Wasm module, verifies its exported LVGL signatures, and generates bindings for its exact bytes. It requires an exported NDK, the source checkout's installed Bun dependencies, Python, Bun, and prepared wasm-tools. It does not rebuild the core or download dependencies.
@@ -172,6 +194,8 @@ Generated files stay under `target/`:
 | `target/host-sdk/` | Core-specific TypeScript and Rust packages from `export-sdk` |
 
 ## Quality checks
+
+Native ABI checks require Zig 0.15.2. Run `python3 -B toolchains/lvw.py prepare --with-zig`, or set `LVW_ZIG` to an existing executable before running the quality command.
 
 Install `wasm-tools`, `rustfmt`, and `clippy` in addition to the build prerequisites, then run:
 

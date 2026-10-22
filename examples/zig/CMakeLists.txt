@@ -1,0 +1,5 @@
+cmake_minimum_required(VERSION 3.25)
+project(lvgl_zig_example LANGUAGES C CXX)
+find_package(liblvgl-wasm CONFIG REQUIRED)
+lvw_add_zig_reactor(lvgl_zig_example direct_api.zig)
+target_link_options(lvgl_zig_example PRIVATE -Wl,--export=lvw_demo_create)

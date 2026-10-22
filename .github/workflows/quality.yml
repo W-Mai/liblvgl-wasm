@@ -27,7 +27,7 @@ jobs:
           sudo apt-get install --yes cmake ninja-build libtinfo6 libstdc++6 libgcc-s1
           rustup toolchain install 1.92.0 --profile minimal \
             --component rustfmt --component clippy --target wasm32-unknown-unknown
-      - name: Install wasi-sdk and wasm-tools
+      - name: Install wasi-sdk, wasm-tools, and Zig
         shell: python
         run: |
           import json
@@ -38,14 +38,16 @@ jobs:
 
           cache = str(Path(os.environ["RUNNER_TEMP"]) / "lvw-tools")
           result = subprocess.run([sys.executable, "-B", "toolchains/lvw.py", "prepare",
-                                   "--cache", cache, "--json"], stdout=subprocess.PIPE, text=True)
+                                   "--cache", cache, "--with-zig", "--json"], stdout=subprocess.PIPE, text=True)
           print(result.stdout)
           result.check_returncode()
           tools = json.loads(result.stdout)["tools"]
           with open(os.environ["GITHUB_ENV"], "a") as output:
               output.write(f"WASI_SDK_PATH={tools['wasi-sdk']['path']}\n")
+              output.write(f"LVW_ZIG={tools['zig']['executable']}\n")
           with open(os.environ["GITHUB_PATH"], "a") as output:
               output.write(str(Path(tools["wasm-tools"]["executable"]).parent) + "\n")
-          subprocess.run([sys.executable, "-B", "toolchains/lvw.py", "doctor", "--cache", cache], check=True)
+          subprocess.run([sys.executable, "-B", "toolchains/lvw.py", "doctor", "--cache", cache,
+                          "--with-zig"], check=True)
       - name: Check
         run: bun run quality

@@ -51,4 +51,6 @@ function(lvw_add_reactor target)
         -Wl,--growable-table -Wl,--max-memory=268435456 ${exports})
 endfunction()
 
+include("${CMAKE_CURRENT_LIST_DIR}/zig.cmake")
+
 check_required_components(liblvgl-wasm)

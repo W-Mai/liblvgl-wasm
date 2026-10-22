@@ -6,7 +6,7 @@ import { LvglRuntime } from "../bindings/typescript/src/index.ts";
 import { createWasiImports } from "../bindings/typescript/src/wasi.ts";
 import fontFixture from "./fixtures/freetype/expected.json";
 
-test("relocated NDK preserves the public C/C++ ABI and native callbacks", async () => {
+test("relocated NDK preserves the C/C++/Zig ABI and native callbacks", async () => {
   const output = await mkdtemp(join(tmpdir(), "lvw ndk host "));
   try {
     const process = Bun.spawn(["python3", "-B", "tests/ndk-consumer.py", output], {
@@ -18,7 +18,7 @@ test("relocated NDK preserves the public C/C++ ABI and native callbacks", async 
     expect(status, stdout + stderr).toBe(0);
     const report = await Bun.file(join(output, "report.json")).json();
     expect(report.layouts).toBeGreaterThan(100);
-    for (const language of ["c", "cpp"]) {
+    for (const language of ["c", "cpp", "zig"]) {
       const bytes = await Bun.file(join(output, `${language}.wasm`)).arrayBuffer();
       const baseline = await LvglRuntime.load(bytes);
       expect(() => baseline.unsafe).toThrow();
@@ -56,6 +56,14 @@ test("relocated NDK preserves the public C/C++ ABI and native callbacks", async 
       api._initialize!();
       expect(api.lvw_init!()).toBe(0);
       if (language === "cpp") expect(api.ndk_eh_test!()).toBe(42);
+      if (language === "zig") {
+        expect(api.zig_abi_layouts!()).toBe(7);
+        expect(api.zig_abi_eh!()).toBe(42);
+        const wide = instance.exports.zig_abi_wide as (value: bigint) => bigint;
+        expect(wide(18014398509494329n)).toBe(18014398509494329n);
+        expect(api.zig_abi_color!(0x123456)).toBe(0x123456);
+        expect(api.zig_abi_float!(1.75)).toBe(1.75);
+      }
       const display = api.lvw_display_create!(320, 240, 1);
       expect(display).not.toBe(0);
       api.lvw_demo_create!(display);
@@ -85,6 +93,10 @@ test("relocated NDK preserves the public C/C++ ABI and native callbacks", async 
       }
       expect(text()).toBe("Click me");
       const before = pixels();
+      if (language === "zig") {
+        expect(new DataView(memory.buffer).getUint32(frame + 28, true)).toBe(1);
+        expect(new DataView(before.buffer).getUint32(0, true) & 0xffffff).toBe(0x123456);
+      }
       for (const state of [1, 0]) {
         const view = new DataView(memory.buffer);
         [32, 1, 1, 160, 120, state, 0, 0].forEach((value, index) => view.setUint32(packet + index * 4, value, true));
