@@ -1,0 +1,54 @@
+@PACKAGE_INIT@
+
+if(NOT CMAKE_SYSTEM_NAME STREQUAL "WASI" OR
+   NOT CMAKE_C_COMPILER_ID STREQUAL "Clang" OR
+   NOT CMAKE_CXX_COMPILER_ID STREQUAL "Clang" OR
+   NOT CMAKE_C_COMPILER_VERSION VERSION_EQUAL "23.1.0" OR
+   NOT CMAKE_CXX_COMPILER_VERSION VERSION_EQUAL "23.1.0" OR
+   NOT CMAKE_C_COMPILER_TARGET STREQUAL "wasm32-wasip1" OR
+   NOT CMAKE_CXX_COMPILER_TARGET STREQUAL "wasm32-wasip1")
+    message(FATAL_ERROR "liblvgl-wasm requires wasi-sdk 34 and project(... LANGUAGES C CXX)")
+endif()
+get_filename_component(_lvw_compiler_dir "${CMAKE_CXX_COMPILER}" DIRECTORY)
+get_filename_component(_lvw_sdk "${_lvw_compiler_dir}/.." REALPATH)
+get_filename_component(_lvw_c_compiler_dir "${CMAKE_C_COMPILER}" DIRECTORY)
+get_filename_component(_lvw_c_sdk "${_lvw_c_compiler_dir}/.." REALPATH)
+if(NOT _lvw_c_sdk STREQUAL _lvw_sdk)
+    message(FATAL_ERROR "liblvgl-wasm requires C and C++ compilers from the same wasi-sdk")
+endif()
+if(NOT EXISTS "${_lvw_sdk}/VERSION")
+    message(FATAL_ERROR "liblvgl-wasm requires the complete wasi-sdk 34 distribution")
+endif()
+file(STRINGS "${_lvw_sdk}/VERSION" _lvw_sdk_version LIMIT_COUNT 1)
+if(NOT _lvw_sdk_version STREQUAL "34.0")
+    message(FATAL_ERROR "liblvgl-wasm requires wasi-sdk 34.0; found ${_lvw_sdk_version}")
+endif()
+unset(_lvw_compiler_dir)
+unset(_lvw_c_compiler_dir)
+unset(_lvw_c_sdk)
+unset(_lvw_sdk)
+unset(_lvw_sdk_version)
+
+set_and_check(LVW_NDK_DATA_DIR "@PACKAGE_LVW_NDK_DATA_DIR@")
+set_and_check(LVW_API_METADATA "${LVW_NDK_DATA_DIR}/metadata/api.json")
+set_and_check(LVW_API_EXPORTS "${LVW_NDK_DATA_DIR}/metadata/api-exports.txt")
+include("${CMAKE_CURRENT_LIST_DIR}/liblvgl-wasmTargets.cmake")
+
+# WASI uses wasm-ld; CMake's host-specific WHOLE_ARCHIVE definitions do not apply.
+set(CMAKE_CXX_LINK_LIBRARY_USING_lvw_whole_SUPPORTED TRUE)
+set(CMAKE_CXX_LINK_LIBRARY_USING_lvw_whole
+    "LINKER:--whole-archive" "<LINK_ITEM>" "LINKER:--no-whole-archive")
+
+function(lvw_add_reactor target)
+    add_executable(${target} ${ARGN})
+    target_compile_features(${target} PRIVATE c_std_11 cxx_std_17)
+    set_target_properties(${target} PROPERTIES SUFFIX .wasm LINKER_LANGUAGE CXX)
+    target_link_libraries(${target} PRIVATE
+        "$<LINK_LIBRARY:lvw_whole,lvw::bridge,lvw::shims>")
+    file(STRINGS "${LVW_API_EXPORTS}" exports)
+    target_link_options(${target} PRIVATE -mexec-model=reactor
+        -Wl,--no-entry -Wl,--export-memory -Wl,--export-table
+        -Wl,--growable-table -Wl,--max-memory=268435456 ${exports})
+endfunction()
+
+check_required_components(liblvgl-wasm)

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Prepare locked compiler tools in a project-local cache."""
+"""Prepare locked compiler tools and export a native LVGL SDK."""
 
 import argparse
 import ctypes
@@ -295,7 +295,7 @@ def tool_report(args, lock, host, cache, sdk):
     for child in ("archives", "tools"):
         ordinary_path(cache / child, directory=True)
     reports = {}
-    for name in ["wasi-sdk", "wasm-tools"] + (["zig"] if args.with_zig else []):
+    for name in ["wasi-sdk", "wasm-tools"] + (["zig"] if getattr(args, "with_zig", False) else []):
         spec = lock["tools"][name]
         explicit = name == "wasi-sdk" and sdk is not None
         report = {"source": "user" if explicit else "managed", "ok": False}
@@ -323,15 +323,76 @@ def resolve_path(value, project):
     return (path if path.is_absolute() else project / path).resolve()
 
 
+def export_ndk(args, lock, host, project, cache, sdk):
+    requested = Path(args.output).expanduser()
+    requested = requested if requested.is_absolute() else project / requested
+    if requested.is_symlink():
+        raise ValueError(f"NDK output must not be a symbolic link: {requested}")
+    output = resolve_path(args.output, project)
+    if output.exists():
+        raise ValueError(f"NDK output already exists: {output}; choose a new directory")
+    builder = project / "scripts/build.sh"
+    if not builder.is_file():
+        raise ValueError(f"export-ndk requires a source checkout at --project: {project}")
+    reports = tool_report(args, lock, host, cache, sdk)
+    failures = [item["error"] for item in reports.values() if not item["ok"]]
+    if failures:
+        raise ValueError("; ".join(failures))
+    environment = {**os.environ, "WASI_SDK_PATH": reports["wasi-sdk"]["path"]}
+
+    def run(command):
+        subprocess.run([str(item) for item in command], cwd=project, env=environment,
+                       stdout=sys.stderr, check=True)
+
+    # Rebuild through the same generator/configuration path before exporting.
+    run(["sh", builder])
+    build = project / "target/wasm"
+    core = build / "liblvgl.wasm"
+    run([reports["wasm-tools"]["executable"], "validate", core])
+    run(["cmake", "--build", build, "--target", "lvw_ndk", "-j", "4"])
+    output.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix=".ndk-", dir=output.parent) as temporary:
+        staged = Path(temporary) / "package"
+        run(["cmake", "--install", build, "--prefix", staged, "--component", "ndk"])
+        data = staged / "share/liblvgl-wasm"
+        proof = data / "metadata/reference-verification.json"
+        run([sys.executable, "-B", data / "generator/signatures.py",
+             "--api", data / "metadata/api.json", "--wasm", core, "--output", proof])
+        reference = json.loads(proof.read_text())
+        files = {}
+        for path in sorted(staged.rglob("*")):
+            if path.is_symlink():
+                raise ValueError(f"NDK contains a symbolic link: {path}")
+            if path.is_file():
+                files[path.relative_to(staged).as_posix()] = file_sha256(path)
+        manifest = {
+            "schema_version": 1, "kind": "wasip1-native-sdk", "target": lock["target"],
+            "reference": reference,
+            "toolchain": {"wasi-sdk": lock["tools"]["wasi-sdk"]["version"],
+                          "clang": lock["tools"]["wasi-sdk"]["clang_version"]},
+            "libraries": {name: {"path": f"lib/lib{name}.a", "sha256": files[f"lib/lib{name}.a"]}
+                          for name in ("lvw_bridge", "lvw_shims", "lvgl", "lvgl_thorvg", "freetype")},
+            "files": files,
+        }
+        (staged / "ndk.json").write_text(json.dumps(manifest, indent=2) + "\n")
+        if output.exists():
+            raise ValueError(f"NDK output appeared during export: {output}")
+        staged.rename(output)
+    return {"output": str(output), "reference": reference, "files": len(files)}
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest="command", required=True)
-    for name in ("doctor", "prepare"):
+    for name in ("doctor", "prepare", "export-ndk"):
         command = commands.add_parser(name)
         command.add_argument("--project", default=".", help="project directory (default: cwd)")
         command.add_argument("--cache", help="tool cache, relative to project or absolute")
         command.add_argument("--sdk", help="existing wasi-sdk; overrides WASI_SDK_PATH")
-        command.add_argument("--with-zig", action="store_true", help="include locked Zig tools")
+        if name != "export-ndk":
+            command.add_argument("--with-zig", action="store_true", help="include locked Zig tools")
+        else:
+            command.add_argument("--output", default="target/ndk", help="new NDK directory, relative to project or absolute")
         command.add_argument("--json", action="store_true", help="print machine-readable results")
         if name == "prepare":
             command.add_argument("--offline", action="store_true", help="never download tools")
@@ -351,7 +412,9 @@ def main():
         sdk_value = args.sdk or os.environ.get("WASI_SDK_PATH")
         sdk = resolve_path(sdk_value, project) if sdk_value else None
         result.update(host=host, target=lock["target"], project=str(project), cache=str(cache))
-        if args.command == "prepare":
+        if args.command == "export-ndk":
+            result.update(export_ndk(args, lock, host, project, cache, sdk))
+        elif args.command == "prepare":
             import fcntl
             cache_directory(cache)
             # Nonblocking: a second process must not publish into the same cache.
@@ -371,11 +434,13 @@ def main():
             }
         result["ok"] = all(item["ok"] for section in ("tools", "prerequisites")
                            for item in result.get(section, {}).values())
-    except (OSError, ValueError, KeyError) as error:
+    except (OSError, ValueError, KeyError, subprocess.SubprocessError) as error:
         result["error"] = str(error)
     if args.json:
         print(json.dumps(result, indent=2))
     else:
+        if "output" in result:
+            print(f"NDK: {result['output']}")
         for section in ("tools", "prerequisites"):
             for name, report in result.get(section, {}).items():
                 detail = (f"{report['version']}  {report['path']}" if report["ok"] else report["error"])

@@ -3,7 +3,7 @@
 #include "lvgl/lvgl.h"
 
 static void on_click(lv_event_t *event) {
-    lv_obj_t *label = lv_event_get_user_data(event);
+    lv_obj_t *label = (lv_obj_t *)lv_event_get_user_data(event);
     lv_label_set_text(label, "Clicked");
 }
 

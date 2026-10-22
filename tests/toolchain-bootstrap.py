@@ -62,6 +62,39 @@ class BootstrapTests(unittest.TestCase):
                                  *args, "--json"], cwd=cwd, env=env, capture_output=True, text=True)
         return result.returncode, json.loads(result.stdout)
 
+    def test_ndk_output_is_never_replaced(self):
+        output = self.root / "ndk"
+        output.mkdir()
+        (output / "keep").write_text("user data")
+        link = self.root / "link"
+        link.symlink_to(self.root / "missing")
+        for path in (output, link):
+            status, report = self.cli("export-ndk", "--project", str(self.root), "--output", str(path))
+            self.assertNotEqual(status, 0)
+            self.assertFalse(report["ok"])
+        self.assertEqual((output / "keep").read_text(), "user data")
+        self.assertTrue(link.is_symlink())
+
+    def test_ndk_failed_install_has_no_published_output(self):
+        scripts = self.root / "scripts"
+        scripts.mkdir()
+        (scripts / "build.sh").touch()
+        args = argparse.Namespace(command="export-ndk", output="target/ndk")
+        reports = {"wasi-sdk": {"ok": True, "path": "/unused/sdk"},
+                   "wasm-tools": {"ok": True, "executable": "/unused/validator"}}
+
+        def command(arguments, **kwargs):
+            if arguments[:2] == ["cmake", "--install"]:
+                staged = Path(arguments[arguments.index("--prefix") + 1])
+                staged.mkdir()
+                (staged / "partial").touch()
+                raise subprocess.CalledProcessError(1, arguments)
+
+        with patch.object(lvw, "tool_report", return_value=reports), patch.object(lvw.subprocess, "run", side_effect=command):
+            with self.assertRaises(subprocess.CalledProcessError):
+                lvw.export_ndk(args, {}, "test-host", self.root, self.cache, None)
+        self.assertEqual(list((self.root / "target").iterdir()), [])
+
     def test_archive_containment(self):
         invalid = [
             [("../outside", "file", b"x")],

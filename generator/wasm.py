@@ -1,4 +1,4 @@
-"""Read scalar function and exception tag signatures from core Wasm modules and object files.
+"""Read numeric and reference function signatures from core Wasm modules and object files.
 
 This checks signature sections and export indices, not instructions or complete module validity. Table, memory, and global definitions supply only their counts; their payloads must be checked separately with a full Wasm validator.
 """
@@ -6,7 +6,8 @@ This checks signature sections and export indices, not instructions or complete 
 
 SCALARS = {0x7F: "i32", 0x7E: "i64", 0x7D: "f32", 0x7C: "f64"}
 KINDS = {0: "function", 1: "table", 2: "memory", 3: "global", 4: "tag"}
-REFERENCES = {0x70, 0x6F}
+REFERENCES = {0x70: "funcref", 0x6F: "externref", 0x69: "exnref", 0x74: "nullexnref"}
+VALUES = {**SCALARS, **REFERENCES}
 
 
 class Reader:
@@ -44,13 +45,13 @@ class Reader:
         except UnicodeDecodeError as error:
             raise ValueError(f"{self.context}: invalid UTF-8 name") from error
 
-    def scalar_vector(self):
+    def value_vector(self):
         values = []
         for _ in range(self.u32()):
             kind = self.byte()
-            if kind not in SCALARS:
+            if kind not in VALUES:
                 raise ValueError(f"{self.context}: unsupported function value type 0x{kind:02x}")
-            values.append(SCALARS[kind])
+            values.append(VALUES[kind])
         return values
 
     def tag_type(self, types):
@@ -85,7 +86,7 @@ def indexed(items, index, label):
 
 
 def read_module(data: bytes) -> dict:
-    """Return imports and exports, including their numeric function and tag signatures."""
+    """Return imports and exports, including their function and exception tag signatures."""
     module = Reader(data, "module")
     if bytes(module.take(8)) != b"\x00asm\x01\x00\x00\x00":
         raise ValueError("expected a core Wasm module with version 1")
@@ -109,7 +110,7 @@ def read_module(data: bytes) -> dict:
             tag = section.byte()
             if tag != 0x60:
                 raise ValueError(f"section 1: unsupported type tag 0x{tag:02x}")
-            types.append({"params": section.scalar_vector(), "results": section.scalar_vector()})
+            types.append({"params": section.value_vector(), "results": section.value_vector()})
         section.finish()
 
     imports = []

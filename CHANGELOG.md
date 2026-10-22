@@ -7,6 +7,7 @@
 
 ### Added
 
+- Relocatable native C/C++ development kits with public headers, static libraries, CMake reactor targets, generators, and file integrity manifests.
 - Locked compiler preparation and read-only environment diagnostics with project-local caches, archive and installation integrity checks, and offline reuse.
 - Rust native host commands and source links, plus independent C preview module identities in Studio.
 - Lottie application sample with JSON resource loading, vector scaling, and native playback controls in Studio.

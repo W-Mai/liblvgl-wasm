@@ -3,6 +3,10 @@
 
 #include <stdint.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #define LVW_ABI_VERSION 1u
 #define LVW_PIXEL_XRGB8888 1u
 #define LVW_INPUT_POINTER 1u
@@ -115,5 +119,9 @@ int32_t lvw_decoder_read(uint32_t decoder, uint32_t dsc, uint32_t output, uint32
 int32_t lvw_decoder_write(uint32_t decoder, uint32_t dsc, uint32_t decoded,
                           uint32_t palette, uint32_t palette_size, uint32_t user_data,
                           uint32_t time_to_open, uint32_t error_msg);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

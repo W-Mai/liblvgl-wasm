@@ -39,6 +39,54 @@ Preparation verifies archive size and SHA-256, rejects escaping archive paths an
 
 macOS arm64 preparation, relocation, offline reuse, and a C++ standard-exception/SJLJ reactor have been checked locally. Linux x86_64 archives are configured; this preparation path requires validation in Linux CI. Other build hosts are rejected.
 
+### Native C/C++ development kit
+
+`export-ndk` rebuilds the source checkout through `scripts/build.sh`, validates the core, and exports its public headers, five static archives, CMake targets, API metadata, and Python generators. Run `prepare` first; `--sdk`, `--cache`, and `--project` use the same path rules as compiler preparation. The checkout needs the complete build prerequisites above.
+
+```sh
+python3 -B toolchains/lvw.py export-ndk --json
+cmake -S target/ndk/examples/c -B target/apps/native-c -G Ninja \
+    -DCMAKE_TOOLCHAIN_FILE=/path/to/wasi-sdk/share/cmake/wasi-sdk-p1.cmake \
+    -DCMAKE_PREFIX_PATH="$PWD/target/ndk" -DCMAKE_BUILD_TYPE=Release
+cmake --build target/apps/native-c
+```
+
+The default output is `target/ndk/`; `--output` selects another new directory. Existing outputs are rejected. Installation, reference signature verification, and per-file hashing finish in a temporary directory before the complete package is moved into place. `ndk.json` records the WASIp1 target, standard exception requirement, compiler versions, library hashes, file hashes, and reference API/core identity. The package contains LVGL, FreeType, and ThorVG license material, including the bundled ThorVG component notices and MPL source. The compiler and its runtime libraries remain in the separately prepared wasi-sdk distribution.
+
+An external CMake project can use the package after relocation, including from a read-only directory:
+
+```cmake
+cmake_minimum_required(VERSION 3.25)
+project(application LANGUAGES C CXX)
+find_package(liblvgl-wasm CONFIG REQUIRED)
+lvw_add_reactor(application main.c)
+```
+
+`main.c` can include `lvgl/lvgl.h` and call the original `lv_*` API, including native callbacks. C++ sources are also accepted. `lvw_add_reactor` links through Clang++, retains the bridge and generated wrappers, exports the configured LVGL APIs and function table, and supplies the standard exception/SJLJ runtime links. Both C and C++ languages and wasi-sdk 34.0 are required even for a C-only application. The installed configuration and archives must stay together; changing `LV_*` configuration macros requires rebuilding the libraries and metadata.
+
+The example produces `target/apps/native-c/lvgl_native_example.wasm`, a reactor containing both the application and LVGL. Its host initializes the reactor and bridge, creates a display, and calls `lvw_demo_create(display)`. This module uses the native C ABI inside its own memory. Studio's separate `app.wasm` upload slot expects the `lvw_app` ABI and cannot load this reactor as an application.
+
+Every newly linked reactor has a new core identity. Regenerate the host bindings before accessing its raw LVGL API; the reference verification record in the NDK applies only to the core used to export the package:
+
+```sh
+ndk="$PWD/target/ndk/share/liblvgl-wasm"
+core="$PWD/target/apps/native-c/lvgl_native_example.wasm"
+wasm-tools validate "$core"
+python3 -B "$ndk/generator/signatures.py" --api "$ndk/metadata/api.json" \
+    --wasm "$core" --output target/apps/native-c/verification.json
+python3 -B "$ndk/generator/values.py" --api "$ndk/metadata/api.json" \
+    --wasm "$core" --verification target/apps/native-c/verification.json \
+    --output target/apps/native-c/typescript/values.ts
+python3 -B "$ndk/generator/typescript.py" --api "$ndk/metadata/api.json" \
+    --wasm "$core" --verification target/apps/native-c/verification.json \
+    --output target/apps/native-c/typescript/raw.ts
+python3 -B "$ndk/generator/rust.py" --api "$ndk/metadata/api.json" \
+    --wasm "$core" --verification target/apps/native-c/verification.json \
+    --output target/apps/native-c/rust/raw.rs
+```
+
+These commands generate the core-specific binding sources. The TypeScript runtime must be built with both matching generated TypeScript files; the Rust host accepts the matching Rust file through `LVW_RUST_BINDINGS`. The NDK does not contain prebuilt host SDKs for arbitrary application reactors.
+
 CMake compiles adapted copies of the pinned `lv_observer.c` and `lv_image_decoder.c` with bridge notifications at native deletion points. Decoder deinitialization deletes individual decoders to deliver those notifications. The original source tree stays unchanged; different source hashes are rejected. The adapted `liblvgl.a` requires the bridge's `lvw_observer_release_native` and `lvw_decoder_release_native` implementations.
 
 The pinned `lv_gif.c` also compiles from an adapted copy that preserves playback during frame-count queries, applies each frame's delay, stops timers before closing sources, and delivers completion events after frame processing.
@@ -72,6 +120,7 @@ Generated files stay under `target/`:
 | `target/apps/ts/samples/tinyttf.js` | TinyTTF font sample application |
 | `target/apps/{c,cpp,rust}/app.wasm` | C, C++, and Rust sample applications |
 | `target/rust/` | Rust host build cache |
+| `target/ndk/` | Relocatable native C/C++ development kit from `export-ndk` |
 
 ## Quality checks
 
@@ -81,7 +130,7 @@ Install `wasm-tools`, `rustfmt`, and `clippy` in addition to the build prerequis
 bun run quality
 ```
 
-This command rebuilds the core, generated API wrappers, TypeScript bindings, C demo, browser bundles, and application samples before validating all five Wasm modules. It runs strict TypeScript checks for the generated bindings and runtime, Bun tests, Rust formatting checks, Clippy with warnings denied for both Rust packages, host tests, and the Rust host's rendering/input checks. Every command stops on failure. Dependency installation and Rust builds use the checked-in lockfiles. `bun run test` runs only the repository's `tests/` directory and requires existing build outputs.
+This command rebuilds the core, generated API wrappers, TypeScript bindings, C demo, browser bundles, and application samples before validating all five Wasm modules. It runs strict TypeScript checks for the generated bindings and runtime, Bun tests, Rust formatting checks, Clippy with warnings denied for both Rust packages, host tests, and the Rust host's rendering/input checks. The NDK test installs and relocates a read-only package, compiles C/C++ consumers against the generated type layouts, validates their modules, and checks matching bindings, native click callbacks, rendering, destruction, and C++ exceptions. Every command stops on failure. Dependency installation and Rust builds use the checked-in lockfiles. `bun run test` runs only the repository's `tests/` directory and requires existing build outputs.
 
 The GitHub Actions quality workflow runs the same command on Ubuntu 24.04 with Bun 1.3.14, Rust 1.92.0, wasi-sdk 34, and wasm-tools 1.246.2. SDK and Wasm tool downloads are verified against pinned SHA-256 values.
 

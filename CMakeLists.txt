@@ -84,3 +84,5 @@ if(CMAKE_SYSTEM_NAME STREQUAL "WASI")
         -Wl,--max-memory=268435456
     )
 endif()
+
+include(cmake/ndk.cmake)

@@ -23,7 +23,9 @@ endif()
 list(REMOVE_ITEM LVW_FREETYPE_SOURCES ${LVW_FREETYPE_SYSTEM_SOURCES})
 set_property(TARGET freetype PROPERTY SOURCES "${LVW_FREETYPE_SOURCES}")
 target_compile_definitions(freetype PUBLIC FT_CONFIG_OPTIONS_H="lvw_freetype.h")
-target_include_directories(freetype PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/config")
+target_include_directories(freetype PUBLIC
+    "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/config>"
+    "$<INSTALL_INTERFACE:include>")
 target_link_libraries(freetype PUBLIC lvw_wasm_sjlj)
 target_link_libraries(lvgl PRIVATE freetype)
 
