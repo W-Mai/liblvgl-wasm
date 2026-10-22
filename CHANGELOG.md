@@ -7,6 +7,7 @@
 
 ### Added
 
+- Lottie application sample with JSON resource loading, vector scaling, and native playback controls in Studio.
 - SVG application sample with geometry/gradient switching, vector scaling, and SVG/XML source highlighting in Studio.
 - TinyTTF application sample with font resource loading, native resizing, and label layout updates in Studio.
 - FreeType application sample with native bitmap/outline glyphs, rendering mode switching, and 16/32 px font replacement in Studio.

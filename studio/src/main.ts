@@ -101,6 +101,15 @@ const tsSamples: Record<string, Toolchain> = {
       { name: "gradient.svg", url: "/tests/fixtures/svg/gradient.svg" },
     ],
   },
+  lottie: {
+    ...toolchains.ts, sampleName: "Lottie",
+    summary: "Play a Lottie JSON resource. Pause, resume, or restart playback.",
+    command: "bun run build:ts-samples\n# upload target/apps/ts/samples/lottie.js",
+    sample: "/target/apps/ts/samples/lottie.js",
+    links: [["lottie.ts", "/toolchains/ts/samples/lottie.ts"], ["api.ts", "/toolchains/ts/api.ts"], ["sdk.ts", "/toolchains/ts/sdk.ts"],
+      ["translation-opacity.json", "/tests/fixtures/lottie/translation-opacity.json"]],
+    resources: [{ name: "translation-opacity.json", url: "/tests/fixtures/lottie/translation-opacity.json" }],
+  },
 };
 
 function element<T extends HTMLElement>(selector: string): T {
