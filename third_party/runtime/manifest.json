@@ -1,0 +1,220 @@
+{
+  "schema_version": 1,
+  "wasi_libc": {
+    "commit": "2e6fb9d8ee0cdf9e431fbcabe8af3115de000a13",
+    "url": "https://github.com/WebAssembly/wasi-libc/tree/2e6fb9d8ee0cdf9e431fbcabe8af3115de000a13",
+    "files": {
+      "LICENSE": {
+        "path": "wasi-libc/LICENSE",
+        "sha256": "2711a8b5a5cdfef0e639f96c1aca12ae23d7d64a02d0507f1bdf14d2b27bbc3a",
+        "bytes": 910
+      },
+      "LICENSE-APACHE": {
+        "path": "wasi-libc/LICENSE-APACHE",
+        "sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2",
+        "bytes": 10847
+      },
+      "LICENSE-APACHE-LLVM": {
+        "path": "wasi-libc/LICENSE-APACHE-LLVM",
+        "sha256": "268872b9816f90fd8e85db5a28d33f8150ebb8dd016653fb39ef1f94f2686bc5",
+        "bytes": 12243
+      },
+      "LICENSE-MIT": {
+        "path": "wasi-libc/LICENSE-MIT",
+        "sha256": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3",
+        "bytes": 1023
+      },
+      "cloudlibc-LICENSE": {
+        "path": "wasi-libc/cloudlibc-LICENSE",
+        "sha256": "c8b789cf5a746611e6300a0cc7750dbf92b61912a709d04e639245f7290656d0",
+        "bytes": 1292
+      },
+      "dlmalloc-malloc.c": {
+        "path": "wasi-libc/dlmalloc-malloc.c",
+        "sha256": "9e7ce51d813331ae87ef235f6ca2d5ce2167692e30bb51a173513e3754a67f8f",
+        "bytes": 224221
+      },
+      "dlmalloc-notice.txt": {
+        "path": "wasi-libc/dlmalloc-notice.txt",
+        "sha256": "b38933002abc80f06ad562e20a295deb332d1b425cf5854dbf93db91d4da9421",
+        "bytes": 326
+      },
+      "emmalloc-emmalloc.c": {
+        "path": "wasi-libc/emmalloc-emmalloc.c",
+        "sha256": "c5b52c424c9101ba9b2d1338997e1758c9fdf369ab0450d9b72e9544fe482166",
+        "bytes": 58653
+      },
+      "emmalloc-notice.txt": {
+        "path": "wasi-libc/emmalloc-notice.txt",
+        "sha256": "c4e841786c700f8e4f190cc0303fc0ebb34529342088c5f393f04bc5c9be79ee",
+        "bytes": 265
+      },
+      "musl-COPYRIGHT": {
+        "path": "wasi-libc/musl-COPYRIGHT",
+        "sha256": "b870108ec5e7790e9f9919064f1b9421d62d5f9b0e6c230c6adf7ea2da62e97b",
+        "bytes": 6196
+      },
+      "musl-fts-COPYING": {
+        "path": "wasi-libc/musl-fts-COPYING",
+        "sha256": "55af87e4017668f54467a3380e7ebbac5e672d8c763bfe95e6fc882a6fdc4046",
+        "bytes": 1514
+      },
+      "musl-fts-NOTICE.wasi-libc.md": {
+        "path": "wasi-libc/musl-fts-NOTICE.wasi-libc.md",
+        "sha256": "6aa429513e3e883111aceab81f80f9da38613b7f74c966393ff33470c93a9daa",
+        "bytes": 407
+      }
+    }
+  },
+  "llvm": {
+    "commit": "895aa2c896ada719451be2e3673c83da8ddf1141",
+    "url": "https://github.com/llvm/llvm-project/tree/895aa2c896ada719451be2e3673c83da8ddf1141",
+    "files": {
+      "compiler-rt/CREDITS.TXT": {
+        "path": "llvm/compiler-rt/CREDITS.TXT",
+        "sha256": "a9901f47a089da41e4690682d00ce4cedaa2baf41fedbe79beee366d43ac2461",
+        "bytes": 1049
+      },
+      "compiler-rt/LICENSE.TXT": {
+        "path": "llvm/compiler-rt/LICENSE.TXT",
+        "sha256": "1a8f1058753f1ba890de984e48f0242a3a5c29a6a8f2ed9fd813f36985387e8d",
+        "bytes": 16708
+      },
+      "libcxx/CREDITS.TXT": {
+        "path": "llvm/libcxx/CREDITS.TXT",
+        "sha256": "f39081875d1c5c35aab256b676e94003b453ecb2a1cae14026dfd23804dc97b2",
+        "bytes": 4175
+      },
+      "libcxx/LICENSE.TXT": {
+        "path": "llvm/libcxx/LICENSE.TXT",
+        "sha256": "539dd7aed86e8a4f12cbdd0e6c50c189c7d74847e4fecc64ce2c6ee3a01da38b",
+        "bytes": 16703
+      },
+      "libcxxabi/CREDITS.TXT": {
+        "path": "llvm/libcxxabi/CREDITS.TXT",
+        "sha256": "a259fff28a51623f14917dd68f97f3af7804984087ddc1bfd8196d08ebb75b83",
+        "bytes": 1660
+      },
+      "libcxxabi/LICENSE.TXT": {
+        "path": "llvm/libcxxabi/LICENSE.TXT",
+        "sha256": "e2b35be49f7284a45b7baca8fc7b3ab7440e7902392b2528a457816b5bb2a15c",
+        "bytes": 16706
+      },
+      "libunwind/LICENSE.TXT": {
+        "path": "llvm/libunwind/LICENSE.TXT",
+        "sha256": "b5efebcaca80879234098e52d1725e6d9eb8fb96a19fce625d39184b705f7b6d",
+        "bytes": 16706
+      },
+      "source-notices.json": {
+        "path": "llvm/source-notices.json",
+        "sha256": "41af65351c4e9a42769794ba98dc6239fc1dac8068396df886be41ca06aabee8",
+        "bytes": 1084919
+      }
+    },
+    "source_notice_index": "llvm/source-notices.json"
+  },
+  "lvgl": {
+    "version": "9.6.0",
+    "url": "https://github.com/lvgl/lvgl/releases/download/v9.6.0/lvgl-v9.6.0-lite.zip",
+    "files": [
+      ".github/workflows/verify_font_license.yml",
+      "COPYRIGHTS.md",
+      "LICENCE.txt",
+      "docs/src/introduction/license.mdx",
+      "env_support/debian/copyright",
+      "examples/libs/freetype/OFL.txt",
+      "scripts/font_license_verify.py",
+      "scripts/generate_copyrights.py",
+      "scripts/generators/built_in_font/font_license/DejaVuSans/LICENSE",
+      "scripts/generators/built_in_font/font_license/FontAwesome/LICENSE.txt",
+      "scripts/generators/built_in_font/font_license/FontAwesome5/LICENSE.txt",
+      "scripts/generators/built_in_font/font_license/Lato/OFL.txt",
+      "scripts/generators/built_in_font/font_license/Montserrat/OFL.txt",
+      "scripts/generators/built_in_font/font_license/NotoColorEmoji/OFL.txt",
+      "scripts/generators/built_in_font/font_license/NotoSansSC/OFL.txt",
+      "scripts/generators/built_in_font/font_license/SourceHanSansSC/LICENSE.txt",
+      "src/libs/FT800-FT813/LICENSE",
+      "src/libs/barcode/LICENSE.txt",
+      "src/libs/freetype/LiberationSans-LICENSE.txt",
+      "src/libs/freetype/freetype-LICENSE.txt",
+      "src/libs/frogfs/LICENSE.txt",
+      "src/libs/gif/LICENSE",
+      "src/libs/lodepng/LICENSE.txt",
+      "src/libs/lz4/LICENSE.txt",
+      "src/libs/nanovg/LICENSE.txt",
+      "src/libs/qrcode/LICENSE.txt",
+      "src/libs/thorvg/LICENSE.txt",
+      "src/libs/tiny_ttf/LICENSE.txt",
+      "src/libs/tjpgd/LICENSE.txt",
+      "src/libs/vg_lite_driver/LICENSE.txt",
+      "src/stdlib/builtin/LICENSE_SPRINTF.txt",
+      "src/stdlib/builtin/LICENSE_TLSF.txt",
+      "tests/src/test_files/fonts/noto/OFL.txt",
+      "tests/src/test_helpers/rnd_unicodes/rnd_unicodes/LICENSE"
+    ]
+  },
+  "scope": [
+    "wasi-libc static runtime and allocator attribution",
+    "LLVM compiler-rt, libc++, libc++abi, and libunwind attribution",
+    "LVGL source, enabled decoder/vector libraries, and bundled font attribution",
+    "Zig example license"
+  ],
+  "files": {
+    "README.md": "87cb7fd80657010df8584947f8b8aa1944b169bdc38083faf36cd7cd2159a3e0",
+    "llvm/compiler-rt/CREDITS.TXT": "a9901f47a089da41e4690682d00ce4cedaa2baf41fedbe79beee366d43ac2461",
+    "llvm/compiler-rt/LICENSE.TXT": "1a8f1058753f1ba890de984e48f0242a3a5c29a6a8f2ed9fd813f36985387e8d",
+    "llvm/libcxx/CREDITS.TXT": "f39081875d1c5c35aab256b676e94003b453ecb2a1cae14026dfd23804dc97b2",
+    "llvm/libcxx/LICENSE.TXT": "539dd7aed86e8a4f12cbdd0e6c50c189c7d74847e4fecc64ce2c6ee3a01da38b",
+    "llvm/libcxxabi/CREDITS.TXT": "a259fff28a51623f14917dd68f97f3af7804984087ddc1bfd8196d08ebb75b83",
+    "llvm/libcxxabi/LICENSE.TXT": "e2b35be49f7284a45b7baca8fc7b3ab7440e7902392b2528a457816b5bb2a15c",
+    "llvm/libunwind/LICENSE.TXT": "b5efebcaca80879234098e52d1725e6d9eb8fb96a19fce625d39184b705f7b6d",
+    "llvm/source-notices.json": "41af65351c4e9a42769794ba98dc6239fc1dac8068396df886be41ca06aabee8",
+    "lvgl/.github/workflows/verify_font_license.yml": "5735f109d074845d88d44dc2724f5416f6cc00c42e8d4f773a28fe0a757e7006",
+    "lvgl/COPYRIGHTS.md": "8f561950f28b44408829e3edd89ada7b6a2dcf790590c4fa4070f5748dabb39b",
+    "lvgl/LICENCE.txt": "27a80bd36832ab42d35ad60c08b2b230a807a9bc0d58e94ec1531543dc49cbe8",
+    "lvgl/docs/src/introduction/license.mdx": "a1952ecdfb608ecfe4cdb8ce033abc12ada121215ed25d0d875d9cd6e15ed2f9",
+    "lvgl/env_support/debian/copyright": "91392f9b219ca0e7fff71f833c1cbfe2db2f80317f5ea1ab419fc56dc4301bd7",
+    "lvgl/examples/libs/freetype/OFL.txt": "3200a0abfc0ceba649de8ee433cfe5a7cb8c441cdf32b9e1a4a070e38621cef2",
+    "lvgl/scripts/font_license_verify.py": "379ca29f6d3441a2cccdff00ec78391916e5ca4ad60e3ad4498da1db07731abc",
+    "lvgl/scripts/generate_copyrights.py": "5ba910434601b632c659127ccbe24e24461118e8c69f0d04639d0288eff3082b",
+    "lvgl/scripts/generators/built_in_font/font_license/DejaVuSans/LICENSE": "d75938dec098f06f0ac3c00853065d94f020be1c3c62ef1dc2975ba15b4d9b0e",
+    "lvgl/scripts/generators/built_in_font/font_license/FontAwesome/LICENSE.txt": "9b914eae88817d63b576eab5aafde7068c7a1abae125d7cdfb034f1da43a9afc",
+    "lvgl/scripts/generators/built_in_font/font_license/FontAwesome5/LICENSE.txt": "de784a808496d49f5f80dd9d1d6e9a51cff712cfbc339e7c25155631ae3cdb5d",
+    "lvgl/scripts/generators/built_in_font/font_license/Lato/OFL.txt": "a8e9b45e643f6939f3cc19b27c9c1d4c562db65e8931516e77f12194293da689",
+    "lvgl/scripts/generators/built_in_font/font_license/Montserrat/OFL.txt": "41f82bb4d24b304f30f7136bc47abdd083782e4265c984160f5649d1e78ea49c",
+    "lvgl/scripts/generators/built_in_font/font_license/NotoColorEmoji/OFL.txt": "9d242e02bf26e61e6baccea03ab3de47c81202a18f07e3e190c17cbf0e9f8bd7",
+    "lvgl/scripts/generators/built_in_font/font_license/NotoSansSC/OFL.txt": "fb97f1ad83b5aa2ef1e9f7e65bc705b5aa391ee62560fedcaf70f49319ca2079",
+    "lvgl/scripts/generators/built_in_font/font_license/SourceHanSansSC/LICENSE.txt": "f55c2d43dd905011515f5e46ba78d180027e314ef8ccaaf53a9e88fe316767cd",
+    "lvgl/src/libs/FT800-FT813/LICENSE": "862e06968462faf8ff2066fffaf7c4522aa48ddafd11fe9c578248aa4b013729",
+    "lvgl/src/libs/barcode/LICENSE.txt": "bc9492ba4839f81fed80aa4b966e7078b18fc7f0d81cf47aa3c04a86047099f1",
+    "lvgl/src/libs/freetype/LiberationSans-LICENSE.txt": "93fed46019c38bbe566b479d22148e2e8a1e85ada614accb0211c37b2c61c19b",
+    "lvgl/src/libs/freetype/freetype-LICENSE.txt": "21878c9be611eecf3f936301e277f77719c14316a5132c0877c4d0dc54e5470c",
+    "lvgl/src/libs/frogfs/LICENSE.txt": "af175b9d96ee93c21a036152e1b905b0b95304d4ae8c2c921c7609100ba8df7e",
+    "lvgl/src/libs/gif/LICENSE": "63fefff6dd199d109389e0f413579387e9ca9cfdeeae961ecdbcb120d08432e0",
+    "lvgl/src/libs/lodepng/LICENSE.txt": "f43c59ae0979ea7c08b24a56cfe7816f3c82141d13f5866a2040f66b02589771",
+    "lvgl/src/libs/lz4/LICENSE.txt": "8b58c446121a109ccf32edc094bba3010a3d85e4ee3702950db55e4d3e87736c",
+    "lvgl/src/libs/nanovg/LICENSE.txt": "45185a6680ed83863bef33e1055f9fd76374df4b81c957802c19a286c982dfd2",
+    "lvgl/src/libs/qrcode/LICENSE.txt": "4d3b92a5e730466508ed46e8632140dfb96221bacfa18c95355cee161e7a22c8",
+    "lvgl/src/libs/thorvg/LICENSE.txt": "861eb0197d1b43e3c904c433b605cf38be3c4bc447bb9752dfad74c704e36af7",
+    "lvgl/src/libs/tiny_ttf/LICENSE.txt": "f214b427f12e19d68f65e2e30a3c9a1f59ee4a09d4c684931971a8f3bfdd7a1f",
+    "lvgl/src/libs/tjpgd/LICENSE.txt": "e85563f195d82708ca334e85c63d0352c980ccc66dca2052e9fd05f7823df51c",
+    "lvgl/src/libs/vg_lite_driver/LICENSE.txt": "928c166e5324bd40709174aae078010aa8206ce056aa199fb98126b062ecbd64",
+    "lvgl/src/stdlib/builtin/LICENSE_SPRINTF.txt": "ec49d3c5a052dba6392f3e5e6d51134d102624c19afab6b3dd9ff8921d85403d",
+    "lvgl/src/stdlib/builtin/LICENSE_TLSF.txt": "2b32f144050a1236599765ed1ca2c88d5b99e8e3364eadbb547ab0fbc4b01220",
+    "lvgl/tests/src/test_files/fonts/noto/OFL.txt": "1778d919f28e548adab94a9dc3cf05549124e53d204c2f4c8164617734dc1a3a",
+    "lvgl/tests/src/test_helpers/rnd_unicodes/rnd_unicodes/LICENSE": "ad4feab161c3e1f5b12ec323eb5c69688523b32f643684236af765c8931fecd1",
+    "wasi-libc/LICENSE": "2711a8b5a5cdfef0e639f96c1aca12ae23d7d64a02d0507f1bdf14d2b27bbc3a",
+    "wasi-libc/LICENSE-APACHE": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2",
+    "wasi-libc/LICENSE-APACHE-LLVM": "268872b9816f90fd8e85db5a28d33f8150ebb8dd016653fb39ef1f94f2686bc5",
+    "wasi-libc/LICENSE-MIT": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3",
+    "wasi-libc/cloudlibc-LICENSE": "c8b789cf5a746611e6300a0cc7750dbf92b61912a709d04e639245f7290656d0",
+    "wasi-libc/dlmalloc-malloc.c": "9e7ce51d813331ae87ef235f6ca2d5ce2167692e30bb51a173513e3754a67f8f",
+    "wasi-libc/dlmalloc-notice.txt": "b38933002abc80f06ad562e20a295deb332d1b425cf5854dbf93db91d4da9421",
+    "wasi-libc/emmalloc-emmalloc.c": "c5b52c424c9101ba9b2d1338997e1758c9fdf369ab0450d9b72e9544fe482166",
+    "wasi-libc/emmalloc-notice.txt": "c4e841786c700f8e4f190cc0303fc0ebb34529342088c5f393f04bc5c9be79ee",
+    "wasi-libc/musl-COPYRIGHT": "b870108ec5e7790e9f9919064f1b9421d62d5f9b0e6c230c6adf7ea2da62e97b",
+    "wasi-libc/musl-fts-COPYING": "55af87e4017668f54467a3380e7ebbac5e672d8c763bfe95e6fc882a6fdc4046",
+    "wasi-libc/musl-fts-NOTICE.wasi-libc.md": "6aa429513e3e883111aceab81f80f9da38613b7f74c966393ff33470c93a9daa",
+    "zig/LICENSE": "5c537d6853e005298a285d508cff9ac7192cea23576c840d485b2b586a7ff177"
+  }
+}

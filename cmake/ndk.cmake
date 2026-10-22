@@ -58,6 +58,8 @@ install(FILES "${PROJECT_SOURCE_DIR}/cmake/zig.cmake"
     DESTINATION lib/cmake/liblvgl-wasm COMPONENT ndk)
 install(DIRECTORY "${PROJECT_SOURCE_DIR}/third_party/freetype" "${PROJECT_SOURCE_DIR}/third_party/thorvg"
     DESTINATION "${LVW_NDK_DATA_DIR}/licenses" COMPONENT ndk)
+install(DIRECTORY "${PROJECT_SOURCE_DIR}/third_party/runtime"
+    DESTINATION "${LVW_NDK_DATA_DIR}/licenses" COMPONENT ndk)
 install(FILES "${lvgl_SOURCE_DIR}/LICENCE.txt"
     DESTINATION "${LVW_NDK_DATA_DIR}/licenses/lvgl" COMPONENT ndk)
 

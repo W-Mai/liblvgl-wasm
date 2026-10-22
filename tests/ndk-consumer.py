@@ -1,6 +1,7 @@
 """Check the installed NDK's relocation and C/C++/Zig ABI contracts."""
 
 import json
+import hashlib
 import os
 import shutil
 import subprocess
@@ -13,6 +14,28 @@ ROOT = Path(__file__).resolve().parent.parent
 
 def run(*command):
     subprocess.run([str(item) for item in command], check=True, stdout=sys.stderr)
+
+
+def verify_runtime_notices(data):
+    runtime = data / "licenses/runtime"
+    manifest_path = runtime / "manifest.json"
+    manifest = json.loads(manifest_path.read_text())
+    assert manifest["schema_version"] == 1
+    expected = manifest["files"]
+    actual = {}
+    for path in runtime.rglob("*"):
+        if path.is_file() and path.name != "manifest.json":
+            relative = path.relative_to(runtime).as_posix()
+            actual[relative] = hashlib.sha256(path.read_bytes()).hexdigest()
+    assert actual == expected
+    for required in (
+        "README.md",
+        "wasi-libc/LICENSE-APACHE-LLVM",
+        "wasi-libc/musl-COPYRIGHT",
+        "llvm/source-notices.json",
+        "lvgl/COPYRIGHTS.md",
+    ):
+        assert required in actual and actual[required]
 
 
 def layout_checks(api):
@@ -96,6 +119,7 @@ def check(output):
             text = path.read_text()
             assert str(ROOT) not in text and sdk not in text, path
         data = package / "share/liblvgl-wasm"
+        verify_runtime_notices(data)
         api = json.loads((data / "metadata/api.json").read_text())
         header, layouts = layout_checks(api)
         project = base / "original project"

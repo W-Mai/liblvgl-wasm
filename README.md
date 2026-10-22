@@ -76,7 +76,7 @@ cmake -S target/ndk/examples/c -B target/apps/native-c -G Ninja \
 cmake --build target/apps/native-c
 ```
 
-The default output is `target/ndk/`; `--output` selects another new directory. Existing outputs are rejected. Installation, reference signature verification, and per-file hashing finish in a temporary directory before the complete package is moved into place. `ndk.json` records the WASIp1 target, standard exception requirement, compiler versions, library hashes, file hashes, and reference API/core identity. The package contains LVGL, FreeType, and ThorVG license material, including the bundled ThorVG component notices and MPL source. The compiler and its runtime libraries remain in the separately prepared wasi-sdk distribution.
+The default output is `target/ndk/`; `--output` selects another new directory. Existing outputs are rejected. Installation, reference signature verification, and per-file hashing finish in a temporary directory before the complete package is moved into place. `ndk.json` records the WASIp1 target, standard exception requirement, compiler versions, library hashes, file hashes, and reference API/core identity. The package contains LVGL, FreeType, ThorVG, wasi-libc, LLVM runtime, decoder, and bundled-font license material. `share/liblvgl-wasm/licenses/runtime/manifest.json` records the fixed source identities and hashes for the runtime notice tree. The compiler distribution remains separately prepared through `prepare`.
 
 An external CMake project can use the package after relocation, including from a read-only directory:
 
