@@ -182,6 +182,16 @@ liblvgl-wasm-host = { path = "/path/to/host-sdk/rust" }
 
 The exported manifest enables `bundled-bindings` by default. A missing bundled file is an error; the build does not search the checkout's generated output. `LVW_RUST_BINDINGS` can explicitly override the file, with relative paths resolved against the crate's manifest directory. Disabling default features selects the source-checkout binding path and requires an explicit override outside a checkout. Rust 1.92+ and the locked Cargo dependencies are required; a lockfile alone does not provide an offline dependency cache. Put consumer build outputs in the consumer's `target/` or an explicitly selected `CARGO_TARGET_DIR`; the SDK can remain read-only.
 
+### Complete development package
+
+`export-package` assembles one relocatable directory containing the verified source snapshot, native NDK, core-specific host SDK, and a root `manifest.json`. The command requires a clean Git checkout so the source revision, core SHA-256, API SHA-256, NDK manifest, SDK manifest, target triple, and tool versions describe one consistent package.
+
+```sh
+python3 -B toolchains/lvw.py export-package --output target/package --json
+```
+
+The package has `source/`, `ndk/`, and `host-sdk/` directories. `manifest.json` is a semantic compatibility record plus a SHA-256 inventory for every file below those directories. The NDK and host SDK keep their own manifests and runtime notice trees. `--allow-dirty` is available for local development checks and marks the source entry as dirty; release automation leaves it disabled. The output is a directory suitable for archiving and remains usable after relocation.
+
 CMake compiles adapted copies of the pinned `lv_observer.c` and `lv_image_decoder.c` with bridge notifications at native deletion points. Decoder deinitialization deletes individual decoders to deliver those notifications. The original source tree stays unchanged; different source hashes are rejected. The adapted `liblvgl.a` requires the bridge's `lvw_observer_release_native` and `lvw_decoder_release_native` implementations.
 
 The pinned `lv_gif.c` also compiles from an adapted copy that preserves playback during frame-count queries, applies each frame's delay, stops timers before closing sources, and delivers completion events after frame processing.
@@ -217,6 +227,7 @@ Generated files stay under `target/`:
 | `target/rust/` | Rust host build cache |
 | `target/ndk/` | Relocatable native C/C++ development kit from `export-ndk` |
 | `target/host-sdk/` | Core-specific TypeScript and Rust packages from `export-sdk` |
+| `target/package/` | Complete source, NDK, and host SDK package from `export-package` |
 | `target/source/` | Verified build-source snapshot from `export-source` |
 | `target/project/` | Writable source project from `init` |
 

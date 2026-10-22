@@ -428,6 +428,90 @@ def export_sdk(args, lock, host, project, cache):
     return {"output": str(output), "identity": metadata["identity"], "files": len(files)}
 
 
+def export_package(args, lock, host, project, cache, sdk):
+    """Export one relocatable package containing source, NDK, and host SDK manifests."""
+    from source_package import build_source
+
+    output = new_output(args.output, project)
+    builder = project / "scripts/build.sh"
+    if not builder.is_file():
+        raise ValueError(f"export-package requires a source checkout at --project: {project}")
+    reports = tool_report(args, lock, host, cache, sdk)
+    failures = [item["error"] for item in reports.values() if not item["ok"]]
+    if failures:
+        raise ValueError("; ".join(failures))
+
+    # A release package must identify one clean source revision. The source
+    # export command remains available for intentionally dirty development snapshots.
+    dirty = subprocess.run(["git", "-C", str(project), "diff", "--quiet", "HEAD", "--"])
+    if dirty.returncode not in (0, 1):
+        dirty.check_returncode()
+    if dirty.returncode and not args.allow_dirty:
+        raise ValueError("export-package requires a clean source checkout")
+
+    output.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix=".package-", dir=output.parent) as temporary:
+        temporary = Path(temporary)
+        source = temporary / "source"
+        ndk = temporary / "ndk"
+        sdk_package = temporary / "host-sdk"
+        source_manifest = build_source(project, source)
+        source_manifest["files"] = file_inventory(source)
+        (source / "source.json").write_text(json.dumps(source_manifest, indent=2) + "\n")
+
+        ndk_args = argparse.Namespace(command="export-ndk", output=str(ndk),
+                                      with_zig=False, sdk=args.sdk)
+        ndk_result = export_ndk(ndk_args, lock, host, project, cache, sdk)
+        sdk_args = argparse.Namespace(command="export-sdk", output=str(sdk_package),
+                                      ndk=str(ndk), core="target/wasm/liblvgl.wasm",
+                                      with_zig=False)
+        sdk_result = export_sdk(sdk_args, lock, host, project, cache)
+
+        staged = temporary / "package"
+        staged.mkdir()
+        for name, package in (("source", source), ("ndk", ndk), ("host-sdk", sdk_package)):
+            shutil.copytree(package, staged / name)
+        files = file_inventory(staged)
+        source_data = json.loads((staged / "source/source.json").read_text())
+        ndk_data = json.loads((staged / "ndk/ndk.json").read_text())
+        sdk_data = json.loads((staged / "host-sdk/sdk.json").read_text())
+        toolchain = {
+            name: {key: report[key] for key in ("source", "version", "archive_sha256") if key in report}
+            for name, report in reports.items()
+        }
+        manifest = {
+            "schema_version": 1,
+            "kind": "liblvgl-wasm-development-package",
+            "version": source_data["version"],
+            "target": lock["target"],
+            "compatibility": {
+                "wasi-sdk": lock["tools"]["wasi-sdk"]["version"],
+                "clang": lock["tools"]["wasi-sdk"]["clang_version"],
+                "wasm-tools": lock["tools"]["wasm-tools"]["version"],
+                "ndk_schema": ndk_data["schema_version"],
+                "sdk_schema": sdk_data["schema_version"],
+            },
+            "source": {
+                "path": "source",
+                "revision": source_data["source"]["revision"],
+                "dirty": source_data["source"]["dirty"],
+                "manifest": "source/source.json",
+            },
+            "core": sdk_data["identity"],
+            "packages": {
+                "source": {"path": "source", "manifest": "source/source.json"},
+                "ndk": {"path": "ndk", "manifest": "ndk/ndk.json",
+                        "sha256": file_sha256(staged / "ndk/ndk.json")},
+                "host_sdk": {"path": "host-sdk", "manifest": "host-sdk/sdk.json",
+                             "sha256": file_sha256(staged / "host-sdk/sdk.json")},
+            },
+            "toolchain": toolchain,
+            "files": files,
+        }
+        publish_package(staged, output, "manifest.json", manifest)
+    return {"output": str(output), "identity": manifest["core"], "files": len(files)}
+
+
 def source_project(args, project):
     from source_package import build_project, build_source, read_source
 
@@ -457,13 +541,14 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest="command", required=True)
     outputs = {"export-ndk": "target/ndk", "export-sdk": "target/host-sdk",
-               "export-source": "target/source", "init": "target/project"}
+               "export-source": "target/source", "init": "target/project",
+               "export-package": "target/package"}
     for name in ("doctor", "prepare", *outputs):
         command = commands.add_parser(name)
         command.add_argument("--project", default=".", help="project directory (default: cwd)")
         if name not in ("export-source", "init"):
             command.add_argument("--cache", help="tool cache, relative to project or absolute")
-        if name in ("doctor", "prepare", "export-ndk"):
+        if name in ("doctor", "prepare", "export-ndk", "export-package"):
             command.add_argument("--sdk", help="existing wasi-sdk; overrides WASI_SDK_PATH")
         if name in ("doctor", "prepare"):
             command.add_argument("--with-zig", action="store_true", help="include locked Zig tools")
@@ -472,6 +557,9 @@ def main():
                                  help="new output directory, relative to project or absolute")
         if name == "init":
             command.add_argument("--source", required=True, help="verified source package directory")
+        if name == "export-package":
+            command.add_argument("--allow-dirty", action="store_true",
+                                 help="allow a development package from a dirty checkout")
         if name == "export-sdk":
             command.add_argument("--ndk", default="target/ndk", help="verified NDK directory")
             command.add_argument("--core", default="target/wasm/liblvgl.wasm", help="core linked with the selected NDK")
@@ -496,6 +584,8 @@ def main():
         result.update(host=host, target=lock["target"], project=str(project), cache=str(cache))
         if args.command == "export-ndk":
             result.update(export_ndk(args, lock, host, project, cache, sdk))
+        elif args.command == "export-package":
+            result.update(export_package(args, lock, host, project, cache, sdk))
         elif args.command == "export-sdk":
             result.update(export_sdk(args, lock, host, project, cache))
         elif args.command in ("export-source", "init"):
@@ -526,7 +616,8 @@ def main():
         print(json.dumps(result, indent=2))
     else:
         if "output" in result:
-            label = {"export-ndk": "NDK", "export-sdk": "SDK", "export-source": "Source", "init": "Project"}
+            label = {"export-ndk": "NDK", "export-sdk": "SDK", "export-source": "Source",
+                     "init": "Project", "export-package": "Package"}
             print(f"{label[args.command]}: {result['output']}")
         for section in ("tools", "prerequisites"):
             for name, report in result.get(section, {}).items():

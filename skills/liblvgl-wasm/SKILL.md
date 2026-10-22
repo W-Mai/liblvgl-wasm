@@ -79,6 +79,16 @@ python3 -B toolchains/lvw.py export-sdk \
 
 The output contains `runtime/`, exact metadata and proof, TypeScript ESM and declarations, Rust source with bundled bindings, `sdk.json`, and the NDK notice tree. It is read-only consumable after relocation. Rust consumers require Rust 1.92+; TypeScript consumers use the generated values and raw bindings from the same SDK.
 
+## Export the complete development package
+
+For a release-ready directory containing the source snapshot, NDK, and host SDK:
+
+```sh
+python3 -B toolchains/lvw.py export-package --output target/package --json
+```
+
+The command requires a clean checkout, refuses an existing output, and writes a root `manifest.json` with semantic compatibility fields and a SHA-256 inventory. Use `--allow-dirty` only for a local development package; the manifest records that state. Archive the resulting directory after checking that the core identity in `manifest.json`, `ndk/ndk.json`, and `host-sdk/sdk.json` is identical.
+
 ## Verify before reporting success
 
 Run `wasm-tools validate` for each produced module and compare its proof and values identity with the bindings used by the host. Run `env RUSTUP_TOOLCHAIN=1.92.0 bun run quality` for the repository gate. Do not claim a custom core matches the default SDK because its bridge ABI is compatible; compare the exact core SHA-256, API SHA-256, values identity, and configuration.
