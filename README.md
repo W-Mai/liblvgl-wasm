@@ -87,6 +87,54 @@ python3 -B "$ndk/generator/rust.py" --api "$ndk/metadata/api.json" \
 
 These commands generate the core-specific binding sources. The TypeScript runtime must be built with both matching generated TypeScript files; the Rust host accepts the matching Rust file through `LVW_RUST_BINDINGS`. The NDK does not contain prebuilt host SDKs for arbitrary application reactors.
 
+### Independent host SDKs
+
+`export-sdk` creates TypeScript and Rust host packages for a selected core. It checks the NDK's file hashes, validates the Wasm module, verifies its exported LVGL signatures, and generates bindings for its exact bytes. It requires an exported NDK, the source checkout's installed Bun dependencies, Python, Bun, and prepared wasm-tools. It does not rebuild the core or download dependencies.
+
+```sh
+python3 -B toolchains/lvw.py export-sdk --json
+python3 -B toolchains/lvw.py export-sdk --ndk target/ndk \
+    --core target/apps/native-c/lvgl_native_example.wasm \
+    --output target/native-host-sdk --json
+```
+
+`--project` selects the source checkout, `--ndk` defaults to `target/ndk`, `--core` defaults to `target/wasm/liblvgl.wasm`, and `--output` defaults to `target/host-sdk`. Relative paths resolve against `--project`. The selected core must have been linked with that NDK's configuration and libraries; signature verification cannot establish arbitrary user-supplied type layouts or constant values. Existing outputs are rejected, and failed exports leave no published package. Output directories must be separate from the input NDK, host sources, and dependency tree.
+
+The exported directory contains `runtime/liblvgl.wasm`, `metadata/{api,verification}.json`, `typescript/`, `rust/`, license material from the NDK, and `sdk.json`. The manifest records the NDK hash, core/API identity, generator counts, Bun/TypeScript versions, and each packaged file's SHA-256. The TypeScript bundle includes the fixed `@noble/hashes` implementation and its original license. Packages remain private and are not published to a registry by this command.
+
+The TypeScript package contains an ESM bundle and a complete declaration tree. Install it from an application directory:
+
+```sh
+bun add /path/to/host-sdk/typescript
+```
+
+```ts
+import { LvglRuntime } from "liblvgl-wasm";
+
+const core = await Bun.file("/path/to/host-sdk/runtime/liblvgl.wasm").arrayBuffer();
+const runtime = await LvglRuntime.load(core);
+const display = runtime.createDisplay(320, 240);
+const button = runtime.createButton(runtime.screen(display));
+runtime.unsafe.lv_obj_set_size(button.handle, 140, 60);
+runtime.unsafe.lv_obj_center(button.handle);
+runtime.step(40);
+const frame = runtime.readFrame(display);
+console.log(frame.width, frame.height, frame.rgba.byteLength);
+display.destroy();
+runtime.shutdown();
+```
+
+Browser applications can import the same package and pass fetched Wasm bytes to `LvglRuntime.load`. TypeScript 5.9.3 consumers are checked with both `Bundler` and `NodeNext` resolution, an ES2022 target, and DOM types. The runtime bundle has no external JavaScript dependencies and does not require WebCrypto.
+
+The Rust directory is an independent library crate with its lockfile and `generated/raw.rs`. A consumer can use a path dependency:
+
+```toml
+[dependencies]
+liblvgl-wasm-host = { path = "/path/to/host-sdk/rust" }
+```
+
+The exported manifest enables `bundled-bindings` by default. A missing bundled file is an error; the build does not search the checkout's generated output. `LVW_RUST_BINDINGS` can explicitly override the file, with relative paths resolved against the crate's manifest directory. Disabling default features selects the source-checkout binding path and requires an explicit override outside a checkout. Rust 1.92+ and the locked Cargo dependencies are required; a lockfile alone does not provide an offline dependency cache. Put consumer build outputs in the consumer's `target/` or an explicitly selected `CARGO_TARGET_DIR`; the SDK can remain read-only.
+
 CMake compiles adapted copies of the pinned `lv_observer.c` and `lv_image_decoder.c` with bridge notifications at native deletion points. Decoder deinitialization deletes individual decoders to deliver those notifications. The original source tree stays unchanged; different source hashes are rejected. The adapted `liblvgl.a` requires the bridge's `lvw_observer_release_native` and `lvw_decoder_release_native` implementations.
 
 The pinned `lv_gif.c` also compiles from an adapted copy that preserves playback during frame-count queries, applies each frame's delay, stops timers before closing sources, and delivers completion events after frame processing.
@@ -121,6 +169,7 @@ Generated files stay under `target/`:
 | `target/apps/{c,cpp,rust}/app.wasm` | C, C++, and Rust sample applications |
 | `target/rust/` | Rust host build cache |
 | `target/ndk/` | Relocatable native C/C++ development kit from `export-ndk` |
+| `target/host-sdk/` | Core-specific TypeScript and Rust packages from `export-sdk` |
 
 ## Quality checks
 
@@ -133,6 +182,8 @@ bun run quality
 This command rebuilds the core, generated API wrappers, TypeScript bindings, C demo, browser bundles, and application samples before validating all five Wasm modules. It runs strict TypeScript checks for the generated bindings and runtime, Bun tests, Rust formatting checks, Clippy with warnings denied for both Rust packages, host tests, and the Rust host's rendering/input checks. The NDK test installs and relocates a read-only package, compiles C/C++ consumers against the generated type layouts, validates their modules, and checks matching bindings, native click callbacks, rendering, destruction, and C++ exceptions. Every command stops on failure. Dependency installation and Rust builds use the checked-in lockfiles. `bun run test` runs only the repository's `tests/` directory and requires existing build outputs.
 
 The GitHub Actions quality workflow runs the same command on Ubuntu 24.04 with Bun 1.3.14, Rust 1.92.0, wasi-sdk 34, and wasm-tools 1.246.2. SDK and Wasm tool downloads are verified against pinned SHA-256 values.
+
+Host SDK checks generate packages for the core and a separately linked native reactor. External consumers check both TypeScript resolution modes, browser bundles, exact identities, colors, wide integers, click callbacks, and shutdown. Rust build-script checks cover bundled input selection, missing-file errors, and explicit overrides.
 
 ## LVGL Studio
 

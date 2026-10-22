@@ -8,12 +8,18 @@ fn main() {
         PathBuf::from(env::var_os("CARGO_MANIFEST_DIR").expect("missing manifest directory"));
     let configured = env::var_os("LVW_RUST_BINDINGS")
         .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from("../../target/rust-bindings/raw.rs"));
+        .unwrap_or_else(|| {
+            PathBuf::from(if cfg!(feature = "bundled-bindings") {
+                "generated/raw.rs"
+            } else {
+                "../../target/rust-bindings/raw.rs"
+            })
+        });
     let source = manifest.join(configured);
     println!("cargo:rerun-if-changed={}", source.display());
     if !source.is_file() {
         panic!(
-            "missing generated Rust bindings at {}; run `bun run generate:rust` in the repository, or set LVW_RUST_BINDINGS to an existing raw.rs",
+            "missing generated Rust bindings at {}; restore the exported SDK's generated/raw.rs, run `bun run generate:rust` for a source checkout, or set LVW_RUST_BINDINGS to an existing raw.rs",
             source.display()
         );
     }

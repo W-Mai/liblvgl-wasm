@@ -68,12 +68,43 @@ class BootstrapTests(unittest.TestCase):
         (output / "keep").write_text("user data")
         link = self.root / "link"
         link.symlink_to(self.root / "missing")
-        for path in (output, link):
-            status, report = self.cli("export-ndk", "--project", str(self.root), "--output", str(path))
-            self.assertNotEqual(status, 0)
-            self.assertFalse(report["ok"])
+        for command in ("export-ndk", "export-sdk"):
+            for path in (output, link):
+                status, report = self.cli(command, "--project", str(self.root), "--output", str(path))
+                self.assertNotEqual(status, 0)
+                self.assertFalse(report["ok"])
         self.assertEqual((output / "keep").read_text(), "user data")
         self.assertTrue(link.is_symlink())
+
+    def test_sdk_rejects_modified_ndk_and_does_not_publish_failed_builds(self):
+        import host_sdk
+
+        ndk = self.root / "ndk"
+        ndk.mkdir()
+        (ndk / "input").write_text("verified")
+        lock = json.loads((ROOT / "toolchains/tools.lock.json").read_text())
+        native = {"schema_version": 1, "kind": "wasip1-native-sdk", "target": lock["target"],
+                  "files": lvw.file_inventory(ndk)}
+        (ndk / "ndk.json").write_text(json.dumps(native))
+        args = argparse.Namespace(command="export-sdk", ndk="ndk", core="unused.wasm", output="target/sdk")
+        (ndk / "input").write_text("modified")
+        with patch.object(lvw, "tool_report", side_effect=AssertionError("must reject before running tools")):
+            with self.assertRaisesRegex(ValueError, "integrity mismatch"):
+                lvw.export_sdk(args, lock, "test-host", self.root, self.cache)
+        (ndk / "input").write_text("verified")
+        with self.assertRaisesRegex(ValueError, "overlaps an input"):
+            host_sdk.build_host_sdk(self.root, ndk, self.root / "unused.wasm", ndk / "nested", "unused")
+
+        def build(project, ndk, core, staged, validator):
+            staged.mkdir()
+            (staged / "partial").touch()
+            raise ValueError("build failed")
+
+        with patch.object(lvw, "tool_report", return_value={"wasm-tools": {"ok": True, "executable": "unused"}}), \
+                patch.object(host_sdk, "build_host_sdk", side_effect=build):
+            with self.assertRaisesRegex(ValueError, "build failed"):
+                lvw.export_sdk(args, lock, "test-host", self.root, self.cache)
+        self.assertEqual(list((self.root / "target").iterdir()), [])
 
     def test_ndk_failed_install_has_no_published_output(self):
         scripts = self.root / "scripts"

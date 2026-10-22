@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Prepare locked compiler tools and export a native LVGL SDK."""
+"""Prepare locked compiler tools and export native and host LVGL SDKs."""
 
 import argparse
 import ctypes
@@ -291,11 +291,11 @@ def prerequisite(name, minimum):
         return {"ok": False, "path": path, "error": str(error)}
 
 
-def tool_report(args, lock, host, cache, sdk):
+def tool_report(args, lock, host, cache, sdk, names=None):
     for child in ("archives", "tools"):
         ordinary_path(cache / child, directory=True)
     reports = {}
-    for name in ["wasi-sdk", "wasm-tools"] + (["zig"] if getattr(args, "with_zig", False) else []):
+    for name in names or ["wasi-sdk", "wasm-tools"] + (["zig"] if getattr(args, "with_zig", False) else []):
         spec = lock["tools"][name]
         explicit = name == "wasi-sdk" and sdk is not None
         report = {"source": "user" if explicit else "managed", "ok": False}
@@ -323,14 +323,40 @@ def resolve_path(value, project):
     return (path if path.is_absolute() else project / path).resolve()
 
 
-def export_ndk(args, lock, host, project, cache, sdk):
-    requested = Path(args.output).expanduser()
+def new_output(value, project):
+    requested = Path(value).expanduser()
     requested = requested if requested.is_absolute() else project / requested
     if requested.is_symlink():
-        raise ValueError(f"NDK output must not be a symbolic link: {requested}")
-    output = resolve_path(args.output, project)
+        raise ValueError(f"output must not be a symbolic link: {requested}")
+    output = resolve_path(value, project)
     if output.exists():
-        raise ValueError(f"NDK output already exists: {output}; choose a new directory")
+        raise ValueError(f"output already exists: {output}; choose a new directory")
+    return output
+
+
+def file_inventory(root):
+    files = {}
+    for path in sorted(root.rglob("*")):
+        if path.is_symlink():
+            raise ValueError(f"package contains a symbolic link: {path}")
+        if path.is_file():
+            files[path.relative_to(root).as_posix()] = file_sha256(path)
+        elif not path.is_dir():
+            raise ValueError(f"unsupported package entry: {path}")
+    return files
+
+
+def publish_package(staged, output, name, manifest):
+    if (staged / name).exists():
+        raise ValueError(f"package manifest already exists: {name}")
+    (staged / name).write_text(json.dumps(manifest, indent=2) + "\n")
+    if output.exists() or output.is_symlink():
+        raise ValueError(f"output appeared during export: {output}")
+    staged.rename(output)
+
+
+def export_ndk(args, lock, host, project, cache, sdk):
+    output = new_output(args.output, project)
     builder = project / "scripts/build.sh"
     if not builder.is_file():
         raise ValueError(f"export-ndk requires a source checkout at --project: {project}")
@@ -359,12 +385,7 @@ def export_ndk(args, lock, host, project, cache, sdk):
         run([sys.executable, "-B", data / "generator/signatures.py",
              "--api", data / "metadata/api.json", "--wasm", core, "--output", proof])
         reference = json.loads(proof.read_text())
-        files = {}
-        for path in sorted(staged.rglob("*")):
-            if path.is_symlink():
-                raise ValueError(f"NDK contains a symbolic link: {path}")
-            if path.is_file():
-                files[path.relative_to(staged).as_posix()] = file_sha256(path)
+        files = file_inventory(staged)
         manifest = {
             "schema_version": 1, "kind": "wasip1-native-sdk", "target": lock["target"],
             "reference": reference,
@@ -374,25 +395,56 @@ def export_ndk(args, lock, host, project, cache, sdk):
                           for name in ("lvw_bridge", "lvw_shims", "lvgl", "lvgl_thorvg", "freetype")},
             "files": files,
         }
-        (staged / "ndk.json").write_text(json.dumps(manifest, indent=2) + "\n")
-        if output.exists():
-            raise ValueError(f"NDK output appeared during export: {output}")
-        staged.rename(output)
+        publish_package(staged, output, "ndk.json", manifest)
     return {"output": str(output), "reference": reference, "files": len(files)}
+
+
+def export_sdk(args, lock, host, project, cache):
+    from host_sdk import build_host_sdk
+
+    output = new_output(args.output, project)
+    ndk = resolve_path(args.ndk, project)
+    files = file_inventory(ndk)
+    if "ndk.json" not in files:
+        raise ValueError(f"missing ndk.json at {ndk}; run export-ndk")
+    ndk_sha256 = files.pop("ndk.json")
+    native = json.loads((ndk / "ndk.json").read_text())
+    if (not isinstance(native, dict) or native.get("schema_version") != 1
+            or native.get("kind") != "wasip1-native-sdk" or native.get("target") != lock["target"]
+            or native.get("files") != files):
+        raise ValueError(f"NDK schema or file integrity mismatch: {ndk}")
+    tools = tool_report(args, lock, host, cache, None, names=["wasm-tools"])
+    if not tools["wasm-tools"]["ok"]:
+        raise ValueError(tools["wasm-tools"]["error"])
+    output.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix=".sdk-", dir=output.parent) as temporary:
+        staged = Path(temporary) / "package"
+        metadata = build_host_sdk(project, ndk, resolve_path(args.core, project), staged,
+                                  tools["wasm-tools"]["executable"])
+        files = file_inventory(staged)
+        manifest = {"schema_version": 1, "kind": "wasip1-host-sdk", "target": native["target"],
+                    "ndk_sha256": ndk_sha256, **metadata, "files": files}
+        publish_package(staged, output, "sdk.json", manifest)
+    return {"output": str(output), "identity": metadata["identity"], "files": len(files)}
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest="command", required=True)
-    for name in ("doctor", "prepare", "export-ndk"):
+    for name in ("doctor", "prepare", "export-ndk", "export-sdk"):
         command = commands.add_parser(name)
         command.add_argument("--project", default=".", help="project directory (default: cwd)")
         command.add_argument("--cache", help="tool cache, relative to project or absolute")
-        command.add_argument("--sdk", help="existing wasi-sdk; overrides WASI_SDK_PATH")
-        if name != "export-ndk":
+        if name != "export-sdk":
+            command.add_argument("--sdk", help="existing wasi-sdk; overrides WASI_SDK_PATH")
+        if name in ("doctor", "prepare"):
             command.add_argument("--with-zig", action="store_true", help="include locked Zig tools")
         else:
-            command.add_argument("--output", default="target/ndk", help="new NDK directory, relative to project or absolute")
+            command.add_argument("--output", default="target/ndk" if name == "export-ndk" else "target/host-sdk",
+                                 help="new output directory, relative to project or absolute")
+        if name == "export-sdk":
+            command.add_argument("--ndk", default="target/ndk", help="verified NDK directory")
+            command.add_argument("--core", default="target/wasm/liblvgl.wasm", help="core linked with the selected NDK")
         command.add_argument("--json", action="store_true", help="print machine-readable results")
         if name == "prepare":
             command.add_argument("--offline", action="store_true", help="never download tools")
@@ -409,11 +461,13 @@ def main():
         if not project.is_dir():
             raise ValueError(f"project must be an existing directory: {project}")
         cache = resolve_path(args.cache or "target/toolchains", project)
-        sdk_value = args.sdk or os.environ.get("WASI_SDK_PATH")
+        sdk_value = getattr(args, "sdk", None) or os.environ.get("WASI_SDK_PATH")
         sdk = resolve_path(sdk_value, project) if sdk_value else None
         result.update(host=host, target=lock["target"], project=str(project), cache=str(cache))
         if args.command == "export-ndk":
             result.update(export_ndk(args, lock, host, project, cache, sdk))
+        elif args.command == "export-sdk":
+            result.update(export_sdk(args, lock, host, project, cache))
         elif args.command == "prepare":
             import fcntl
             cache_directory(cache)
@@ -440,7 +494,7 @@ def main():
         print(json.dumps(result, indent=2))
     else:
         if "output" in result:
-            print(f"NDK: {result['output']}")
+            print(f"{'NDK' if args.command == 'export-ndk' else 'SDK'}: {result['output']}")
         for section in ("tools", "prerequisites"):
             for name, report in result.get(section, {}).items():
                 detail = (f"{report['version']}  {report['path']}" if report["ok"] else report["error"])
