@@ -7,6 +7,7 @@
 
 ### Added
 
+- Locked compiler preparation and read-only environment diagnostics with project-local caches, archive and installation integrity checks, and offline reuse.
 - Rust native host commands and source links, plus independent C preview module identities in Studio.
 - Lottie application sample with JSON resource loading, vector scaling, and native playback controls in Studio.
 - SVG application sample with geometry/gradient switching, vector scaling, and SVG/XML source highlighting in Studio.
@@ -62,6 +63,7 @@
 
 ### Fixed
 
+- Refresh cached CMake compiler configuration when selecting a different wasi-sdk.
 - Stop C preview input and frame callbacks after guest errors without calling back into the failed instance.
 - Reapplying the current Studio resolution preserves the displayed frame.
 - SVG image transform clipping, child-layer coordinates, and image drawing without an attached object; transformed bounds include complete pixel cells for invalidation.

@@ -1,0 +1,389 @@
+#!/usr/bin/env python3
+"""Prepare locked compiler tools in a project-local cache."""
+
+import argparse
+import ctypes
+import hashlib
+import http.client
+import json
+import os
+import platform
+import posixpath
+import re
+import shutil
+import stat
+import subprocess
+import sys
+import tarfile
+import tempfile
+from pathlib import Path, PurePosixPath
+from urllib.request import Request, urlopen
+
+
+RECEIPT = ".lvw-install.json"
+
+
+def host_platform():
+    host = (sys.platform, platform.machine().lower())
+    supported = {("darwin", "arm64"): "macos-arm64",
+                 ("linux", "x86_64"): "linux-x86_64"}
+    if host not in supported:
+        raise ValueError(f"unsupported build host: {host[0]}/{host[1]}")
+    return supported[host]
+
+
+def file_sha256(path):
+    digest = hashlib.sha256()
+    with path.open("rb") as source:
+        for chunk in iter(lambda: source.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def tree_sha256(root):
+    """Hash content, paths, link targets, and executable bits without following links."""
+    digest = hashlib.sha256()
+    paths = []
+    for directory, dirs, files in os.walk(root, followlinks=False):
+        paths.extend(Path(directory) / name for name in dirs + files)
+    for path in sorted(paths):
+        relative = path.relative_to(root).as_posix()
+        if relative == RECEIPT:
+            continue
+        mode = path.lstat().st_mode
+        if stat.S_ISLNK(mode):
+            record = [relative, "link", os.readlink(path)]
+        elif stat.S_ISREG(mode):
+            record = [relative, "file", mode & 0o111, file_sha256(path)]
+        elif stat.S_ISDIR(mode):
+            record = [relative, "directory"]
+        else:
+            raise ValueError(f"unsupported installed file: {path}")
+        digest.update((json.dumps(record, ensure_ascii=True) + "\n").encode())
+    return digest.hexdigest()
+
+
+def safe_extract(archive, destination, root_name):
+    """Write ordinary files before links; never write through an archive link."""
+    root = PurePosixPath(root_name)
+    if len(root.parts) != 1 or root_name in ("", ".", ".."):
+        raise ValueError("invalid archive root")
+    with tarfile.open(archive, "r:*") as source:
+        members = {}
+        for member in source.getmembers():
+            path = PurePosixPath(member.name)
+            if (path.is_absolute() or ".." in path.parts or "\\" in member.name
+                    or not path.parts or path.parts[0] != root_name):
+                raise ValueError(f"unsafe archive path: {member.name}")
+            if path in members or path == root / RECEIPT:
+                raise ValueError(f"duplicate or reserved archive path: {member.name}")
+            if not (member.isdir() or member.isreg() or member.issym() or member.islnk()):
+                raise ValueError(f"unsupported archive entry: {member.name}")
+            members[path] = member
+        if not members:
+            raise ValueError("empty archive")
+        for path, member in members.items():
+            if path == root and not member.isdir():
+                raise ValueError("archive root must be a directory")
+            for parent in path.parents:
+                if parent in members and not members[parent].isdir():
+                    raise ValueError(f"archive entry has a non-directory parent: {path}")
+            if member.issym() or member.islnk():
+                link = PurePosixPath(member.linkname)
+                if link.is_absolute() or "\\" in member.linkname or not member.linkname:
+                    raise ValueError(f"unsafe archive link: {path}")
+                target = (path.parent / link) if member.issym() else link
+                target = PurePosixPath(posixpath.normpath(str(target)))
+                if not target.parts or target.parts[0] != root_name:
+                    raise ValueError(f"archive link escapes its root: {path}")
+                if member.islnk() and (target not in members or not members[target].isreg()):
+                    raise ValueError(f"hard link must name a regular archive file: {path}")
+        # destination is a fresh private temporary directory supplied by prepare.
+        for path, member in members.items():
+            output = destination / str(path)
+            output.parent.mkdir(parents=True, exist_ok=True)
+            if member.isdir():
+                output.mkdir(exist_ok=True)
+            elif member.isreg():
+                with source.extractfile(member) as reader, output.open("xb") as writer:
+                    shutil.copyfileobj(reader, writer)
+                output.chmod(0o755 if member.mode & 0o111 else 0o644)
+        for path, member in members.items():
+            if member.islnk():
+                os.link(destination / posixpath.normpath(member.linkname), destination / str(path))
+            elif member.issym():
+                os.symlink(member.linkname, destination / str(path))
+        installed = destination / root_name
+        for path, member in members.items():
+            if member.issym():
+                resolved = (destination / str(path)).resolve(strict=True)
+                if not resolved.is_relative_to(installed):
+                    raise ValueError(f"archive link escapes its root: {path}")
+        return installed
+
+
+def ordinary_path(path, directory=False):
+    if path.is_symlink() or (path.exists() and not
+                            (path.is_dir() if directory else path.is_file())):
+        raise ValueError(f"invalid cache path: {path}")
+
+
+def cache_directory(path):
+    ordinary_path(path, directory=True)
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def archive_file(cache, asset):
+    return cache / "archives" / (asset["sha256"] + "-" + asset["url"].rsplit("/", 1)[1])
+
+
+def verify_archive(path, asset):
+    ordinary_path(path)
+    if path.stat().st_size != asset["size"] or file_sha256(path) != asset["sha256"]:
+        raise ValueError(f"archive size/SHA-256 mismatch: {path}; remove it before retrying")
+
+
+def fetch_archive(cache, asset, offline):
+    path = archive_file(cache, asset)
+    if path.exists() or path.is_symlink():
+        verify_archive(path, asset)
+        return path
+    if offline:
+        raise ValueError(f"offline archive missing: {path}")
+    urls = [asset["url"]] + ([asset["fallback_url"]] if "fallback_url" in asset else [])
+    if any(not url.startswith("https://") for url in urls):
+        raise ValueError("tool downloads require HTTPS")
+    cache_directory(path.parent)
+    descriptor, temporary = tempfile.mkstemp(prefix=".download-", dir=path.parent)
+    os.close(descriptor)
+    temporary = Path(temporary)
+    try:
+        for url in urls:
+            print(f"Downloading {url}", file=sys.stderr)
+            request = Request(url, headers={"User-Agent": "liblvgl-wasm-toolchains",
+                                            "Accept": "application/octet-stream"})
+            try:
+                with temporary.open("wb") as output, urlopen(request, timeout=60) as response:
+                    if not response.url.startswith("https://"):
+                        raise ValueError("tool download redirected outside HTTPS")
+                    size = 0
+                    for chunk in iter(lambda: response.read(1024 * 1024), b""):
+                        size += len(chunk)
+                        if size > asset["size"]:
+                            raise ValueError("tool download exceeds its locked size")
+                        output.write(chunk)
+            except (OSError, http.client.HTTPException) as error:
+                if url == urls[-1]:
+                    raise ValueError(f"download failed: {url}: {error}") from error
+                print(f"Download failed: {error}; trying the locked alternate URL", file=sys.stderr)
+                continue
+            verify_archive(temporary, asset)
+            os.replace(temporary, path)
+            break
+    finally:
+        temporary.unlink(missing_ok=True)
+    return path
+
+
+def run_version(command):
+    result = subprocess.run([str(item) for item in command], capture_output=True,
+                            text=True, timeout=20, check=False)
+    if result.returncode:
+        raise ValueError(f"{command[0]} failed: {(result.stderr or result.stdout).strip()[:1000]}")
+    if not result.stdout.strip():
+        raise ValueError(f"{command[0]} returned no version output")
+    return result.stdout.strip()
+
+
+def require_files(root, files, executables=()):
+    missing = [name for name in files if not (root / name).is_file()]
+    missing += [name for name in executables if not
+                ((root / name).is_file() and os.access(root / name, os.X_OK))]
+    if missing:
+        raise ValueError(f"incomplete tool at {root}: {', '.join(missing)}")
+
+
+def check_tool(name, root, spec, host):
+    if name == "wasi-sdk":
+        runtime = "share/wasi-sysroot/lib/wasm32-wasip1/"
+        library = "lib/libclang.dylib" if host == "macos-arm64" else "lib/libclang.so"
+        require_files(root, ["VERSION", "share/cmake/wasi-sdk-p1.cmake", library,
+                            "share/wasi-sysroot/include/wasm32-wasip1/stdlib.h",
+                            "lib/clang/23/lib/wasm32-unknown-wasip1/libclang_rt.builtins.a",
+                            *[runtime + item for item in ("libc.a", "libsetjmp.a", "crt1-reactor.o",
+                              "eh/libc++.a", "eh/libc++abi.a", "eh/libunwind.a")]],
+                      ["bin/clang", "bin/clang++", "bin/wasm-ld", "bin/llvm-ar"])
+        version = (root / "VERSION").read_text().partition("\n")[0]
+        compiler = run_version([root / "bin/clang", "--version"]).splitlines()[0]
+        if not compiler.startswith(f"clang version {spec['clang_version']}-wasi-sdk "):
+            raise ValueError(f"unexpected SDK compiler: {compiler}")
+        if run_version([root / "bin/clang", "-dumpmachine"]) != "wasm32-unknown-wasip1":
+            raise ValueError("SDK compiler default target must be wasm32-unknown-wasip1")
+        # Loading libclang also diagnoses missing Linux shared-library dependencies.
+        ctypes.CDLL(str(root / library))
+        executable = root / "bin/clang"
+    else:
+        executable = root / name
+        require_files(root, ["lib/std/std.zig"] if name == "zig" else [], [name])
+        output = run_version([executable, "version" if name == "zig" else "--version"])
+        if name == "zig":
+            version = output
+        else:
+            match = re.fullmatch(r"wasm-tools (\d+\.\d+\.\d+)(?: \([0-9a-f]+ \d{4}-\d{2}-\d{2}\))?", output)
+            if not match:
+                raise ValueError(f"unexpected wasm-tools version output: {output}")
+            version = match[1]
+    if version != spec["version"]:
+        raise ValueError(f"{name}: expected {spec['version']}, found {version}")
+    return {"version": version, "path": str(root), "executable": str(executable)}
+
+
+def installation(cache, name, spec, host):
+    return cache / "tools" / f"{name}-{spec['version']}-{host}"
+
+
+def verify_installation(path, asset):
+    ordinary_path(path, directory=True)
+    receipt = path / RECEIPT
+    ordinary_path(receipt)
+    if not receipt.is_file():
+        raise ValueError(f"installation missing or incomplete: {path}; run prepare")
+    identity = json.loads(receipt.read_text())
+    if (not isinstance(identity, dict) or identity.get("schema_version") != 1
+            or identity.get("archive_sha256") != asset["sha256"]
+            or identity.get("tree_sha256") != tree_sha256(path)):
+        raise ValueError(f"installation integrity mismatch: {path}; move it aside before prepare")
+
+
+def prepare_tool(cache, name, spec, host, offline):
+    path = installation(cache, name, spec, host)
+    asset = spec["archives"][host]
+    if path.exists() or path.is_symlink():
+        verify_installation(path, asset)
+        cached_archive = archive_file(cache, asset)
+        if cached_archive.exists() or cached_archive.is_symlink():
+            verify_archive(cached_archive, asset)
+        return check_tool(name, path, spec, host)
+    archive = fetch_archive(cache, asset, offline)
+    tools = cache_directory(cache / "tools")
+    with tempfile.TemporaryDirectory(prefix=".install-", dir=tools) as temporary:
+        extracted = safe_extract(archive, Path(temporary), asset["root"])
+        check_tool(name, extracted, spec, host)
+        receipt = {"schema_version": 1, "archive_sha256": asset["sha256"],
+                   "tree_sha256": tree_sha256(extracted)}
+        (extracted / RECEIPT).write_text(json.dumps(receipt, indent=2) + "\n")
+        extracted.rename(path)
+    return check_tool(name, path, spec, host)
+
+
+def prerequisite(name, minimum):
+    path = shutil.which(name)
+    if not path:
+        return {"ok": False, "error": f"{name} not found on PATH"}
+    try:
+        output = run_version([path, "--version"]).splitlines()[0]
+        match = re.search(r"\b(\d+)\.(\d+)(?:\.(\d+))?", output)
+        if not match or tuple(int(part or 0) for part in match.groups()) < minimum:
+            raise ValueError(f"{name} requires {'.'.join(map(str, minimum))}+, found {output}")
+        return {"ok": True, "path": path, "version": output}
+    except (OSError, ValueError, subprocess.SubprocessError) as error:
+        return {"ok": False, "path": path, "error": str(error)}
+
+
+def tool_report(args, lock, host, cache, sdk):
+    for child in ("archives", "tools"):
+        ordinary_path(cache / child, directory=True)
+    reports = {}
+    for name in ["wasi-sdk", "wasm-tools"] + (["zig"] if args.with_zig else []):
+        spec = lock["tools"][name]
+        explicit = name == "wasi-sdk" and sdk is not None
+        report = {"source": "user" if explicit else "managed", "ok": False}
+        try:
+            if explicit:
+                result = check_tool(name, sdk, spec, host)
+            elif args.command == "prepare":
+                result = prepare_tool(cache, name, spec, host, args.offline)
+            else:
+                path = installation(cache, name, spec, host)
+                verify_installation(path, spec["archives"][host])
+                result = check_tool(name, path, spec, host)
+            report.update(result, ok=True)
+            if not explicit:
+                report["archive_sha256"] = spec["archives"][host]["sha256"]
+        except (OSError, ValueError, RuntimeError, tarfile.TarError,
+                subprocess.SubprocessError) as error:
+            report["error"] = str(error)
+        reports[name] = report
+    return reports
+
+
+def resolve_path(value, project):
+    path = Path(value).expanduser()
+    return (path if path.is_absolute() else project / path).resolve()
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    commands = parser.add_subparsers(dest="command", required=True)
+    for name in ("doctor", "prepare"):
+        command = commands.add_parser(name)
+        command.add_argument("--project", default=".", help="project directory (default: cwd)")
+        command.add_argument("--cache", help="tool cache, relative to project or absolute")
+        command.add_argument("--sdk", help="existing wasi-sdk; overrides WASI_SDK_PATH")
+        command.add_argument("--with-zig", action="store_true", help="include locked Zig tools")
+        command.add_argument("--json", action="store_true", help="print machine-readable results")
+        if name == "prepare":
+            command.add_argument("--offline", action="store_true", help="never download tools")
+    args = parser.parse_args()
+    result = {"schema_version": 1, "command": args.command, "ok": False}
+    try:
+        if sys.version_info < (3, 9):
+            raise ValueError("Python 3.9+ is required")
+        host = host_platform()
+        lock = json.loads(Path(__file__).with_name("tools.lock.json").read_text())
+        if lock["schema_version"] != 1:
+            raise ValueError("unsupported tool lock schema")
+        project = Path(args.project).expanduser().resolve(strict=True)
+        if not project.is_dir():
+            raise ValueError(f"project must be an existing directory: {project}")
+        cache = resolve_path(args.cache or "target/toolchains", project)
+        sdk_value = args.sdk or os.environ.get("WASI_SDK_PATH")
+        sdk = resolve_path(sdk_value, project) if sdk_value else None
+        result.update(host=host, target=lock["target"], project=str(project), cache=str(cache))
+        if args.command == "prepare":
+            import fcntl
+            cache_directory(cache)
+            # Nonblocking: a second process must not publish into the same cache.
+            descriptor = os.open(cache / ".prepare.lock", os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
+            with os.fdopen(descriptor, "a") as handle:
+                try:
+                    fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                except BlockingIOError as error:
+                    raise ValueError(f"another prepare is using cache: {cache}") from error
+                result["tools"] = tool_report(args, lock, host, cache, sdk)
+        else:
+            result["tools"] = tool_report(args, lock, host, cache, sdk)
+            result["prerequisites"] = {
+                "python": {"ok": True, "path": sys.executable, "version": platform.python_version()},
+                "cmake": prerequisite("cmake", (3, 25, 0)),
+                "ninja": prerequisite("ninja", (1, 0, 0)),
+            }
+        result["ok"] = all(item["ok"] for section in ("tools", "prerequisites")
+                           for item in result.get(section, {}).values())
+    except (OSError, ValueError, KeyError) as error:
+        result["error"] = str(error)
+    if args.json:
+        print(json.dumps(result, indent=2))
+    else:
+        for section in ("tools", "prerequisites"):
+            for name, report in result.get(section, {}).items():
+                detail = (f"{report['version']}  {report['path']}" if report["ok"] else report["error"])
+                print(f"{name}: {detail}")
+        if "error" in result:
+            print(result["error"], file=sys.stderr)
+    return 0 if result["ok"] else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

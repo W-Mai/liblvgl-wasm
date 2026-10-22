@@ -23,11 +23,21 @@ if [ -n "$source_dir" ]; then
     fi
 fi
 
-cmake -S "$root" -B "$root/target/wasm" -G Ninja \
+set -- cmake -S "$root" -B "$root/target/wasm" -G Ninja \
     -DCMAKE_MAKE_PROGRAM="$ninja" \
     -DCMAKE_TOOLCHAIN_FILE="$sdk/share/cmake/wasi-sdk-p1.cmake" \
     -DFETCHCONTENT_SOURCE_DIR_LVGL:PATH="$source_dir" \
     -DCMAKE_BUILD_TYPE=Release
+if [ -f "$root/target/wasm/CMakeCache.txt" ]; then
+    configured_sdk=$(cat "$root/target/wasm/.wasi-sdk" 2>/dev/null || :)
+    cached_toolchain=$(sed -n 's/^CMAKE_TOOLCHAIN_FILE:[^=]*=//p' "$root/target/wasm/CMakeCache.txt")
+    if [ "$configured_sdk" != "$sdk" ] || [ "$cached_toolchain" != "$sdk/share/cmake/wasi-sdk-p1.cmake" ]; then
+        printf 'Refreshing CMake configuration for wasi-sdk: %s\n' "$sdk"
+        set -- "$@" --fresh
+    fi
+fi
+"$@"
+printf '%s\n' "$sdk" > "$root/target/wasm/.wasi-sdk"
 
 cmake --build "$root/target/wasm" --target lvgl -j 4
 if [ -z "$source_dir" ]; then

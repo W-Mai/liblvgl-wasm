@@ -28,22 +28,24 @@ jobs:
           rustup toolchain install 1.92.0 --profile minimal \
             --component rustfmt --component clippy --target wasm32-unknown-unknown
       - name: Install wasi-sdk and wasm-tools
-        working-directory: ${{ runner.temp }}
+        shell: python
         run: |
-          curl --fail --location --retry 3 --output wasi-sdk.tar.gz \
-            https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-34/wasi-sdk-34.0-x86_64-linux.tar.gz
-          curl --fail --location --retry 3 --output wasm-tools.tar.gz \
-            https://github.com/bytecodealliance/wasm-tools/releases/download/v1.246.2/wasm-tools-1.246.2-x86_64-linux.tar.gz
-          printf '%s\n' \
-            'b761e3a0721dbae9c09a0059e5fdb2bf917d1b4a8a7b430fb3b5aafb0984b2c4  wasi-sdk.tar.gz' \
-            'f0df9428792225322e9b4344ca581f03b1740d509d6bdad33d14a810009be9ec  wasm-tools.tar.gz' \
-            | sha256sum --check
-          mkdir wasi-sdk wasm-tools
-          tar -xzf wasi-sdk.tar.gz --strip-components=1 -C wasi-sdk
-          tar -xzf wasm-tools.tar.gz --strip-components=1 -C wasm-tools
-          test -x wasi-sdk/bin/clang
-          test -x wasm-tools/wasm-tools
-          printf 'WASI_SDK_PATH=%s/wasi-sdk\n' "$RUNNER_TEMP" >> "$GITHUB_ENV"
-          printf '%s/wasm-tools\n' "$RUNNER_TEMP" >> "$GITHUB_PATH"
+          import json
+          import os
+          import subprocess
+          import sys
+          from pathlib import Path
+
+          cache = str(Path(os.environ["RUNNER_TEMP"]) / "lvw-tools")
+          result = subprocess.run([sys.executable, "-B", "toolchains/lvw.py", "prepare",
+                                   "--cache", cache, "--json"], stdout=subprocess.PIPE, text=True)
+          print(result.stdout)
+          result.check_returncode()
+          tools = json.loads(result.stdout)["tools"]
+          with open(os.environ["GITHUB_ENV"], "a") as output:
+              output.write(f"WASI_SDK_PATH={tools['wasi-sdk']['path']}\n")
+          with open(os.environ["GITHUB_PATH"], "a") as output:
+              output.write(str(Path(tools["wasm-tools"]["executable"]).parent) + "\n")
+          subprocess.run([sys.executable, "-B", "toolchains/lvw.py", "doctor", "--cache", cache], check=True)
       - name: Check
         run: bun run quality

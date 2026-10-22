@@ -17,6 +17,28 @@ WASI_SDK_PATH=/path/to/wasi-sdk ./scripts/build.sh
 
 The build script can be invoked from another working directory. Relative SDK and source paths resolve from the caller's directory. A valid cached source override is reused; a missing cached source falls back to the pinned archive. An invalid explicit `LVGL_SOURCE_DIR` stops the build with an error.
 
+Changing the SDK refreshes CMake's cached compiler configuration while retaining downloaded sources and build files. Legacy build directories without an SDK configuration record are also refreshed. The selected LVGL source override is reapplied; other manually added CMake cache settings must be supplied again after a refresh.
+
+### Compiler preparation
+
+`toolchains/lvw.py` prepares wasi-sdk 34.0 and wasm-tools 1.246.2 from the official archives pinned in `toolchains/tools.lock.json`. `--with-zig` also prepares Zig 0.15.2. Python 3.9+ and the standard library are sufficient for preparation.
+
+```sh
+python3 -B toolchains/lvw.py prepare
+python3 -B toolchains/lvw.py doctor --json
+python3 -B toolchains/lvw.py prepare --offline
+```
+
+`--project` selects an existing directory and defaults to the current working directory. Downloads and complete tool installations default to `<project>/target/toolchains/`. `--cache` selects a shared cache, with relative paths resolved against `--project`. The entry point and lock file can be moved together into a read-only directory and invoked by absolute path from another project.
+
+`doctor` checks Python, CMake 3.25+, Ninja, the selected tool versions, the SDK's libclang loader, and required WASIp1 headers and runtime libraries. It reads the cache without downloading or compiling. `--json` reports success, paths, versions, tool origins, archive hashes, and errors; either command exits nonzero on failure. Use the reported `wasi-sdk.path` as `WASI_SDK_PATH` for `scripts/build.sh` and the reported `wasm-tools.executable` to validate modules. Bun, Rust, the Rust target, and Linux shared-library prerequisites remain the requirements listed above.
+
+`--sdk /path/to/wasi-sdk` takes precedence over `WASI_SDK_PATH`; both select an existing SDK instead of downloading one. Relative SDK paths resolve against `--project`. These SDKs are reported as `source: user` and checked for version and required files; they have no managed archive identity. Managed tools are selected from this command's cache, without searching old build directories or `PATH` for substitutes.
+
+Preparation verifies archive size and SHA-256, rejects escaping archive paths and links, and publishes installations only after validation. Reuse checks the complete installed tree, including file bytes, executable bits, and link targets. A cache lock prevents concurrent preparation from publishing partial tools. Invalid existing archives or installations produce an error; remove the named archive or move the named installation aside before retrying. `--offline` reuses verified installations or cached archives and never downloads. This option covers compiler preparation; source archives and Bun/Cargo dependencies have their own build requirements.
+
+macOS arm64 preparation, relocation, offline reuse, and a C++ standard-exception/SJLJ reactor have been checked locally. Linux x86_64 archives are configured; this preparation path requires validation in Linux CI. Other build hosts are rejected.
+
 CMake compiles adapted copies of the pinned `lv_observer.c` and `lv_image_decoder.c` with bridge notifications at native deletion points. Decoder deinitialization deletes individual decoders to deliver those notifications. The original source tree stays unchanged; different source hashes are rejected. The adapted `liblvgl.a` requires the bridge's `lvw_observer_release_native` and `lvw_decoder_release_native` implementations.
 
 The pinned `lv_gif.c` also compiles from an adapted copy that preserves playback during frame-count queries, applies each frame's delay, stops timers before closing sources, and delivers completion events after frame processing.
