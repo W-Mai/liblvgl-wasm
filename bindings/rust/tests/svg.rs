@@ -15,6 +15,158 @@ fn expected() -> Value {
     serde_json::from_str(include_str!("../../../tests/fixtures/svg/expected.json")).unwrap()
 }
 
+fn assert_transformed(frame: &Frame, case: &Value) {
+    let mut pixel = 0;
+    for run in case["runs"].as_array().unwrap() {
+        for _ in 0..number(&run[0]) {
+            let actual = frame.pixel(pixel % WIDTH, pixel / WIDTH);
+            for (channel, value) in actual.iter().enumerate() {
+                let margin = if channel == 3 {
+                    0
+                } else {
+                    number(&run[3]) as i32
+                };
+                let lower = number(&run[1][channel]) as i32 - margin;
+                let upper = number(&run[2][channel]) as i32 + margin;
+                assert!(
+                    (lower..=upper).contains(&i32::from(*value)),
+                    "{} ({}, {}) channel {channel}: {value} outside {lower}..{upper}",
+                    case["name"],
+                    pixel % WIDTH,
+                    pixel / WIDTH
+                );
+            }
+            pixel += 1;
+        }
+    }
+    assert_eq!(pixel, WIDTH * HEIGHT);
+}
+
+#[test]
+fn svg_image_transforms_preserve_coverage_clips_layers_and_objectless_draws() -> Result<()> {
+    let reference: Value =
+        serde_json::from_str(include_str!("../../../tests/fixtures/svg/transforms.json"))?;
+    let (mut runtime, display, screen) = load(&reference)?;
+    runtime
+        .raw()?
+        .lv_obj_remove_flag(screen, values::LV_OBJ_FLAG_SCROLLABLE)?;
+    let name = reference["file"].as_str().unwrap();
+    let bytes = fixture(name)?;
+    assert_eq!(
+        format!("{:x}", Sha256::digest(&bytes)),
+        reference["sha256"].as_str().unwrap()
+    );
+    let path = upload(&mut runtime, name, &bytes)?;
+    for case in reference["cases"].as_array().unwrap() {
+        let integer = |value: &Value| value.as_i64().unwrap() as i32;
+        let parent = {
+            let mut raw = runtime.raw()?;
+            let parent = if let Some(spec) = case.get("parent") {
+                let object = raw.lv_obj_create(screen)?;
+                raw.lv_obj_remove_style_all(object)?;
+                raw.lv_obj_remove_flag(object, values::LV_OBJ_FLAG_SCROLLABLE)?;
+                raw.lv_obj_set_pos(object, integer(&spec[0]), integer(&spec[1]))?;
+                raw.lv_obj_set_size(object, integer(&spec[2]), integer(&spec[3]))?;
+                raw.lv_obj_set_style_opa(object, integer(&spec[4]), values::LV_PART_MAIN)?;
+                object
+            } else {
+                screen
+            };
+            let image = raw.lv_image_create(parent)?;
+            raw.lv_image_set_src(image, path)?;
+            raw.lv_image_set_pivot(
+                image,
+                integer(&case["pivot"][0]),
+                integer(&case["pivot"][1]),
+            )?;
+            raw.lv_image_set_scale_x(image, integer(&case["scale"][0]))?;
+            raw.lv_image_set_scale_y(image, integer(&case["scale"][1]))?;
+            raw.lv_image_set_rotation(image, integer(&case["rotation"]))?;
+            raw.lv_obj_set_pos(
+                image,
+                integer(&case["position"][0]),
+                integer(&case["position"][1]),
+            )?;
+            if parent == screen { image } else { parent }
+        };
+        assert_transformed(&frame(&mut runtime, display, screen)?, case);
+        runtime.raw()?.lv_obj_delete(parent)?;
+        assert_frame(&frame(&mut runtime, display, screen)?, &reference, &[]);
+    }
+
+    let overflowing = String::from_utf8(bytes)?.replace(
+        "</svg>",
+        "<rect x=\"16\" y=\"0\" width=\"16\" height=\"12\" fill=\"#f00000\"/></svg>",
+    );
+    let bounded_path = upload(&mut runtime, "overflow.svg", overflowing.as_bytes())?;
+    let bounded = image(&mut runtime, screen, FIRST)?;
+    runtime.raw()?.lv_image_set_src(bounded, bounded_path)?;
+    runtime.free(bounded_path.0)?;
+    let geometry = expected();
+    let case = geometry["cases"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|case| case["file"] == name)
+        .unwrap();
+    assert_frame(
+        &frame(&mut runtime, display, screen)?,
+        &geometry,
+        &[(case, FIRST)],
+    );
+    runtime.raw()?.lv_obj_delete(bounded)?;
+    assert_frame(&frame(&mut runtime, display, screen)?, &reference, &[]);
+
+    let descriptor = UnsafePointer(runtime.alloc(values::LV_DRAW_IMAGE_DSC_T_SIZE)?);
+    runtime.raw()?.lv_draw_image_dsc_init(descriptor)?;
+    for (name, value) in [("src", path.0), ("scale_x", 512), ("scale_y", 512)] {
+        let field = values::LV_DRAW_IMAGE_DSC_T_FIELDS
+            .iter()
+            .find(|field| field.name == Some(name))
+            .unwrap();
+        assert!(field.bit_width.is_none());
+        runtime.write_memory(
+            descriptor.0 + field.bit_offset as u32 / 8,
+            &value.to_le_bytes(),
+        )?;
+    }
+    let area = UnsafePointer(runtime.alloc(values::LV_AREA_T_SIZE)?);
+    for (name, value) in [("x1", 3_i32), ("y1", 2), ("x2", 34), ("y2", 25)] {
+        let field = values::LV_AREA_T_FIELDS
+            .iter()
+            .find(|field| field.name == Some(name))
+            .unwrap();
+        assert!(field.bit_width.is_none());
+        runtime.write_memory(area.0 + field.bit_offset as u32 / 8, &value.to_le_bytes())?;
+    }
+    runtime.set_event_handler_with_context(move |context, _| {
+        let event = context.event_pointer()?;
+        let mut raw = context.raw()?;
+        let layer = raw.lv_event_get_layer(event)?;
+        raw.lv_draw_image(layer, descriptor, area)
+    })?;
+    assert_eq!(
+        runtime.call_raw::<_, i32>(
+            "lvw_event_add",
+            (screen.0, values::LV_EVENT_DRAW_MAIN_END, 1u32)
+        )?,
+        0
+    );
+    assert_transformed(
+        &frame(&mut runtime, display, screen)?,
+        &reference["cases"][0],
+    );
+    assert_eq!(
+        runtime.call_raw::<_, i32>("lvw_event_remove", (screen.0, 1u32))?,
+        0
+    );
+    assert_frame(&frame(&mut runtime, display, screen)?, &reference, &[]);
+    runtime.free(area.0)?;
+    runtime.free(descriptor.0)?;
+    runtime.free(path.0)?;
+    runtime.shutdown()
+}
+
 fn fixture(name: &str) -> Result<Vec<u8>> {
     Ok(std::fs::read(
         Path::new(env!("CARGO_MANIFEST_DIR"))

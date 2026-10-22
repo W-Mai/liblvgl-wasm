@@ -12,19 +12,31 @@ const keywords: Record<string, Set<string>> = {
 };
 
 const tokenPattern = /\/\*[\s\S]*?(?:\*\/|$)|\/\/[^\n]*|#[^\n]*|"(?:\\.|[^"\\])*"?|'(?:\\.|[^'\\])*'?|`(?:\\.|[^`\\])*`?|\b(?:0[xX][\da-fA-F]+|\d+(?:\.\d+)?)\b|[A-Za-z_$][\w$]*/g;
+const markupPattern = /<!--[\s\S]*?(?:-->|$)|<!\[CDATA\[[\s\S]*?(?:\]\]>|$)|<\?[\s\S]*?(?:\?>|$)|<\/?[A-Za-z_][\w:.-]*|\/?>|"[^"]*(?:"|$)|'[^']*(?:'|$)|[A-Za-z_:][\w:.-]*(?=\s*=)/g;
 
 export function tokenizeSource(source: string, filename: string): SourceToken[] {
   const extension = filename.split(".").at(-1) || "";
   const language = extension === "h" ? "c" : extension;
+  const markup = language === "svg" || language === "xml";
+  const pattern = markup ? markupPattern : tokenPattern;
   const tokens: SourceToken[] = [];
-  tokenPattern.lastIndex = 0;
+  pattern.lastIndex = 0;
+  let inTag = false;
   let offset = 0;
-  for (const match of source.matchAll(tokenPattern)) {
+  for (const match of source.matchAll(pattern)) {
     const index = match.index;
     if (index > offset) tokens.push({ text: source.slice(offset, index) });
     const text = match[0];
     let kind: TokenKind | undefined;
-    if (text.startsWith("//") || text.startsWith("/*")) kind = "comment";
+    if (markup) {
+      if (text.startsWith("<!--")) kind = "comment";
+      else if (text.startsWith("<?")) kind = "directive";
+      else if (text.startsWith("<![CDATA[")) { /* Keep literal data unstyled. */ }
+      else if (text.startsWith("<")) { kind = "keyword"; inTag = true; }
+      else if (text === ">" || text === "/>") inTag = false;
+      else if (inTag) kind = /^["']/.test(text) ? "string" : "type";
+    }
+    else if (text.startsWith("//") || text.startsWith("/*")) kind = "comment";
     else if (text.startsWith("#")) kind = language === "sh" || language === "toml" ? "comment" : "directive";
     else if (/^["'`]/.test(text)) kind = "string";
     else if (/^\d/.test(text)) kind = "number";

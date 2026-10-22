@@ -3,14 +3,91 @@ import {
   LV_COLOR_FORMAT_ARGB8888, LV_COLOR_T_SIZE, LV_EVENT_DRAW_MAIN_END,
   LV_IMAGE_DSC_T_FIELDS, LV_IMAGE_DSC_T_SIZE, LV_IMAGE_HEADER_MAGIC,
   LV_IMAGE_HEADER_T_FIELDS, LV_IMAGE_HEADER_T_SIZE, LV_OPA_COVER, LV_PART_MAIN,
-  LV_RESULT_INVALID,
+  LV_RESULT_INVALID, LV_OBJ_FLAG_SCROLLABLE, LV_SCALE_NONE,
+  LV_DRAW_IMAGE_DSC_T_SIZE, LV_DRAW_IMAGE_DSC_T_FIELDS, LV_AREA_T_SIZE, LV_AREA_T_FIELDS,
   LvglRuntime, type Frame,
 } from "../bindings/typescript/src/index.ts";
 import fixture from "./fixtures/svg/expected.json";
+import transforms from "./fixtures/svg/transforms.json";
 
 type Sample = typeof fixture.cases[number];
 type Raw = LvglRuntime["unsafe"];
 type Placement = { sample: Sample; x: number; y: number };
+
+function transformedPixels(frame: Frame, sample: typeof transforms.cases[number]): void {
+  let pixel = 0;
+  for (const [length, lower, upper, tolerance] of sample.runs as [number, number[], number[], number][]) {
+    for (let repeat = 0; repeat < length; repeat++, pixel++) {
+      for (let channel = 0; channel < 4; channel++) {
+        const actual = frame.rgba[pixel * 4 + channel]!;
+        const margin = channel === 3 ? 0 : tolerance;
+        const message = `${sample.name} (${pixel % 80},${Math.floor(pixel / 80)}) channel ${channel}: ${actual} vs ${lower[channel]}..${upper[channel]}`;
+        expect(actual, message).toBeGreaterThanOrEqual(lower[channel]! - margin);
+        expect(actual, message).toBeLessThanOrEqual(upper[channel]! + margin);
+      }
+    }
+  }
+  expect(pixel).toBe(80 * 40);
+}
+
+test("SVG image transforms preserve vector coverage, parent clips, layers, and invalidation", async () => {
+  const { runtime, raw, display, screen } = await load();
+  raw.lv_obj_remove_flag(screen.handle, LV_OBJ_FLAG_SCROLLABLE);
+  const bytes = await Bun.file(`tests/fixtures/svg/${transforms.file}`).bytes();
+  expect(new Bun.CryptoHasher("sha256").update(bytes).digest("hex")).toBe(transforms.sha256);
+  runtime.putResource(transforms.file, bytes);
+  runtime.step(250);
+  for (const sample of transforms.cases) {
+    let parent = screen.handle;
+    if ("parent" in sample) {
+      const [x, y, width, height, opacity] = sample.parent!;
+      parent = raw.lv_obj_create(parent);
+      raw.lv_obj_remove_style_all(parent);
+      raw.lv_obj_remove_flag(parent, LV_OBJ_FLAG_SCROLLABLE);
+      raw.lv_obj_set_pos(parent, x!, y!);
+      raw.lv_obj_set_size(parent, width!, height!);
+      raw.lv_obj_set_style_opa(parent, opacity!, LV_PART_MAIN);
+    }
+    const image = raw.lv_image_create(parent);
+    const path = copy(raw, new TextEncoder().encode(`W:${transforms.file}`));
+    raw.lv_image_set_src(image, path); raw.lvw_free(path);
+    raw.lv_image_set_pivot(image, sample.pivot[0]!, sample.pivot[1]!);
+    raw.lv_image_set_scale_x(image, sample.scale[0]!);
+    raw.lv_image_set_scale_y(image, sample.scale[1]!);
+    raw.lv_image_set_rotation(image, sample.rotation);
+    raw.lv_obj_set_pos(image, sample.position[0]!, sample.position[1]!);
+    runtime.step(250);
+    transformedPixels(runtime.readFrame(display), sample);
+    raw.lv_obj_delete(parent === screen.handle ? image : parent);
+    runtime.step(250);
+    pixels(runtime.readFrame(display), []);
+  }
+
+  const overflowing = new TextDecoder().decode(bytes).replace("</svg>", '<rect x="16" y="0" width="16" height="12" fill="#f00000"/></svg>');
+  runtime.putResource("overflow.svg", new TextEncoder().encode(overflowing));
+  const bounded = runtime.createImage(screen);
+  runtime.setImageSource(bounded, "W:overflow.svg");
+  bounded.setPosition(4, 4); runtime.step(250);
+  pixels(runtime.readFrame(display), [{ sample: fixture.cases.find(sample => sample.file === transforms.file)!, x: 4, y: 4 }]);
+  raw.lv_obj_delete(bounded.handle); runtime.step(250);
+  pixels(runtime.readFrame(display), []);
+
+  const descriptor = raw.lvw_alloc(LV_DRAW_IMAGE_DSC_T_SIZE);
+  raw.lv_draw_image_dsc_init(descriptor);
+  const path = copy(raw, new TextEncoder().encode(`W:${transforms.file}`));
+  const area = raw.lvw_alloc(LV_AREA_T_SIZE);
+  const view = new DataView(raw.memory.buffer);
+  view.setUint32(descriptor + offset(LV_DRAW_IMAGE_DSC_T_FIELDS, "src"), path, true);
+  for (const name of ["scale_x", "scale_y"]) view.setUint32(descriptor + offset(LV_DRAW_IMAGE_DSC_T_FIELDS, name), LV_SCALE_NONE * 2, true);
+  for (const [name, value] of Object.entries({ x1: 3, y1: 2, x2: 34, y2: 25 })) view.setInt32(area + offset(LV_AREA_T_FIELDS, name), value, true);
+  const stop = screen.on(LV_EVENT_DRAW_MAIN_END, () => raw.lv_draw_image(raw.lv_event_get_layer(runtime.eventPointer()), descriptor, area));
+  raw.lv_obj_invalidate(screen.handle); runtime.step(250);
+  transformedPixels(runtime.readFrame(display), transforms.cases[0]!);
+  stop(); raw.lv_obj_invalidate(screen.handle); runtime.step(250);
+  pixels(runtime.readFrame(display), []);
+  raw.lvw_free(area); raw.lvw_free(path); raw.lvw_free(descriptor);
+  runtime.shutdown();
+});
 
 async function load() {
   const runtime = await LvglRuntime.load(await Bun.file("target/wasm/liblvgl.wasm").arrayBuffer());

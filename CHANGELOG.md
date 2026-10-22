@@ -7,6 +7,7 @@
 
 ### Added
 
+- SVG application sample with geometry/gradient switching, vector scaling, and SVG/XML source highlighting in Studio.
 - TinyTTF application sample with font resource loading, native resizing, and label layout updates in Studio.
 - FreeType application sample with native bitmap/outline glyphs, rendering mode switching, and 16/32 px font replacement in Studio.
 - GIF application sample with native playback, pause, resume, and restart controls in Studio.
@@ -59,6 +60,8 @@
 
 ### Fixed
 
+- Reapplying the current Studio resolution preserves the displayed frame.
+- SVG image transform clipping, child-layer coordinates, and image drawing without an attached object; transformed bounds include complete pixel cells for invalidation.
 - Cancelled Studio loads remain stopped, retired runners cannot restore stale library details, and closing details restores keyboard focus after application errors.
 - SVG viewBox attribute ordering, percentage gradient stops, long root headers, document completion checks, and decoder failure cleanup.
 - Premultiplied alpha compositing and exact font-size scaling for software outline glyphs.

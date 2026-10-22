@@ -89,6 +89,18 @@ const tsSamples: Record<string, Toolchain> = {
     links: [["tinyttf.ts", "/toolchains/ts/samples/tinyttf.ts"], ["api.ts", "/toolchains/ts/api.ts"], ["sdk.ts", "/toolchains/ts/sdk.ts"]],
     resources: [{ name: "geometry.ttf", url: "/tests/fixtures/tinyttf/geometry.ttf" }],
   },
+  svg: {
+    ...toolchains.ts, sampleName: "SVG",
+    summary: "Render SVG geometry and gradients from W: resources at 4× scale.",
+    command: "bun run build:ts-samples\n# upload target/apps/ts/samples/svg.js",
+    sample: "/target/apps/ts/samples/svg.js",
+    links: [["svg.ts", "/toolchains/ts/samples/svg.ts"], ["api.ts", "/toolchains/ts/api.ts"], ["sdk.ts", "/toolchains/ts/sdk.ts"],
+      ["geometry.svg", "/tests/fixtures/svg/geometry.svg"], ["gradient.svg", "/tests/fixtures/svg/gradient.svg"]],
+    resources: [
+      { name: "geometry.svg", url: "/tests/fixtures/svg/geometry.svg" },
+      { name: "gradient.svg", url: "/tests/fixtures/svg/gradient.svg" },
+    ],
+  },
 };
 
 function element<T extends HTMLElement>(selector: string): T {
@@ -487,7 +499,9 @@ element<HTMLButtonElement>("#stop-button").addEventListener("click", () => {
 });
 element<HTMLButtonElement>("#clear-log").addEventListener("click", () => consoleOutput.replaceChildren());
 viewportSelect.addEventListener("change", () => {
-  [width, height] = viewportSelect.value.split("x").map(Number) as [number, number];
+  const [nextWidth, nextHeight] = viewportSelect.value.split("x").map(Number) as [number, number];
+  if (width === nextWidth && height === nextHeight) return;
+  [width, height] = [nextWidth, nextHeight];
   element<HTMLElement>(".viewport-ratio").textContent = width === 320 ? "4:3" : width === 480 ? "3:2" : "5:3";
   fitDevice();
   canvas.width = width;

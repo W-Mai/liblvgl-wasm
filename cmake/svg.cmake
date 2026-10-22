@@ -1,6 +1,9 @@
 # Adapt the pinned SVG parser, viewport and decoder in the build directory.
 function(lvw_svg_load name hash)
     set(source "${lvgl_SOURCE_DIR}/src/image/svg/${name}.c")
+    if(ARGC GREATER 2)
+        set(source "${lvgl_SOURCE_DIR}/${ARGV2}")
+    endif()
     set(adapted "${CMAKE_CURRENT_BINARY_DIR}/lvgl-adapted/${name}.c")
     set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${source}")
     file(SHA256 "${source}" actual)
@@ -54,8 +57,9 @@ function(lvw_svg_save)
     endif()
     list(INSERT sources ${index} "${LVW_SVG_ADAPTED}")
     set_property(TARGET lvgl PROPERTY SOURCES "${sources}")
+    get_filename_component(source_directory "${LVW_SVG_SOURCE}" DIRECTORY)
     set_source_files_properties("${LVW_SVG_ADAPTED}" TARGET_DIRECTORY lvgl
-        PROPERTIES INCLUDE_DIRECTORIES "${lvgl_SOURCE_DIR}/src/image/svg")
+        PROPERTIES INCLUDE_DIRECTORIES "${source_directory}")
 endfunction()
 
 lvw_svg_load(lv_svg_token 29aa67e8f479930e590b07bab6528dc1aa5dc86b5cb371f6dd08de26966488fd)
@@ -241,5 +245,47 @@ lvw_svg_replace([=[        if(entry == NULL) {
 ]=] [=[        if(entry == NULL) {
             lv_draw_buf_destroy(draw_buf);
             dsc->decoded = NULL;
+]=])
+lvw_svg_replace_region([=[        int32_t off_x = (lv_area_get_width(coords) - (int32_t)image_dsc->header.w - 1) / 2;]=]
+    [=[        lv_matrix_translate(&matrix, image_dsc->pivot.x, image_dsc->pivot.y);]=] "")
+lvw_svg_save()
+
+lvw_svg_load(lv_draw_image eda7a142395efcb4abe16a32e1613dbc823bff5373ccabd393321594b0b5bdfc src/draw/lv_draw_image.c)
+lvw_svg_replace([=[    lv_point_t p[4] = {
+        {0, 0},
+        {w - 1, 0},
+        {0, h - 1},
+        {w - 1, h - 1},
+    };]=] [=[    /* Bound complete pixel cells, including the final scaled row/column. */
+    lv_point_t p[4] = {
+        {0, 0},
+        {w, 0},
+        {0, h},
+        {w, h},
+    };]=])
+lvw_svg_replace([=[    res->x1 = LV_MIN4(p[0].x, p[1].x, p[2].x, p[3].x);
+    res->x2 = LV_MAX4(p[0].x, p[1].x, p[2].x, p[3].x);
+    res->y1 = LV_MIN4(p[0].y, p[1].y, p[2].y, p[3].y);
+    res->y2 = LV_MAX4(p[0].y, p[1].y, p[2].y, p[3].y);
+]=] [=[    /* One pixel includes integer transform rounding and inclusive draw bounds. */
+    res->x1 = LV_MIN4(p[0].x, p[1].x, p[2].x, p[3].x) - 1;
+    res->x2 = LV_MAX4(p[0].x, p[1].x, p[2].x, p[3].x) + 1;
+    res->y1 = LV_MIN4(p[0].y, p[1].y, p[2].y, p[3].y) - 1;
+    res->y2 = LV_MAX4(p[0].y, p[1].y, p[2].y, p[3].y) + 1;
+]=])
+lvw_svg_replace_region([=[        if(decoder_dsc.decoder && decoder_dsc.decoder->custom_draw_cb) {]=]
+    [=[        lv_image_decoder_close(&decoder_dsc);]=] [=[        if(decoder_dsc.decoder && decoder_dsc.decoder->custom_draw_cb) {
+            /* Keep source coordinates unchanged and intersect the transformed bounds
+             * with the current layer clip. No object is required for a draw descriptor. */
+            lv_area_t clip_area;
+            lv_image_buf_get_transformed_area(&clip_area, lv_area_get_width(coords), lv_area_get_height(coords),
+                                              dsc->rotation, dsc->scale_x, dsc->scale_y, &dsc->pivot);
+            lv_area_move(&clip_area, coords->x1, coords->y1);
+            if(lv_area_intersect(&clip_area, &clip_area, &layer->_clip_area) &&
+               lv_area_intersect(&clip_area, &clip_area, &layer->buf_area)) {
+                decoder_dsc.decoder->custom_draw_cb(layer, &decoder_dsc, coords, &new_image_dsc, &clip_area);
+            }
+        }
+
 ]=])
 lvw_svg_save()
