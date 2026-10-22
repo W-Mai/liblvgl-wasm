@@ -75,7 +75,7 @@ const tsSamples: Record<string, Toolchain> = {
   },
   freetype: {
     ...toolchains.ts, sampleName: "FreeType",
-    summary: "Render a TrueType font from W: resources. Switch between 16 and 32 px.",
+    summary: "Render a TrueType font as bitmap or outline glyphs. Switch between 16 and 32 px.",
     command: "bun run build:ts-samples\n# upload target/apps/ts/samples/freetype.js",
     sample: "/target/apps/ts/samples/freetype.js",
     links: [["freetype.ts", "/toolchains/ts/samples/freetype.ts"], ["api.ts", "/toolchains/ts/api.ts"], ["sdk.ts", "/toolchains/ts/sdk.ts"]],
