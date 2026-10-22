@@ -62,6 +62,103 @@ class BootstrapTests(unittest.TestCase):
                                  *args, "--json"], cwd=cwd, env=env, capture_output=True, text=True)
         return result.returncode, json.loads(result.stdout)
 
+    def source_checkout(self):
+        project = self.root / "source checkout"
+        (project / "scripts").mkdir(parents=True)
+        (project / "package.json").write_text('{"name":"liblvgl-wasm","version":"0.1.0"}\n')
+        (project / "scripts/build.sh").write_text("#!/bin/sh\nprintf 'source fixture\\n'\n")
+        (project / "scripts/build.sh").chmod(0o755)
+        (project / "input with spaces.txt").write_text("tracked source\n")
+        (project / ".gitignore").write_text("/target/\n/.local/\n")
+        environment = {**os.environ, "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1"}
+        for arguments in (("init", "-q"),
+                          ("add", "package.json", "scripts/build.sh", "input with spaces.txt", ".gitignore"),
+                          ("-c", "user.name=Source fixture", "-c", "user.email=fixture@example.invalid",
+                           "commit", "-q", "-m", "Source fixture")):
+            subprocess.run(["git", "-C", str(project), *arguments], env=environment, check=True,
+                           stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        (project / "untracked.txt").write_text("untracked input")
+        (project / ".local").mkdir()
+        (project / ".local/private.txt").write_text("local input")
+        return project
+
+    def source_snapshot(self, project):
+        output = self.root / "source snapshot"
+        status, report = self.cli("export-source", "--project", str(project), "--output", str(output))
+        self.assertEqual(status, 0, report)
+        return output
+
+    def test_source_snapshot_moves_readonly_and_initializes_without_git(self):
+        project = self.source_checkout()
+        (project / "input with spaces.txt").write_text("edited source\n")
+        source = self.source_snapshot(project).rename(self.root / "relocated package")
+        manifest = json.loads((source / "source.json").read_text())
+        self.assertTrue(manifest["source"]["dirty"])
+        self.assertEqual(set(manifest["files"]),
+                         {"package.json", "scripts/build.sh", "input with spaces.txt", ".gitignore"})
+        self.assertEqual(manifest["executables"], ["scripts/build.sh"])
+
+        def writable():
+            for path in [source, *source.rglob("*")]:
+                path.chmod(0o755 if path.is_dir() else 0o644)
+
+        self.addCleanup(writable)
+        for path in [source, *source.rglob("*")]:
+            path.chmod(0o555 if path.is_dir() or path.stat().st_mode & 0o111 else 0o444)
+        output = self.root / "initialized project"
+        status, report = self.cli("init", "--project", str(self.root), "--source", str(source),
+                                  "--output", str(output), cwd=self.root)
+        self.assertEqual(status, 0, report)
+        self.assertFalse((output / ".git").exists())
+        self.assertFalse((output / "source.json").exists())
+        self.assertEqual((output / "input with spaces.txt").read_text(), "edited source\n")
+        self.assertEqual(subprocess.check_output([str(output / "scripts/build.sh")], cwd=self.root),
+                         b"source fixture\n")
+        origin = json.loads((output / "target/source-origin.json").read_text())
+        self.assertEqual(origin["manifest"], manifest)
+        self.assertEqual(origin["source_sha256"], lvw.file_sha256(source / "source.json"))
+        self.assertEqual(lvw.file_inventory(source)["source.json"], origin["source_sha256"])
+
+    def test_source_initialization_rejects_modified_inputs_and_existing_outputs(self):
+        source = self.source_snapshot(self.source_checkout())
+        output = self.root / "project"
+        for defect in ("bytes", "mode", "extra", "missing", "link", "schema"):
+            altered = self.root / defect
+            shutil.copytree(source, altered)
+            file = altered / "input with spaces.txt"
+            if defect == "bytes": file.write_text("modified")
+            if defect == "mode": (altered / "scripts/build.sh").chmod(0o644)
+            if defect == "extra": (altered / "extra").touch()
+            if defect in ("missing", "link"): file.unlink()
+            if defect == "link": file.symlink_to(source / "input with spaces.txt")
+            if defect == "schema": (altered / "source.json").write_text("[]")
+            status, report = self.cli("init", "--project", str(self.root), "--source", str(altered),
+                                      "--output", str(output))
+            self.assertNotEqual(status, 0, report)
+            self.assertFalse(output.exists())
+        output.mkdir()
+        (output / "keep").write_text("user data")
+        for destination in (output, source / "nested"):
+            status, report = self.cli("init", "--project", str(self.root), "--source", str(source),
+                                      "--output", str(destination))
+            self.assertNotEqual(status, 0, report)
+        self.assertEqual((output / "keep").read_text(), "user data")
+        self.assertEqual(list(self.root.glob(".source-*")), [])
+
+    def test_source_export_rejects_nonroot_and_linked_tracked_files(self):
+        project = self.source_checkout()
+        output = self.root / "rejected"
+        status, report = self.cli("export-source", "--project", str(project / "scripts"),
+                                  "--output", str(output))
+        self.assertNotEqual(status, 0, report)
+        file = project / "input with spaces.txt"
+        file.unlink()
+        file.symlink_to(project / "package.json")
+        status, report = self.cli("export-source", "--project", str(project), "--output", str(output))
+        self.assertNotEqual(status, 0, report)
+        self.assertFalse(output.exists())
+        self.assertEqual(list(self.root.glob(".source-*")), [])
+
     def test_ndk_output_is_never_replaced(self):
         output = self.root / "ndk"
         output.mkdir()

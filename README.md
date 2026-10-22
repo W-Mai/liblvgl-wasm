@@ -39,6 +39,31 @@ Preparation verifies archive size and SHA-256, rejects escaping archive paths an
 
 macOS arm64 preparation, relocation, offline reuse, and a C++ standard-exception/SJLJ reactor have been checked locally. Linux x86_64 archives are configured; this preparation path requires validation in Linux CI. Other build hosts are rejected.
 
+### Source packages
+
+`export-source` copies the checkout's tracked source files into a new directory, including working-tree edits. It requires Git and the checkout root as `--project`; add new source files to Git before exporting. Compiler installations, build outputs, installed dependencies, `.git`, `.local`, and untracked files are excluded. Tracked local or build paths and symbolic links are rejected.
+
+```sh
+python3 -B toolchains/lvw.py export-source --json
+python3 -B target/source/toolchains/lvw.py init \
+    --source "$PWD/target/source" --output /path/to/new/project --json
+```
+
+The source package defaults to `target/source/`. Its `source.json` records the package version, Git revision and dirty state, file hashes, and executable files. It includes the CMake build, generators, host sources, Studio, examples, tests, and dependency locks. Exporting does not run the build or download dependencies.
+
+`init` checks the complete source inventory and executable flags, then creates a writable project with the same relative file layout. The input package can be moved and kept read-only. Existing destinations and outputs inside the input package are rejected; failed initialization leaves no published project. `--output` defaults to `target/project/`, and relative `--source` and `--output` paths resolve against `--project`. Initialization does not create a Git repository. The original manifest and its hash are retained in the new project's `target/source-origin.json`.
+
+Run the existing build from the initialized project:
+
+```sh
+cd /path/to/new/project
+python3 -B toolchains/lvw.py prepare --with-zig --json
+bun install --frozen-lockfile
+WASI_SDK_PATH=/reported/wasi-sdk/path ./scripts/build.sh
+```
+
+Use the SDK path reported by `prepare`. Bun, Rust with the Wasm application target, and the other build prerequisites are still required. The build fetches the pinned LVGL and FreeType sources and generates the core, metadata, host bindings, website, and application samples under the new project's `target/`. It does not require Git or the original checkout. `export-ndk`, `export-sdk`, and the native C/C++/Zig examples use this same project layout.
+
 ### Native C/C++ development kit
 
 `export-ndk` rebuilds the source checkout through `scripts/build.sh`, validates the core, and exports its public headers, five static archives, CMake targets, API metadata, and Python generators. Run `prepare` first; `--sdk`, `--cache`, and `--project` use the same path rules as compiler preparation. The checkout needs the complete build prerequisites above.
@@ -192,10 +217,12 @@ Generated files stay under `target/`:
 | `target/rust/` | Rust host build cache |
 | `target/ndk/` | Relocatable native C/C++ development kit from `export-ndk` |
 | `target/host-sdk/` | Core-specific TypeScript and Rust packages from `export-sdk` |
+| `target/source/` | Verified build-source snapshot from `export-source` |
+| `target/project/` | Writable source project from `init` |
 
 ## Quality checks
 
-Native ABI checks require Zig 0.15.2. Run `python3 -B toolchains/lvw.py prepare --with-zig`, or set `LVW_ZIG` to an existing executable before running the quality command.
+Native ABI checks require Zig 0.15.2. Run `python3 -B toolchains/lvw.py prepare --with-zig`, or set `LVW_ZIG` to an existing executable before running the quality command. Source-package checks also require Git.
 
 Install `wasm-tools`, `rustfmt`, and `clippy` in addition to the build prerequisites, then run:
 

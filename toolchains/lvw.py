@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Prepare locked compiler tools and export native and host LVGL SDKs."""
+"""Prepare locked compiler tools, build projects, and export LVGL development files."""
 
 import argparse
 import ctypes
@@ -428,20 +428,50 @@ def export_sdk(args, lock, host, project, cache):
     return {"output": str(output), "identity": metadata["identity"], "files": len(files)}
 
 
+def source_project(args, project):
+    from source_package import build_project, build_source, read_source
+
+    output = new_output(args.output, project)
+    if args.command == "init":
+        source = resolve_path(args.source, project)
+        if output.is_relative_to(source):
+            raise ValueError(f"project output overlaps the source package: {source}")
+        manifest, manifest_sha256 = read_source(source, file_inventory(source))
+    output.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix=".source-", dir=output.parent) as temporary:
+        staged = Path(temporary) / "project"
+        if args.command == "export-source":
+            manifest = build_source(project, staged)
+            manifest["files"] = file_inventory(staged)
+            publish_package(staged, output, "source.json", manifest)
+        else:
+            build_project(source, staged, manifest)
+            if file_inventory(staged) != manifest["files"]:
+                raise ValueError("source files changed during initialization")
+            publish_package(staged, output, "target/source-origin.json",
+                            {"source_sha256": manifest_sha256, "manifest": manifest})
+    return {"output": str(output), "version": manifest["version"], "files": len(manifest["files"])}
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest="command", required=True)
-    for name in ("doctor", "prepare", "export-ndk", "export-sdk"):
+    outputs = {"export-ndk": "target/ndk", "export-sdk": "target/host-sdk",
+               "export-source": "target/source", "init": "target/project"}
+    for name in ("doctor", "prepare", *outputs):
         command = commands.add_parser(name)
         command.add_argument("--project", default=".", help="project directory (default: cwd)")
-        command.add_argument("--cache", help="tool cache, relative to project or absolute")
-        if name != "export-sdk":
+        if name not in ("export-source", "init"):
+            command.add_argument("--cache", help="tool cache, relative to project or absolute")
+        if name in ("doctor", "prepare", "export-ndk"):
             command.add_argument("--sdk", help="existing wasi-sdk; overrides WASI_SDK_PATH")
         if name in ("doctor", "prepare"):
             command.add_argument("--with-zig", action="store_true", help="include locked Zig tools")
         else:
-            command.add_argument("--output", default="target/ndk" if name == "export-ndk" else "target/host-sdk",
+            command.add_argument("--output", default=outputs[name],
                                  help="new output directory, relative to project or absolute")
+        if name == "init":
+            command.add_argument("--source", required=True, help="verified source package directory")
         if name == "export-sdk":
             command.add_argument("--ndk", default="target/ndk", help="verified NDK directory")
             command.add_argument("--core", default="target/wasm/liblvgl.wasm", help="core linked with the selected NDK")
@@ -460,7 +490,7 @@ def main():
         project = Path(args.project).expanduser().resolve(strict=True)
         if not project.is_dir():
             raise ValueError(f"project must be an existing directory: {project}")
-        cache = resolve_path(args.cache or "target/toolchains", project)
+        cache = resolve_path(getattr(args, "cache", None) or "target/toolchains", project)
         sdk_value = getattr(args, "sdk", None) or os.environ.get("WASI_SDK_PATH")
         sdk = resolve_path(sdk_value, project) if sdk_value else None
         result.update(host=host, target=lock["target"], project=str(project), cache=str(cache))
@@ -468,6 +498,8 @@ def main():
             result.update(export_ndk(args, lock, host, project, cache, sdk))
         elif args.command == "export-sdk":
             result.update(export_sdk(args, lock, host, project, cache))
+        elif args.command in ("export-source", "init"):
+            result.update(source_project(args, project))
         elif args.command == "prepare":
             import fcntl
             cache_directory(cache)
@@ -494,7 +526,8 @@ def main():
         print(json.dumps(result, indent=2))
     else:
         if "output" in result:
-            print(f"{'NDK' if args.command == 'export-ndk' else 'SDK'}: {result['output']}")
+            label = {"export-ndk": "NDK", "export-sdk": "SDK", "export-source": "Source", "init": "Project"}
+            print(f"{label[args.command]}: {result['output']}")
         for section in ("tools", "prerequisites"):
             for name, report in result.get(section, {}).items():
                 detail = (f"{report['version']}  {report['path']}" if report["ok"] else report["error"])
