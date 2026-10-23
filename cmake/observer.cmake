@@ -1,9 +1,19 @@
 # Adapt the pinned observer deletion path without modifying the source checkout.
 set(LVW_OBSERVER_SOURCE "${lvgl_SOURCE_DIR}/src/core/lv_observer.c")
+if(NOT EXISTS "${LVW_OBSERVER_SOURCE}")
+    set(LVW_OBSERVER_SOURCE "${lvgl_SOURCE_DIR}/src/others/observer/lv_observer.c")
+endif()
+get_filename_component(LVW_OBSERVER_DIRECTORY "${LVW_OBSERVER_SOURCE}" DIRECTORY)
 set(LVW_OBSERVER_ADAPTED "${CMAKE_CURRENT_BINARY_DIR}/lvgl-adapted/lv_observer.c")
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${LVW_OBSERVER_SOURCE}")
 file(SHA256 "${LVW_OBSERVER_SOURCE}" LVW_OBSERVER_HASH)
-if(NOT LVW_OBSERVER_HASH STREQUAL "2eb15b1668bf035e8850798cca03f365c7b36e1b1c58d53eb857ef696a3aa0ca")
+if(LVW_OBSERVER_HASH STREQUAL "0dfd9b39b6a28133f9334e7c11a85cd38edf192bd0eeca4bcf540023413923f7")
+    set(LVW_OBSERVER_LEGACY ON)
+    list(APPEND LVW_BRIDGE_DEFINITIONS LVW_OBSERVER_DELETE=lv_observer_remove)
+elseif(LVW_OBSERVER_HASH STREQUAL "2eb15b1668bf035e8850798cca03f365c7b36e1b1c58d53eb857ef696a3aa0ca")
+    set(LVW_OBSERVER_LEGACY OFF)
+    list(APPEND LVW_BRIDGE_DEFINITIONS LVW_OBSERVER_DELETE=lv_observer_delete)
+else()
     file(REMOVE "${LVW_OBSERVER_ADAPTED}")
     message(FATAL_ERROR "Unsupported LVGL observer source: ${LVW_OBSERVER_SOURCE}")
 endif()
@@ -22,6 +32,29 @@ string(REPLACE "#if LV_USE_OBSERVER\n"
 string(REPLACE "    lv_free(observer);\n"
     "    lvw_observer_release_native(observer);\n    lv_free(observer);\n"
     LVW_OBSERVER_CODE "${LVW_OBSERVER_CODE}")
+if(LVW_OBSERVER_LEGACY)
+    # Each object's deletion event owns one observer; widget events own a subject.
+    string(FIND "${LVW_OBSERVER_CODE}" "    while(lv_obj_remove_event_cb(obj, unsubscribe_on_delete_cb));" LVW_BEGIN)
+    string(FIND "${LVW_OBSERVER_CODE}" "    lv_observer_t * observer = _lv_ll_get_head(&subject->subs_ll);" LVW_END)
+    if(LVW_BEGIN LESS 0 OR LVW_END LESS LVW_BEGIN)
+        message(FATAL_ERROR "LVGL observer adaptation requires the native unbind anchors")
+    endif()
+    math(EXPR LVW_LENGTH "${LVW_END} - ${LVW_BEGIN}")
+    string(SUBSTRING "${LVW_OBSERVER_CODE}" ${LVW_BEGIN} ${LVW_LENGTH} LVW_UNBIND)
+    set(LVW_REPLACEMENT "")
+    foreach(widget IN ITEMS BUTTON ARC SLIDER ROLLER DROPDOWN)
+        string(TOLOWER "${widget}" callback)
+        if(widget STREQUAL "BUTTON")
+            set(callback btn)
+        endif()
+        string(APPEND LVW_REPLACEMENT
+            "#if LV_USE_${widget}\n    lv_obj_remove_event_cb_with_user_data(obj, ${callback}_value_changed_event_cb, subject);\n#endif\n")
+    endforeach()
+    string(REPLACE "${LVW_UNBIND}" "${LVW_REPLACEMENT}\n" LVW_OBSERVER_CODE "${LVW_OBSERVER_CODE}")
+    string(REPLACE "        if(observer->target == obj) {\n"
+        "        if(observer->target == obj) {\n            lv_obj_remove_event_cb_with_user_data(obj, unsubscribe_on_delete_cb, observer);\n"
+        LVW_OBSERVER_CODE "${LVW_OBSERVER_CODE}")
+endif()
 file(CONFIGURE OUTPUT "${LVW_OBSERVER_ADAPTED}" CONTENT "${LVW_OBSERVER_CODE}" @ONLY)
 
 get_target_property(LVW_LVGL_SOURCES lvgl SOURCES)
@@ -36,4 +69,4 @@ endif()
 list(INSERT LVW_LVGL_SOURCES ${LVW_OBSERVER_INDEX} "${LVW_OBSERVER_ADAPTED}")
 set_property(TARGET lvgl PROPERTY SOURCES "${LVW_LVGL_SOURCES}")
 set_source_files_properties("${LVW_OBSERVER_ADAPTED}" TARGET_DIRECTORY lvgl
-    PROPERTIES INCLUDE_DIRECTORIES "${lvgl_SOURCE_DIR}/src/core")
+    PROPERTIES INCLUDE_DIRECTORIES "${LVW_OBSERVER_DIRECTORY}")

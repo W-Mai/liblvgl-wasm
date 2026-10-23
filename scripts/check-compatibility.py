@@ -16,7 +16,7 @@ LEGACY = {
     "root": "lvgl-9.0.0", "size": 55766129,
     "sha256": "73ae6ef7b44b434b41f25755ce4f6f5d23c49c1c254c4b7774b5a9cf83a46b7f",
 }
-CALLBACKS = {"timer": "timers", "animation": "animations"}
+CALLBACKS = {"timer": "timers", "animation": "animations", "observer": "observers"}
 
 
 def check():

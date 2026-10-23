@@ -3,14 +3,17 @@ import { mkdtemp, mkdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
-test.each([["timer", "lv_timer.c"], ["animation", "lv_anim.c"]])(
-  "%s adaptation rejects unknown source bytes and removes stale generated code",
-  async (adapter, filename) => {
+test.each([
+  ["timer", "src/misc", "lv_timer.c"], ["animation", "src/misc", "lv_anim.c"],
+  ["observer", "src/core", "lv_observer.c"], ["observer", "src/others/observer", "lv_observer.c"],
+])(
+  "%s adaptation in %s rejects unknown source bytes and removes stale generated code",
+  async (adapter, directory, filename) => {
     const root = await mkdtemp(join(tmpdir(), `lvw ${adapter} source `));
     try {
-      await mkdir(join(root, "src/misc"), { recursive: true });
+      await mkdir(join(root, directory), { recursive: true });
       await mkdir(join(root, "lvgl-adapted"));
-      const source = join(root, "src/misc", filename);
+      const source = join(root, directory, filename);
       const adapted = join(root, "lvgl-adapted", filename);
       await Bun.write(source, "/* unverified implementation */\n");
       await Bun.write(adapted, "/* stale adapted code */\n");

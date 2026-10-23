@@ -1,17 +1,58 @@
 import { expect, test } from "bun:test";
-import {
+import type { LvglRuntime, Observer } from "../bindings/typescript/src/index.ts";
+
+const sdk = await import(Bun.env.LVW_TEST_TS_RUNTIME ?? "../bindings/typescript/src/index.ts") as
+  typeof import("../bindings/typescript/src/index.ts") & {
+    LV_OBSERVER_T_FIELDS?: readonly { name: string | null; bit_offset: number; bit_width: number | null }[];
+  };
+const {
   LV_EVENT_DELETE, LV_EVENT_VALUE_CHANGED, LV_STATE_CHECKED,
   LV_SUBJECT_T_SIZE, LV_SUBJECT_TYPE_INT, LV_SUBJECT_TYPE_POINTER,
-  LvglRuntime, type Observer,
-} from "../bindings/typescript/src/index.ts";
+} = sdk;
+const legacy = Number(sdk.LVGL_VERSION_MINOR) === 0;
+
+function old(runtime: LvglRuntime) {
+  return runtime.unsafe as unknown as {
+    lv_observer_remove(pointer: number): void;
+    lv_subject_remove_all_obj(subject: number, object: number): void;
+    lv_button_bind_checked(object: number, subject: number): number;
+  };
+}
+
+function userData(runtime: LvglRuntime, pointer: number, value?: number): number {
+  const raw = runtime.unsafe;
+  if (!legacy) {
+    const previous = raw.lv_observer_get_user_data(pointer) >>> 0;
+    if (value !== undefined) raw.lv_observer_set_user_data(pointer, value);
+    return previous;
+  }
+  const field = sdk.LV_OBSERVER_T_FIELDS!.find((field) => field.name === "user_data")!;
+  expect(field.bit_width).toBeNull();
+  expect(field.bit_offset % 8).toBe(0);
+  const view = new DataView(raw.memory.buffer);
+  const offset = pointer + field.bit_offset / 8;
+  const previous = view.getUint32(offset, true);
+  if (value !== undefined) view.setUint32(offset, value, true);
+  return previous;
+}
+
+function unbind(runtime: LvglRuntime, object: number, source: number): void {
+  if (legacy) old(runtime).lv_subject_remove_all_obj(source, object);
+  else runtime.unsafe.lv_obj_remove_from_subject(object, source);
+}
 
 async function load(): Promise<LvglRuntime> {
-  return LvglRuntime.load(await Bun.file("target/wasm/liblvgl.wasm").arrayBuffer());
+  return sdk.LvglRuntime.load(await Bun.file(Bun.env.LVW_TEST_CORE ?? "target/wasm/liblvgl.wasm").arrayBuffer());
 }
 
 function subject(runtime: LvglRuntime, type = LV_SUBJECT_TYPE_INT): number {
-  const pointer = runtime.unsafe.lv_subject_create(type);
+  const raw = runtime.unsafe;
+  const pointer = legacy ? raw.lvw_alloc(LV_SUBJECT_T_SIZE) : raw.lv_subject_create(type);
   expect(pointer).not.toBe(0);
+  if (legacy) {
+    if (type === LV_SUBJECT_TYPE_INT) raw.lv_subject_init_int(pointer, 0);
+    else raw.lv_subject_init_pointer(pointer, 0);
+  }
   return pointer;
 }
 
@@ -30,8 +71,7 @@ test("observers synchronously expose native values, target and mutable user data
   const observer = runtime.observeTarget(source, 0xf1234567, (current, notified) => {
     expect(notified).toBe(source);
     expect(raw.lv_observer_get_target(current.handle) >>> 0).toBe(0xf1234567);
-    expect(raw.lv_observer_get_user_data(current.handle) >>> 0).toBe(values.length ? 0x87654321 : 0xabcdef98);
-    raw.lv_observer_set_user_data(current.handle, 0x87654321);
+    expect(userData(runtime, current.handle, 0x87654321)).toBe(values.length ? 0x87654321 : 0xabcdef98);
     const value = raw.lv_subject_get_int(notified);
     values.push(value);
     runtime.setText(label, String(value));
@@ -40,9 +80,9 @@ test("observers synchronously expose native values, target and mutable user data
   }, 0xabcdef98);
   expect(values).toEqual([7]);
   raw.lv_subject_set_int(source, 7);
-  expect(values).toEqual([7]);
+  expect(values).toEqual(legacy ? [7, 7] : [7]);
   raw.lv_subject_set_int(source, 8);
-  expect(values).toEqual([7, 8]);
+  expect(values).toEqual(legacy ? [7, 7, 8] : [7, 8]);
   expect(raw.lv_subject_get_previous_int(source)).toBe(7);
   expect([...new Uint8Array(raw.memory.buffer, raw.lv_label_get_text(label.handle), 2)]).toEqual([56, 0]);
   expect(otherCalls).toBe(1);
@@ -138,10 +178,14 @@ test("notifications can remove observers and stale handles cannot affect replace
   expect(successorValues.length).toBe(before + 1);
   expect(successorValues.at(-1)).toBe(2);
   const rawDeleted = runtime.observe(source, () => {});
-  raw.lv_observer_delete(rawDeleted.handle);
+  if (legacy) old(runtime).lv_observer_remove(rawDeleted.handle);
+  else raw.lv_observer_delete(rawDeleted.handle);
   expect(() => rawDeleted.handle).toThrow("invalid");
   rawDeleted.cancel();
-  raw.lv_subject_delete(source);
+  if (legacy) {
+    successor!.cancel();
+    raw.lvw_free(source);
+  } else raw.lv_subject_delete(source);
   expect(() => successor!.handle).toThrow("invalid");
   successor!.cancel();
   runtime.shutdown();
@@ -154,7 +198,8 @@ test("object-bound cancellation preserves existing two-way bindings and validate
   const source = subject(runtime);
   const display = runtime.createDisplay(80, 60);
   const object = runtime.createButton(runtime.screen(display));
-  expect(raw.lv_obj_bind_checked(object.handle, source)).not.toBe(0);
+  expect(legacy ? old(runtime).lv_button_bind_checked(object.handle, source)
+    : raw.lv_obj_bind_checked(object.handle, source)).not.toBe(0);
   const values: number[] = [];
   const observer = runtime.observeObject(source, object, (current, notified) => {
     expect(raw.lv_observer_get_target_obj(current.handle)).toBe(object.handle);
@@ -174,7 +219,7 @@ test("object-bound cancellation preserves existing two-way bindings and validate
 
   const otherSource = subject(other);
   expect(() => other.observeObject(otherSource, object, () => {})).toThrow("invalid");
-  raw.lv_obj_remove_from_subject(object.handle, source);
+  unbind(runtime, object.handle, source);
   expect(() => observer.handle).toThrow("invalid");
   observer.cancel();
   object.delete();
@@ -184,7 +229,8 @@ test("object-bound cancellation preserves existing two-way bindings and validate
 });
 
 test("native object, parent, display and subject cleanup invalidate every associated observer", async () => {
-  for (const deletion of ["object", "parent", "display", "subject", "deinit"] as const) {
+  const deletions = legacy ? ["object", "parent", "display"] : ["object", "parent", "display", "subject", "deinit"];
+  for (const deletion of deletions) {
     const runtime = await load();
     const raw = runtime.unsafe;
     const source = deletion === "deinit" ? raw.lvw_alloc(LV_SUBJECT_T_SIZE) : subject(runtime);
@@ -217,6 +263,64 @@ test("native object, parent, display and subject cleanup invalidate every associ
     if (deletion === "deinit") raw.lvw_free(source);
     runtime.shutdown();
   }
+});
+
+test("unbinding one subject preserves other subjects and unrelated events", async () => {
+  for (const widget of ["button", "slider"] as const) {
+    const runtime = await load();
+    const raw = runtime.unsafe;
+    const first = subject(runtime);
+    const second = subject(runtime);
+    const display = runtime.createDisplay(80, 60);
+    const screen = runtime.screen(display);
+    const object = widget === "button" ? runtime.createButton(screen)
+      : new sdk.ObjectRef(runtime, raw.lv_slider_create(screen.handle));
+    for (const source of [first, second]) {
+      if (widget === "slider") raw.lv_slider_bind_value(object.handle, source);
+      else if (legacy) old(runtime).lv_button_bind_checked(object.handle, source);
+      else raw.lv_obj_bind_checked(object.handle, source);
+    }
+    const detached = runtime.observeObject(first, object, () => {});
+    let calls = 0;
+    const retained = runtime.observeObject(second, object, () => { calls++; });
+    let events = 0;
+    object.on(LV_EVENT_VALUE_CHANGED, () => { events++; });
+    unbind(runtime, object.handle, first);
+    expect(() => detached.handle).toThrow("invalid");
+    expect(retained.handle).not.toBe(0);
+    const before = calls;
+    if (widget === "slider") raw.lv_slider_set_value(object.handle, 1, sdk.LV_ANIM_OFF);
+    else raw.lv_obj_add_state(object.handle, LV_STATE_CHECKED);
+    raw.lv_obj_send_event(object.handle, LV_EVENT_VALUE_CHANGED, 0);
+    expect(raw.lv_subject_get_int(first)).toBe(0);
+    expect(raw.lv_subject_get_int(second)).toBe(1);
+    expect(calls).toBe(before + 1);
+    expect(events).toBe(1);
+    object.delete();
+    expect(() => retained.handle).toThrow("invalid");
+    const after = calls;
+    raw.lv_subject_set_int(second, 2);
+    expect(calls).toBe(after);
+    runtime.shutdown();
+  }
+});
+
+test("object deletion inside the initial notification returns an invalid observer", async () => {
+  const runtime = await load();
+  const source = subject(runtime);
+  const display = runtime.createDisplay(80, 60);
+  const object = runtime.createButton(runtime.screen(display));
+  const observer = runtime.observeObject(source, object, () => { object.delete(); });
+  expect(() => observer.handle).toThrow("invalid");
+  observer.cancel();
+  runtime.unsafe.lv_subject_set_int(source, 1);
+  if (legacy) {
+    for (const name of ["lv_subject_create", "lv_subject_delete", "lv_subject_deinit", "lv_observer_get_user_data"]) {
+      expect(name in runtime.unsafe).toBe(false);
+    }
+    runtime.unsafe.lvw_free(source);
+  }
+  runtime.shutdown();
 });
 
 test("shutdown invalidates legacy subjects and observer cancellation remains host-only", async () => {

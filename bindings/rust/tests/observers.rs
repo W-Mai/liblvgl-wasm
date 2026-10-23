@@ -1,19 +1,103 @@
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 
-use liblvgl_wasm_host::{Error, Observer, Result, Runtime, UnsafePointer, values};
+use liblvgl_wasm_host::{
+    API_EXPORTS, CallbackContext, Error, Observer, Result, Runtime, UnsafePointer, values,
+};
+
+const LEGACY: bool = values::LVGL_VERSION_MINOR == 0;
+
+fn native(name: &str) -> &'static str {
+    API_EXPORTS.iter().find(|entry| entry.0 == name).unwrap().1
+}
+
+fn user_data(
+    context: &mut CallbackContext<'_>,
+    pointer: UnsafePointer,
+    update: Option<u32>,
+) -> Result<u32> {
+    if !LEGACY {
+        let previous = context.call_raw(native("lv_observer_get_user_data"), pointer.0)?;
+        if let Some(value) = update {
+            context.call_raw::<_, ()>(native("lv_observer_set_user_data"), (pointer.0, value))?;
+        }
+        return Ok(previous);
+    }
+    static OFFSET: OnceLock<u32> = OnceLock::new();
+    let offset = *OFFSET.get_or_init(|| {
+        let path =
+            std::env::var_os("LVW_TEST_API").expect("legacy checks require matching metadata");
+        let report: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
+        let types = report["types"].as_object().unwrap();
+        let alias = types
+            .values()
+            .find(|node| node["name"] == "lv_observer_t" && node["kind"] == "alias")
+            .unwrap();
+        let record = &types[alias["underlying"]["id"].as_str().unwrap()];
+        assert_eq!(record["layout"]["status"], "complete");
+        let field = record["fields"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|field| field["name"] == "user_data")
+            .unwrap();
+        assert!(field["bit_width"].is_null());
+        let offset = field["bit_offset"].as_u64().unwrap();
+        assert_eq!(offset % 8, 0);
+        (offset / 8) as u32
+    });
+    let mut bytes = [0; 4];
+    context.read_memory(pointer.0 + offset, &mut bytes)?;
+    if let Some(value) = update {
+        context.write_memory(pointer.0 + offset, &value.to_le_bytes())?;
+    }
+    Ok(u32::from_le_bytes(bytes))
+}
+
+fn unbind(runtime: &mut Runtime, object: UnsafePointer, subject: UnsafePointer) -> Result<()> {
+    if LEGACY {
+        runtime.call_raw(native("lv_subject_remove_all_obj"), (subject.0, object.0))
+    } else {
+        runtime.call_raw(native("lv_obj_remove_from_subject"), (object.0, subject.0))
+    }
+}
+
+fn subject(runtime: &mut Runtime, pointer: bool) -> Result<UnsafePointer> {
+    if LEGACY {
+        let mut raw = runtime.raw()?;
+        let subject = raw.alloc(values::LV_SUBJECT_T_SIZE)?;
+        assert_ne!(subject.0, 0);
+        if pointer {
+            raw.lv_subject_init_pointer(subject, UnsafePointer(0))?;
+        } else {
+            raw.lv_subject_init_int(subject, 0)?;
+        }
+        Ok(subject)
+    } else {
+        let kind = if pointer {
+            values::LV_SUBJECT_TYPE_POINTER
+        } else {
+            values::LV_SUBJECT_TYPE_INT
+        };
+        let subject = runtime.call_raw(native("lv_subject_create"), kind)?;
+        assert_ne!(subject, 0);
+        Ok(UnsafePointer(subject))
+    }
+}
 
 fn load() -> Result<Runtime> {
-    Runtime::from_file(Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/wasm/liblvgl.wasm"))
+    Runtime::from_file(std::env::var_os("LVW_TEST_CORE").map_or_else(
+        || Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/wasm/liblvgl.wasm"),
+        std::path::PathBuf::from,
+    ))
 }
 
 fn int_subject(runtime: &mut Runtime, value: i32) -> Result<UnsafePointer> {
-    let mut raw = runtime.raw()?;
-    let subject = raw.lv_subject_create(values::LV_SUBJECT_TYPE_INT)?;
-    assert_ne!(subject.0, 0);
-    raw.lv_subject_set_int(subject, value)?;
+    let subject = subject(runtime, false)?;
+    runtime.raw()?.lv_subject_set_int(subject, value)?;
     Ok(subject)
 }
 
@@ -53,17 +137,16 @@ fn initial_callbacks_preserve_native_values_and_allow_nested_observers() -> Resu
             assert_eq!(current, subject);
             let count = count.fetch_add(1, Ordering::SeqCst);
             let pointer = observer.pointer()?;
+            assert_eq!(
+                user_data(context, pointer, Some(7))?,
+                if count == 0 { 0xfedc_ba98 } else { 7 }
+            );
             let value = {
                 let mut raw = context.raw()?;
                 assert_eq!(
                     raw.lv_observer_get_target(pointer)?,
                     UnsafePointer(0xf123_4567)
                 );
-                assert_eq!(
-                    raw.lv_observer_get_user_data(pointer)?,
-                    UnsafePointer(if count == 0 { 0xfedc_ba98 } else { 7 })
-                );
-                raw.lv_observer_set_user_data(pointer, UnsafePointer(7))?;
                 let value = raw.lv_subject_get_int(current)?;
                 let text = format!("{value}\0");
                 let buffer = raw.alloc(text.len() as u32)?;
@@ -106,18 +189,16 @@ fn initial_callbacks_preserve_native_values_and_allow_nested_observers() -> Resu
         [("other", 0), ("target", 4), ("initial", 4), ("other", 17)]
     );
     runtime.raw()?.lv_subject_set_int(subject, 4)?;
-    assert_eq!(calls.load(Ordering::SeqCst), 1);
+    assert_eq!(calls.load(Ordering::SeqCst), if LEGACY { 2 } else { 1 });
     runtime.raw()?.lv_subject_set_int(subject, 9)?;
     runtime.raw()?.lv_subject_notify(subject)?;
-    assert_eq!(calls.load(Ordering::SeqCst), 3);
+    assert_eq!(calls.load(Ordering::SeqCst), if LEGACY { 4 } else { 3 });
     let text = runtime.raw()?.lv_label_get_text(label)?;
     let mut bytes = [0; 2];
     runtime.read_memory(text.0, &mut bytes)?;
     assert_eq!(&bytes, b"9\0");
 
-    let pointer_subject = runtime
-        .raw()?
-        .lv_subject_create(values::LV_SUBJECT_TYPE_POINTER)?;
+    let pointer_subject = self::subject(&mut runtime, true)?;
     let calls = Arc::new(AtomicU32::new(0));
     let observed = Arc::clone(&calls);
     runtime.observe(
@@ -195,19 +276,26 @@ fn native_deletion_and_callback_cancellation_release_shared_registration_lifetim
     }
 
     let held = Arc::clone(&capture);
-    let native = runtime.observe(subject, UnsafePointer(0), move |_, _, _| {
+    let raw_deleted = runtime.observe(subject, UnsafePointer(0), move |_, _, _| {
         let _keep_capture = &held;
         Ok(())
     })?;
-    let old_pointer = native.pointer()?;
-    runtime.raw()?.lv_observer_delete(old_pointer)?;
-    assert!(native.pointer().is_err());
+    let old_pointer = raw_deleted.pointer()?;
+    runtime.call_raw::<_, ()>(
+        native(if LEGACY {
+            "lv_observer_remove"
+        } else {
+            "lv_observer_delete"
+        }),
+        old_pointer.0,
+    )?;
+    assert!(raw_deleted.pointer().is_err());
     assert_eq!(Arc::strong_count(&capture), 1);
     let mut reused = false;
     for _ in 0..8 {
         let successor = runtime.observe(subject, UnsafePointer(0), |_, _, _| Ok(()))?;
         reused |= successor.pointer()? == old_pointer;
-        runtime.cancel_observer(&native)?;
+        runtime.cancel_observer(&raw_deleted)?;
         successor.pointer()?;
         runtime.cancel_observer(&successor)?;
     }
@@ -221,14 +309,23 @@ fn native_deletion_and_callback_cancellation_release_shared_registration_lifetim
         let _keep_capture = &held;
         Ok(())
     })?;
-    runtime.raw()?.lv_subject_delete(subject)?;
+    if LEGACY {
+        runtime.cancel_observer(&remaining)?;
+        runtime.free(subject.0)?;
+    } else {
+        runtime.call_raw::<_, ()>(native("lv_subject_delete"), subject.0)?;
+    }
     assert!(remaining.pointer().is_err());
     assert_eq!(Arc::strong_count(&capture), 1);
     let legacy = UnsafePointer(runtime.alloc(values::LV_SUBJECT_T_SIZE)?);
     runtime.raw()?.lv_subject_init_int(legacy, 3)?;
     let observer =
         runtime.observe_object(legacy, UnsafePointer(0), UnsafePointer(0), |_, _, _| Ok(()))?;
-    runtime.raw()?.lv_subject_deinit(legacy)?;
+    if LEGACY {
+        runtime.cancel_observer(&observer)?;
+    } else {
+        runtime.call_raw::<_, ()>(native("lv_subject_deinit"), legacy.0)?;
+    }
     assert!(observer.pointer().is_err());
     runtime.free(legacy.0)?;
     runtime.shutdown()?;
@@ -251,12 +348,9 @@ fn object_bound_observers_preserve_widget_bindings_until_native_cleanup() -> Res
         move |context, observer, current| {
             let _keep_capture = &held;
             assert_eq!(current, subject);
+            assert_eq!(user_data(context, observer.pointer()?, None)?, 42);
             let mut raw = context.raw()?;
             assert_eq!(raw.lv_observer_get_target_obj(observer.pointer()?)?, slider);
-            assert_eq!(
-                raw.lv_observer_get_user_data(observer.pointer()?)?,
-                UnsafePointer(42)
-            );
             Ok(())
         },
     )?;
@@ -274,7 +368,7 @@ fn object_bound_observers_preserve_widget_bindings_until_native_cleanup() -> Res
     raw.lv_slider_set_value(slider, 30, values::LV_ANIM_OFF)?;
     raw.lv_obj_send_event(slider, values::LV_EVENT_VALUE_CHANGED, UnsafePointer(0))?;
     assert_eq!(raw.lv_subject_get_int(subject)?, 30);
-    raw.lv_obj_remove_from_subject(slider, subject)?;
+    unbind(&mut runtime, slider, subject)?;
     assert!(observer.pointer().is_err());
     assert_eq!(Arc::strong_count(&capture), 1);
     runtime.cancel_observer(&observer)?;
@@ -293,9 +387,75 @@ fn object_bound_observers_preserve_widget_bindings_until_native_cleanup() -> Res
     let (_, screen) = self::display(&mut runtime)?;
     let object = runtime.raw()?.lv_button_create(screen)?;
     let observer = runtime.observe_object(subject, object, UnsafePointer(0), |_, _, _| Ok(()))?;
-    runtime.raw()?.lv_subject_delete(subject)?;
+    if LEGACY {
+        unbind(&mut runtime, object, subject)?;
+    } else {
+        runtime.call_raw::<_, ()>(native("lv_subject_delete"), subject.0)?;
+    }
     assert!(observer.pointer().is_err());
     runtime.raw()?.lv_obj_delete(object)?;
+    runtime.shutdown()
+}
+
+#[test]
+fn unbinding_preserves_other_subjects_and_releases_object_subscriptions() -> Result<()> {
+    let mut runtime = load()?;
+    let first = int_subject(&mut runtime, 0)?;
+    let second = int_subject(&mut runtime, 0)?;
+    let (_, screen) = display(&mut runtime)?;
+    let slider = runtime.raw()?.lv_slider_create(screen)?;
+    for subject in [first, second] {
+        runtime.raw()?.lv_slider_bind_value(slider, subject)?;
+    }
+    let removed = runtime.observe_object(first, slider, UnsafePointer(0), |_, _, _| Ok(()))?;
+    let capture = Arc::new(());
+    let held = Arc::clone(&capture);
+    let retained = runtime.observe_object(second, slider, UnsafePointer(0), move |_, _, _| {
+        let _keep_capture = &held;
+        Ok(())
+    })?;
+    unbind(&mut runtime, slider, first)?;
+    assert!(removed.pointer().is_err());
+    retained.pointer()?;
+    runtime
+        .raw()?
+        .lv_slider_set_value(slider, 7, values::LV_ANIM_OFF)?;
+    runtime
+        .raw()?
+        .lv_obj_send_event(slider, values::LV_EVENT_VALUE_CHANGED, UnsafePointer(0))?;
+    assert_eq!(runtime.raw()?.lv_subject_get_int(first)?, 0);
+    assert_eq!(runtime.raw()?.lv_subject_get_int(second)?, 7);
+    runtime.raw()?.lv_obj_delete(slider)?;
+    assert!(retained.pointer().is_err());
+    assert_eq!(Arc::strong_count(&capture), 1);
+    runtime.raw()?.lv_subject_set_int(second, 8)?;
+    runtime.shutdown()
+}
+
+#[test]
+fn initial_object_deletion_does_not_revive_a_released_observer() -> Result<()> {
+    let mut runtime = load()?;
+    let subject = int_subject(&mut runtime, 0)?;
+    let (_, screen) = display(&mut runtime)?;
+    let object = runtime.raw()?.lv_button_create(screen)?;
+    let observer =
+        runtime.observe_object(subject, object, UnsafePointer(0), move |context, _, _| {
+            context.raw()?.lv_obj_delete(object)
+        })?;
+    assert!(observer.pointer().is_err());
+    runtime.cancel_observer(&observer)?;
+    runtime.raw()?.lv_subject_set_int(subject, 1)?;
+    if LEGACY {
+        for name in [
+            "lv_subject_create",
+            "lv_subject_delete",
+            "lv_subject_deinit",
+            "lv_observer_get_user_data",
+        ] {
+            assert!(!API_EXPORTS.iter().any(|entry| entry.0 == name));
+        }
+        runtime.free(subject.0)?;
+    }
     runtime.shutdown()
 }
 

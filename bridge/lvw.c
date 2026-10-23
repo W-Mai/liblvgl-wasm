@@ -671,7 +671,7 @@ LVW_EXPORT(lvw_shutdown) int32_t lvw_shutdown(void) {
     while (timers) lv_timer_delete(timers->lvgl);
 #endif
 #if LVW_MANAGED_OBSERVER
-    while (observers) lv_observer_delete(observers->lvgl);
+    while (observers) LVW_OBSERVER_DELETE(observers->lvgl);
 #endif
 #if LVW_MANAGED_DECODER
     while (decoders) lv_image_decoder_delete(decoders->lvgl);
@@ -1056,7 +1056,7 @@ LVW_EXPORT(lvw_observer_delete) int32_t lvw_observer_delete(uint32_t observer, u
     for (lvw_observer_node_t *node = observers; node; node = node->next) {
         if (pointer_value(node->lvgl) != observer || node->callback_id != callback_id) continue;
         if (node->object_bound) return -3;
-        lv_observer_delete(node->lvgl);
+        LVW_OBSERVER_DELETE(node->lvgl);
         return 0;
     }
     return 0;

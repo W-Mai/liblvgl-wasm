@@ -25,7 +25,7 @@ def readonly(root, enabled):
 def check(output, build=None):
     custom = build is not None
     callbacks = os.environ.get("LVW_TEST_CALLBACKS", "").split()
-    if any(name not in {"timers", "animations"} for name in callbacks):
+    if any(name not in {"timers", "animations", "observers"} for name in callbacks):
         raise ValueError(f"unknown callback contract: {callbacks}")
     build = build or ROOT / "target/wasm"
     ndk = output / "ndk"
@@ -85,6 +85,7 @@ def check(output, build=None):
             packages.append({"package": str(package), "consumer": str(project), **metadata})
             if callbacks:
                 environment = {**os.environ, "LVW_TEST_CORE": str(package / "runtime/liblvgl.wasm"),
+                               "LVW_TEST_API": str(package / "metadata/api.json"),
                                "LVW_TEST_TS_RUNTIME": str(package / "typescript/index.js"),
                                "CARGO_TARGET_DIR": str(ROOT / "target/rust")}
                 environment.pop("LVW_RUST_BINDINGS", None)
