@@ -543,20 +543,23 @@ def main():
     outputs = {"export-ndk": "target/ndk", "export-sdk": "target/host-sdk",
                "export-source": "target/source", "init": "target/project",
                "export-package": "target/package"}
-    for name in ("doctor", "prepare", *outputs):
+    for name in ("doctor", "prepare", "inspect-lvgl", *outputs):
         command = commands.add_parser(name)
         command.add_argument("--project", default=".", help="project directory (default: cwd)")
         if name not in ("export-source", "init"):
             command.add_argument("--cache", help="tool cache, relative to project or absolute")
-        if name in ("doctor", "prepare", "export-ndk", "export-package"):
+        if name in ("doctor", "prepare", "inspect-lvgl", "export-ndk", "export-package"):
             command.add_argument("--sdk", help="existing wasi-sdk; overrides WASI_SDK_PATH")
         if name in ("doctor", "prepare"):
             command.add_argument("--with-zig", action="store_true", help="include locked Zig tools")
-        else:
+        elif name in outputs:
             command.add_argument("--output", default=outputs[name],
                                  help="new output directory, relative to project or absolute")
         if name == "init":
             command.add_argument("--source", required=True, help="verified source package directory")
+        if name == "inspect-lvgl":
+            command.add_argument("--source", required=True, help="LVGL source directory")
+            command.add_argument("--config", required=True, help="lv_conf.h file or its directory")
         if name == "export-package":
             command.add_argument("--allow-dirty", action="store_true",
                                  help="allow a development package from a dirty checkout")
@@ -582,7 +585,21 @@ def main():
         sdk_value = getattr(args, "sdk", None) or os.environ.get("WASI_SDK_PATH")
         sdk = resolve_path(sdk_value, project) if sdk_value else None
         result.update(host=host, target=lock["target"], project=str(project), cache=str(cache))
-        if args.command == "export-ndk":
+        if args.command == "inspect-lvgl":
+            library = Path(__file__).resolve().parents[1] / "generator"
+            if not (library / "lvgl.py").is_file():
+                raise ValueError("inspect-lvgl requires generator/ beside toolchains/ in the source package")
+            sys.dont_write_bytecode = True
+            sys.path.insert(0, str(library))
+            from lvgl import inspect_source
+
+            result["tools"] = tool_report(args, lock, host, cache, sdk, names=["wasi-sdk"])
+            selected = result["tools"]["wasi-sdk"]
+            if selected["ok"]:
+                result["lvgl"] = inspect_source(resolve_path(args.source, project),
+                                                resolve_path(args.config, project),
+                                                Path(selected["path"]))
+        elif args.command == "export-ndk":
             result.update(export_ndk(args, lock, host, project, cache, sdk))
         elif args.command == "export-package":
             result.update(export_package(args, lock, host, project, cache, sdk))
@@ -610,11 +627,18 @@ def main():
             }
         result["ok"] = all(item["ok"] for section in ("tools", "prerequisites")
                            for item in result.get(section, {}).values())
-    except (OSError, ValueError, KeyError, subprocess.SubprocessError) as error:
+    except (OSError, ValueError, KeyError, ImportError, RuntimeError, subprocess.SubprocessError) as error:
         result["error"] = str(error)
     if args.json:
         print(json.dumps(result, indent=2))
     else:
+        if "lvgl" in result:
+            report = result["lvgl"]
+            version = report["version"]
+            print(f"LVGL: {version['major']}.{version['minor']}.{version['patch']}"
+                  f"{version['info']}  {report['source']} ({report['layout']})")
+            print(f"Configuration: {report['config']}")
+            print("Header inspection only; build and runtime verification have not run.")
         if "output" in result:
             label = {"export-ndk": "NDK", "export-sdk": "SDK", "export-source": "Source",
                      "init": "Project", "export-package": "Package"}

@@ -9,6 +9,7 @@ import tempfile
 from pathlib import Path
 
 from wasm import read_module
+from lvgl import HEADER
 
 
 SCALARS = {"i32", "i64", "f32", "f64"}
@@ -34,8 +35,7 @@ def collect_signatures(command, declarations, prototypes, output_dir: Path):
     source = output_dir / "api-signatures.c"
     object_file = output_dir / "api-signatures.o"
     source.write_text(
-        '#include "lvgl/lvgl.h"\n'
-        '#pragma clang diagnostic ignored "-Wdeprecated-declarations"\n'
+        HEADER + '#pragma clang diagnostic ignored "-Wdeprecated-declarations"\n'
         + "\n".join(f"{prototype};" for prototype in prototypes) + "\n"
         + "\n".join(
             f"__attribute__((used)) __typeof__(&{name}) lvw_probe_{name} = &{name};"
@@ -85,8 +85,7 @@ def collect_callback_signatures(command, types, callbacks, output_dir: Path):
     source = output_dir / "callback-signatures.c"
     object_file = output_dir / "callback-signatures.o"
     source.write_text(
-        '#include "lvgl/lvgl.h"\n'
-        '#pragma clang diagnostic ignored "-Wdeprecated-declarations"\n'
+        HEADER + '#pragma clang diagnostic ignored "-Wdeprecated-declarations"\n'
         + "\n".join(declarations) + "\n"
     )
     signatures = probe_signatures(command, source, object_file, expected)

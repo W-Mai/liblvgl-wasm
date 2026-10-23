@@ -9,16 +9,8 @@ from pathlib import Path
 
 from constants import collect_constants, json_nodes
 from layouts import collect_layouts
+from lvgl import HEADER, SourceLayout, compiler_command, config_file
 from signatures import collect_callback_signatures, collect_signatures
-
-
-def compiler_command(clang: Path, source: Path, config: Path):
-    return [
-        str(clang), "--target=wasm32-wasip1", "-std=c11",
-        "-DLV_CONF_INCLUDE_SIMPLE", "-DLV_KCONFIG_IGNORE",
-        "-DLV_LVGL_H_INCLUDE_SIMPLE", f"-I{config}",
-        f"-I{source / 'include'}", f"-I{source}",
-    ]
 
 
 def declarations(command, source: Path):
@@ -26,10 +18,10 @@ def declarations(command, source: Path):
         "-Xclang", "-ast-dump=json", "-Xclang", "-ast-dump-filter=lv_",
         "-fsyntax-only", "-x", "c", "-",
     ]
-    output = subprocess.run(command, input='#include "lvgl/lvgl.h"\n',
+    output = subprocess.run(command, input=HEADER,
                             text=True, capture_output=True, check=True).stdout
     by_name = {}
-    header_root = (source / "include" / "lvgl").resolve()
+    header_root = SourceLayout.discover(source).public_root.resolve()
     for node in json_nodes(output):
         if node.get("kind") != "FunctionDecl":
             continue
@@ -122,7 +114,8 @@ def main():
     parser.add_argument("--exports", required=True, type=Path)
     parser.add_argument("--shims", required=True, type=Path)
     args = parser.parse_args()
-    command = compiler_command(args.sdk / "bin" / "clang", args.source, args.config.resolve())
+    args.config = config_file(args.config).parent
+    command = compiler_command(args.sdk / "bin" / "clang", args.source, args.config)
     found = declarations(command, args.source)
     constant_report = collect_constants(command, args.source, args.config.resolve())
     type_report = collect_layouts(command, args.sdk, args.source, args.config.resolve(),
@@ -157,7 +150,7 @@ def main():
         "summary": {"total": len(entries), **counts},
         "wasm_summary": {"expected_functions": len(signatures)}, "declarations": entries,
     }, indent=2) + "\n")
-    args.shims.write_text('#include "lvgl/lvgl.h"\n\n'
+    args.shims.write_text(f'#include "{SourceLayout.discover(args.source).header}"\n\n'
                           '#pragma clang diagnostic push\n'
                           '#pragma clang diagnostic ignored "-Wdeprecated-declarations"\n\n'
                           + "\n\n".join(shims) +

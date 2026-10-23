@@ -6,6 +6,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from lvgl import HEADER
+
 
 class Cursor(C.Structure):
     _fields_ = [("kind", C.c_uint), ("xdata", C.c_int), ("data", C.c_void_p * 3)]
@@ -165,7 +167,7 @@ class TranslationUnit:
             self.resource_dir = Path(resource_dir).resolve()
             self.output_dir.mkdir(parents=True, exist_ok=True)
             source = self.output_dir / "api-layout.c"
-            source.write_text('#include "lvgl/lvgl.h"\n')
+            source.write_text(HEADER)
             argv = (C.c_char_p * len(arguments))(*(arg.encode() for arg in arguments))
             self._index = self.createIndex(0, 0)
             if not self._index:

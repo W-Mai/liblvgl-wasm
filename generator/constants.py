@@ -5,9 +5,10 @@ import re
 import subprocess
 from pathlib import Path
 
+from lvgl import HEADER
+
 
 PUBLIC_NAME = re.compile(r"(?:LV|LVGL)_[A-Za-z0-9_]+\Z")
-HEADER = '#include "lvgl/lvgl.h"\n'
 CATEGORIES = ("integer", "string", "function_macro", "empty_macro", "unsupported")
 CONTEXT_NAMES = {
     "__LINE__", "__FILE__", "__FILE_NAME__", "__BASE_FILE__", "__COUNTER__",

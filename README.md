@@ -39,6 +39,19 @@ Preparation verifies archive size and SHA-256, rejects escaping archive paths an
 
 macOS arm64 preparation, relocation, offline reuse, and a C++ standard-exception/SJLJ reactor have been checked locally. Linux x86_64 archives are configured; this preparation path requires validation in Linux CI. Other build hosts are rejected.
 
+### LVGL source inspection
+
+`inspect-lvgl` reads an LVGL v9+ source tree with the selected wasi-sdk and configuration. Both the root `lvgl.h` layout and `include/lvgl/lvgl.h` layout are recognized. A second root entry must forward to the public header tree without changing its version. The selected `lv_conf.h` must actually be included.
+
+```sh
+python3 -B toolchains/lvw.py inspect-lvgl \
+    --source /path/to/lvgl --config /path/to/lv_conf.h --json
+```
+
+The command shares header discovery and target constant evaluation with the API generator. It reports the actual version, target, effective `LV_USE_*` values, configuration file hash, and selected declaration probes. Macro expressions are evaluated by the target compiler. Missing declarations are reported separately from a failed inspection. Inspection does not build a reactor or verify runtime compatibility; both verification fields remain `not-run`. The current reactor build and native adaptations still use LVGL 9.6.0.
+
+The command is read-only and does not download tools or create a cache. `--project`, `--cache`, and `--sdk` use the preparation command's path rules; only wasi-sdk is required. Keep the source package's `generator/` directory with `toolchains/` when moving this command. The configuration can be an `lv_conf.h` file or its parent directory. Its reported hash covers that file, not its transitive includes or a complete build identity.
+
 ### Source packages
 
 `export-source` copies the checkout's tracked source files into a new directory, including working-tree edits. It requires Git and the checkout root as `--project`; add new source files to Git before exporting. Compiler installations, build outputs, installed dependencies, `.git`, `.local`, and untracked files are excluded. Tracked local or build paths and symbolic links are rejected.

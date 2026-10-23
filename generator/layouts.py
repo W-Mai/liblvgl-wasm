@@ -7,6 +7,7 @@ from collections import Counter
 from pathlib import Path
 
 from cindex import TranslationUnit
+from lvgl import SourceLayout
 
 
 INTEGER_KINDS = set(range(4, 21))
@@ -229,6 +230,7 @@ class TypeGraph:
 def collect_layouts(command, sdk: Path, source: Path, config: Path,
                     function_names, output_dir: Path) -> dict:
     expected = set(function_names)
+    header_root = SourceLayout.discover(source).public_root.resolve()
     with TranslationUnit(sdk, command, output_dir) as clang:
         graph = TypeGraph(clang, sdk, source, config)
         functions = {}
@@ -239,8 +241,7 @@ def collect_layouts(command, sdk: Path, source: Path, config: Path,
             name = clang.string(clang.getCursorSpelling(cursor))
             location = clang.origin(cursor)
             if (not name.startswith("lv_") or not location["file"] or
-                    not Path(location["file"]).resolve().is_relative_to(
-                        (source / "include/lvgl").resolve())):
+                    not Path(location["file"]).resolve().is_relative_to(header_root)):
                 continue
             ctype = clang.getCursorType(cursor)
             signatures = {"declared": graph.ref(ctype),

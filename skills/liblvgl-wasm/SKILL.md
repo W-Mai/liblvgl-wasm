@@ -1,11 +1,24 @@
 ---
 name: liblvgl-wasm
-description: Build portable LVGL WASIp1 reactors, generate bindings matched to an exact core, and consume the relocatable C/C++ NDK or host SDK.
+description: Inspect LVGL v9+ sources and configurations, build WASIp1 reactors, generate core-specific bindings, and consume portable native or host SDKs.
 ---
 
 # liblvgl-wasm
 
-Use this skill when a task needs an LVGL 9.6.0 WASIp1 reactor, a native C/C++ application, a core-specific TypeScript or Rust host, or a relocatable toolchain package.
+Use this skill for LVGL v9+ source inspection, WASIp1 reactors, native applications, core-specific TypeScript or Rust hosts, and portable toolchain packages.
+
+## Inspect the requested LVGL input
+
+Preserve the user's source version and configuration. For a source checkout, use its actual public headers and `lv_conf.h`:
+
+```sh
+python3 -B toolchains/lvw.py inspect-lvgl \
+  --source /path/to/lvgl --config /path/to/lv_conf.h --json
+```
+
+Use the reported version, layout, effective configuration, and declaration probes. Inspection accepts the root and `include/lvgl` public header layouts and never downloads or builds. `build_verification` and `runtime_verification` remain `not-run`; successful inspection does not establish compatibility. The existing reactor build and native source adaptations are currently verified against 9.6.0. For an earlier v9 source or a modified fork, identify and implement the required build and native adaptations before using the build recipes below. Do not replace the selected source with 9.6.0, bypass adaptation hashes, silently disable requested features, or treat every v9 release as the same ABI.
+
+For an existing NDK or host SDK, inspect its manifests and exact core/API identities instead of rebuilding from a guessed version. A bare LVGL Wasm module may not implement the `lvw` bridge. Languages using a C ABI must consume headers, constants, layouts, and native libraries from the same selected source and configuration.
 
 ## Choose the build route
 
