@@ -153,6 +153,46 @@ __attribute__((export_name("ndk_animation_deleted"))) int ndk_animation_deleted(
     else lv_anim_delete(&animation_deletions, NULL);
     return animation_deletions;
 }
+#if LV_USE_OBSERVER && LVGL_VERSION_MINOR >= 2 && LVGL_VERSION_MINOR <= 3
+static int observer_user_events;
+static void observer_user_event(lv_event_t * event) {
+    (void)event;
+    observer_user_events++;
+}
+static void observer_unbind_event(lv_event_t * event) {
+    lv_subject_t * subject = (lv_subject_t *)lv_event_get_param(event);
+    int deinit = *(int *)lv_event_get_user_data(event);
+    if (subject && deinit) lv_subject_deinit(subject);
+    else lv_obj_remove_from_subject((lv_obj_t *)lv_event_get_target(event), subject);
+}
+__attribute__((export_name("ndk_observer_cleanup"))) int ndk_observer_cleanup(int deinit) {
+    lv_display_t * display = lv_display_create(16, 16);
+    if (!display) return -1;
+    lv_obj_t * slider = lv_slider_create(lv_display_get_screen_active(display));
+    lv_subject_t first, second;
+    lv_subject_init_int(&first, 0);
+    lv_subject_init_int(&second, 0);
+    lv_slider_bind_value(slider, &first);
+    lv_slider_bind_value(slider, &second);
+    lv_obj_add_event_cb(slider, observer_user_event, LV_EVENT_VALUE_CHANGED, NULL);
+    lv_obj_add_event_cb(slider, observer_user_event, LV_EVENT_VALUE_CHANGED, &first);
+    lv_obj_add_event_cb(slider, observer_unbind_event, LV_EVENT_CLICKED, &deinit);
+    observer_user_events = 0;
+    lv_obj_send_event(slider, LV_EVENT_CLICKED, &first);
+    lv_slider_set_value(slider, 7, LV_ANIM_OFF);
+    lv_obj_send_event(slider, LV_EVENT_VALUE_CHANGED, NULL);
+    int result = lv_subject_get_int(&first) == 0 && lv_subject_get_int(&second) == 7 &&
+                 observer_user_events == 2 ? 0 : -2;
+    lv_obj_send_event(slider, LV_EVENT_CLICKED, NULL);
+    lv_slider_set_value(slider, 9, LV_ANIM_OFF);
+    lv_obj_send_event(slider, LV_EVENT_VALUE_CHANGED, NULL);
+    if (lv_subject_get_int(&second) != 7 || observer_user_events != 4) result = -3;
+    lv_display_delete(display);
+    lv_subject_deinit(&first);
+    lv_subject_deinit(&second);
+    return result;
+}
+#endif
 '''
         (project / "main.c").write_text('#include "layout.h"\n' + example)
         (project / "main.cpp").write_text('#include "layout.h"\n' + example)

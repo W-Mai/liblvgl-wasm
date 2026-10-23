@@ -443,11 +443,33 @@ fn unbinding_and_deinit_preserve_other_subjects_and_release_object_subscriptions
                 let _keep_capture = &held;
                 Ok(())
             })?;
-        if cleanup == "deinit" {
-            runtime.call_raw::<_, ()>(native("lv_subject_deinit"), first.0)?;
-        } else {
-            unbind(&mut runtime, slider, first)?;
-        }
+        runtime.set_event_handler_with_context(move |context, event| {
+            assert_eq!(event.callback_id, 902);
+            if cleanup == "deinit" {
+                context.call_raw::<_, ()>(native("lv_subject_deinit"), first.0)?;
+            } else if has("lv_obj_remove_from_subject") {
+                context
+                    .call_raw::<_, ()>(native("lv_obj_remove_from_subject"), (slider.0, first.0))?;
+            } else {
+                context
+                    .call_raw::<_, ()>(native("lv_subject_remove_all_obj"), (first.0, slider.0))?;
+            }
+            Ok(())
+        })?;
+        assert_eq!(
+            runtime.call_raw::<_, i32>(
+                "lvw_event_add",
+                (slider.0, values::LV_EVENT_CLICKED, 902u32)
+            )?,
+            0
+        );
+        runtime
+            .raw()?
+            .lv_obj_send_event(slider, values::LV_EVENT_CLICKED, UnsafePointer(0))?;
+        assert_eq!(
+            runtime.call_raw::<_, i32>("lvw_event_remove", (slider.0, 902u32))?,
+            0
+        );
         assert!(removed.pointer().is_err());
         retained.pointer()?;
         runtime
@@ -502,7 +524,7 @@ fn initial_object_deletion_does_not_revive_a_released_observer() -> Result<()> {
         if values::LVGL_VERSION_MINOR < 2 {
             assert!(!has("lv_subject_deinit"));
             assert!(!has("lv_observer_get_user_data"));
-        } else if values::LVGL_VERSION_MINOR == 2 {
+        } else if values::LVGL_VERSION_MINOR <= 3 {
             assert!(has("lv_subject_deinit"));
             assert!(has("lv_observer_get_user_data"));
             assert!(!has("lv_observer_set_user_data"));

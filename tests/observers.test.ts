@@ -298,8 +298,12 @@ test("subject unbinding and deinit preserve other subjects and unrelated events"
       const retained = runtime.observeObject(second, object, () => { calls++; });
       let events = 0;
       object.on(LV_EVENT_VALUE_CHANGED, () => { events++; });
-      if (cleanup === "deinit") raw.lv_subject_deinit(first);
-      else unbind(runtime, object.handle, first);
+      const finishCleanup = object.on(sdk.LV_EVENT_CLICKED, () => {
+        if (cleanup === "deinit") raw.lv_subject_deinit(first);
+        else unbind(runtime, object.handle, first);
+      });
+      raw.lv_obj_send_event(object.handle, sdk.LV_EVENT_CLICKED, 0);
+      finishCleanup();
       expect(() => detached.handle).toThrow("invalid");
       expect(retained.handle).not.toBe(0);
       const before = calls;
@@ -343,7 +347,7 @@ test("object deletion inside the initial notification returns an invalid observe
     if (Number(sdk.LVGL_VERSION_MINOR) < 2) {
       expect("lv_subject_deinit" in runtime.unsafe).toBe(false);
       expect("lv_observer_get_user_data" in runtime.unsafe).toBe(false);
-    } else if (Number(sdk.LVGL_VERSION_MINOR) === 2) {
+    } else if (Number(sdk.LVGL_VERSION_MINOR) <= 3) {
       expect("lv_subject_deinit" in runtime.unsafe).toBe(true);
       expect("lv_observer_get_user_data" in runtime.unsafe).toBe(true);
       expect("lv_observer_set_user_data" in runtime.unsafe).toBe(false);

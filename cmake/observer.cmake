@@ -12,12 +12,18 @@ set(LVW_OBSERVER_LEGACY_SOURCES
     "6d46abda8c43952d0abae5087b187fe69347c43c23314eb6b09b22f3f2d7bcbc" # v9.1.0
 )
 set(LVW_OBSERVER_SCOPED_CLEANUP OFF)
+set(LVW_OBSERVER_DEFERRED_EVENTS OFF)
 if(LVW_OBSERVER_HASH IN_LIST LVW_OBSERVER_LEGACY_SOURCES)
     set(LVW_OBSERVER_LEGACY ON)
     list(APPEND LVW_BRIDGE_DEFINITIONS LVW_OBSERVER_DELETE=lv_observer_remove)
 elseif(LVW_OBSERVER_HASH STREQUAL "4030fd4bc0fd8decd3d27cb3f7f94fd28d30acd4b26813810b77cbeb7fcf113d") # v9.2.2
     set(LVW_OBSERVER_LEGACY OFF)
     set(LVW_OBSERVER_SCOPED_CLEANUP ON)
+    list(APPEND LVW_BRIDGE_DEFINITIONS LVW_OBSERVER_DELETE=lv_observer_remove)
+elseif(LVW_OBSERVER_HASH STREQUAL "8793c045865b277ac994b202194ade5cbc3b3042a66ca20c93a42864518e5e4c") # v9.3.0
+    set(LVW_OBSERVER_LEGACY OFF)
+    set(LVW_OBSERVER_SCOPED_CLEANUP ON)
+    set(LVW_OBSERVER_DEFERRED_EVENTS ON)
     list(APPEND LVW_BRIDGE_DEFINITIONS LVW_OBSERVER_DELETE=lv_observer_remove)
 elseif(LVW_OBSERVER_HASH STREQUAL "2eb15b1668bf035e8850798cca03f365c7b36e1b1c58d53eb857ef696a3aa0ca")
     set(LVW_OBSERVER_LEGACY OFF)
@@ -114,6 +120,15 @@ void lv_obj_remove_from_subject(lv_obj_t * obj, lv_subject_t * subject)
 }
 
 ]=])
+    if(LVW_OBSERVER_DEFERRED_EVENTS)
+        # Removed descriptors stay in the array until the outer event returns.
+        string(REPLACE "if(event_dsc->cb == unsubscribe_on_delete_cb)"
+            "if(event_dsc->cb == unsubscribe_on_delete_cb && !(event_dsc->filter & LV_EVENT_MARKED_DELETING))"
+            LVW_UNBIND "${LVW_UNBIND}")
+        string(REPLACE "lv_obj_remove_event_cb_with_user_data(observer->target, NULL, observer->subject);"
+            "lvw_observer_unbind_widget(observer->target, observer->subject);"
+            LVW_OBSERVER_CODE "${LVW_OBSERVER_CODE}")
+    endif()
     foreach(function IN ITEMS DEINIT UNBIND)
         if(function STREQUAL "DEINIT")
             set(LVW_BEGIN_ANCHOR "void lv_subject_deinit(lv_subject_t * subject)\n")

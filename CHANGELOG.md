@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- LVGL 9.3.0 base and managed callbacks, including observer cleanup during event dispatch and relocated NDK consumers.
+
 - LVGL 9.2.2 base and managed callbacks, including subject cleanup and decoder sessions.
 
 - LVGL 9.1.0 base and managed callback builds, with relocated C/C++/Zig consumers and matching TS/Rust SDKs.

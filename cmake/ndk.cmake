@@ -34,6 +34,8 @@ set_property(TARGET lvgl PROPERTY INTERFACE_INCLUDE_DIRECTORIES
     "$<INSTALL_INTERFACE:include/lvgl>" "$<INSTALL_INTERFACE:include/lvgl/config>")
 set_property(TARGET lvgl PROPERTY INTERFACE_SYSTEM_INCLUDE_DIRECTORIES
     "$<BUILD_INTERFACE:${lvgl_SOURCE_DIR}>")
+# Header installation below preserves the source layout and selected configuration.
+set_property(TARGET lvgl PROPERTY PUBLIC_HEADER "")
 set_target_properties(lvw_wasm_sjlj PROPERTIES EXPORT_NAME wasm_sjlj)
 add_custom_target(lvw_ndk DEPENDS lvw_bridge lvw_shims)
 
