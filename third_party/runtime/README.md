@@ -8,4 +8,6 @@ The LLVM runtime files are from commit `895aa2c896ada719451be2e3673c83da8ddf1141
 
 The LVGL tree preserves the original license files and font notices shipped with the pinned LVGL source archive. FreeType and ThorVG have additional source and license trees under `third_party/freetype` and `third_party/thorvg`.
 
+Git preserves third-party file bytes without line-ending conversion. The manifest hashes apply to the original bytes in both source checkouts and exported packages.
+
 `manifest.json` records every file hash in this directory and the fixed upstream identities used to collect it. The build does not download or regenerate these materials.

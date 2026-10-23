@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Preserve third-party notice bytes across Git checkouts and source packages.
+
 - Managed image decoders for verified LVGL 9.0.0 sources, with borrowed info views, failed-open path cleanup, header-cache invalidation, and TS/Rust lifecycle checks.
 
 - Managed observers for verified LVGL 9.0.0 sources, with native deletion tracking, subject-scoped widget cleanup, and TS/Rust lifecycle checks on exported SDKs.
