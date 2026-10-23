@@ -7,7 +7,11 @@ use liblvgl_wasm_host::{
     API_EXPORTS, CallbackContext, Error, Observer, Result, Runtime, UnsafePointer, values,
 };
 
-const LEGACY: bool = values::LVGL_VERSION_MINOR < 2;
+const UNCHANGED_NOTIFIES: bool = values::LVGL_VERSION_MINOR < 3;
+
+fn has(name: &str) -> bool {
+    API_EXPORTS.iter().any(|entry| entry.0 == name)
+}
 
 fn native(name: &str) -> &'static str {
     API_EXPORTS.iter().find(|entry| entry.0 == name).unwrap().1
@@ -18,7 +22,7 @@ fn user_data(
     pointer: UnsafePointer,
     update: Option<u32>,
 ) -> Result<u32> {
-    if !LEGACY {
+    if has("lv_observer_get_user_data") {
         let previous = context.call_raw(native("lv_observer_get_user_data"), pointer.0)?;
         if let Some(value) = update {
             context.call_raw::<_, ()>(native("lv_observer_set_user_data"), (pointer.0, value))?;
@@ -58,7 +62,7 @@ fn user_data(
 }
 
 fn unbind(runtime: &mut Runtime, object: UnsafePointer, subject: UnsafePointer) -> Result<()> {
-    if LEGACY {
+    if !has("lv_obj_remove_from_subject") {
         runtime.call_raw(native("lv_subject_remove_all_obj"), (subject.0, object.0))
     } else {
         runtime.call_raw(native("lv_obj_remove_from_subject"), (object.0, subject.0))
@@ -66,7 +70,7 @@ fn unbind(runtime: &mut Runtime, object: UnsafePointer, subject: UnsafePointer) 
 }
 
 fn subject(runtime: &mut Runtime, pointer: bool) -> Result<UnsafePointer> {
-    if LEGACY {
+    if !has("lv_subject_create") {
         let mut raw = runtime.raw()?;
         let subject = raw.alloc(values::LV_SUBJECT_T_SIZE)?;
         assert_ne!(subject.0, 0);
@@ -137,9 +141,14 @@ fn initial_callbacks_preserve_native_values_and_allow_nested_observers() -> Resu
             assert_eq!(current, subject);
             let count = count.fetch_add(1, Ordering::SeqCst);
             let pointer = observer.pointer()?;
+            let writable = !has("lv_observer_get_user_data") || has("lv_observer_set_user_data");
             assert_eq!(
-                user_data(context, pointer, Some(7))?,
-                if count == 0 { 0xfedc_ba98 } else { 7 }
+                user_data(context, pointer, writable.then_some(7))?,
+                if count == 0 || !writable {
+                    0xfedc_ba98
+                } else {
+                    7
+                }
             );
             let value = {
                 let mut raw = context.raw()?;
@@ -189,10 +198,16 @@ fn initial_callbacks_preserve_native_values_and_allow_nested_observers() -> Resu
         [("other", 0), ("target", 4), ("initial", 4), ("other", 17)]
     );
     runtime.raw()?.lv_subject_set_int(subject, 4)?;
-    assert_eq!(calls.load(Ordering::SeqCst), if LEGACY { 2 } else { 1 });
+    assert_eq!(
+        calls.load(Ordering::SeqCst),
+        if UNCHANGED_NOTIFIES { 2 } else { 1 }
+    );
     runtime.raw()?.lv_subject_set_int(subject, 9)?;
     runtime.raw()?.lv_subject_notify(subject)?;
-    assert_eq!(calls.load(Ordering::SeqCst), if LEGACY { 4 } else { 3 });
+    assert_eq!(
+        calls.load(Ordering::SeqCst),
+        if UNCHANGED_NOTIFIES { 4 } else { 3 }
+    );
     let text = runtime.raw()?.lv_label_get_text(label)?;
     let mut bytes = [0; 2];
     runtime.read_memory(text.0, &mut bytes)?;
@@ -282,10 +297,10 @@ fn native_deletion_and_callback_cancellation_release_shared_registration_lifetim
     })?;
     let old_pointer = raw_deleted.pointer()?;
     runtime.call_raw::<_, ()>(
-        native(if LEGACY {
-            "lv_observer_remove"
-        } else {
+        native(if has("lv_observer_delete") {
             "lv_observer_delete"
+        } else {
+            "lv_observer_remove"
         }),
         old_pointer.0,
     )?;
@@ -309,8 +324,12 @@ fn native_deletion_and_callback_cancellation_release_shared_registration_lifetim
         let _keep_capture = &held;
         Ok(())
     })?;
-    if LEGACY {
-        runtime.cancel_observer(&remaining)?;
+    if !has("lv_subject_delete") {
+        if has("lv_subject_deinit") {
+            runtime.call_raw::<_, ()>(native("lv_subject_deinit"), subject.0)?;
+        } else {
+            runtime.cancel_observer(&remaining)?;
+        }
         runtime.free(subject.0)?;
     } else {
         runtime.call_raw::<_, ()>(native("lv_subject_delete"), subject.0)?;
@@ -321,7 +340,7 @@ fn native_deletion_and_callback_cancellation_release_shared_registration_lifetim
     runtime.raw()?.lv_subject_init_int(legacy, 3)?;
     let observer =
         runtime.observe_object(legacy, UnsafePointer(0), UnsafePointer(0), |_, _, _| Ok(()))?;
-    if LEGACY {
+    if !has("lv_subject_deinit") {
         runtime.cancel_observer(&observer)?;
     } else {
         runtime.call_raw::<_, ()>(native("lv_subject_deinit"), legacy.0)?;
@@ -387,8 +406,13 @@ fn object_bound_observers_preserve_widget_bindings_until_native_cleanup() -> Res
     let (_, screen) = self::display(&mut runtime)?;
     let object = runtime.raw()?.lv_button_create(screen)?;
     let observer = runtime.observe_object(subject, object, UnsafePointer(0), |_, _, _| Ok(()))?;
-    if LEGACY {
-        unbind(&mut runtime, object, subject)?;
+    if !has("lv_subject_delete") {
+        if has("lv_subject_deinit") {
+            runtime.call_raw::<_, ()>(native("lv_subject_deinit"), subject.0)?;
+        } else {
+            unbind(&mut runtime, object, subject)?;
+        }
+        runtime.free(subject.0)?;
     } else {
         runtime.call_raw::<_, ()>(native("lv_subject_delete"), subject.0)?;
     }
@@ -398,38 +422,64 @@ fn object_bound_observers_preserve_widget_bindings_until_native_cleanup() -> Res
 }
 
 #[test]
-fn unbinding_preserves_other_subjects_and_releases_object_subscriptions() -> Result<()> {
-    let mut runtime = load()?;
-    let first = int_subject(&mut runtime, 0)?;
-    let second = int_subject(&mut runtime, 0)?;
-    let (_, screen) = display(&mut runtime)?;
-    let slider = runtime.raw()?.lv_slider_create(screen)?;
-    for subject in [first, second] {
-        runtime.raw()?.lv_slider_bind_value(slider, subject)?;
+fn unbinding_and_deinit_preserve_other_subjects_and_release_object_subscriptions() -> Result<()> {
+    for cleanup in ["unbind", "deinit"] {
+        if cleanup == "deinit" && !has("lv_subject_deinit") {
+            continue;
+        }
+        let mut runtime = load()?;
+        let first = int_subject(&mut runtime, 0)?;
+        let second = int_subject(&mut runtime, 0)?;
+        let (_, screen) = display(&mut runtime)?;
+        let slider = runtime.raw()?.lv_slider_create(screen)?;
+        for subject in [first, second] {
+            runtime.raw()?.lv_slider_bind_value(slider, subject)?;
+        }
+        let removed = runtime.observe_object(first, slider, UnsafePointer(0), |_, _, _| Ok(()))?;
+        let capture = Arc::new(());
+        let held = Arc::clone(&capture);
+        let retained =
+            runtime.observe_object(second, slider, UnsafePointer(0), move |_, _, _| {
+                let _keep_capture = &held;
+                Ok(())
+            })?;
+        if cleanup == "deinit" {
+            runtime.call_raw::<_, ()>(native("lv_subject_deinit"), first.0)?;
+        } else {
+            unbind(&mut runtime, slider, first)?;
+        }
+        assert!(removed.pointer().is_err());
+        retained.pointer()?;
+        runtime
+            .raw()?
+            .lv_slider_set_value(slider, 7, values::LV_ANIM_OFF)?;
+        runtime.raw()?.lv_obj_send_event(
+            slider,
+            values::LV_EVENT_VALUE_CHANGED,
+            UnsafePointer(0),
+        )?;
+        assert_eq!(runtime.raw()?.lv_subject_get_int(first)?, 0);
+        assert_eq!(runtime.raw()?.lv_subject_get_int(second)?, 7);
+        if has("lv_obj_remove_from_subject") {
+            runtime.call_raw::<_, ()>(native("lv_obj_remove_from_subject"), (slider.0, 0u32))?;
+            assert!(retained.pointer().is_err());
+            runtime
+                .raw()?
+                .lv_slider_set_value(slider, 9, values::LV_ANIM_OFF)?;
+            runtime.raw()?.lv_obj_send_event(
+                slider,
+                values::LV_EVENT_VALUE_CHANGED,
+                UnsafePointer(0),
+            )?;
+            assert_eq!(runtime.raw()?.lv_subject_get_int(second)?, 7);
+        }
+        runtime.raw()?.lv_obj_delete(slider)?;
+        assert!(retained.pointer().is_err());
+        assert_eq!(Arc::strong_count(&capture), 1);
+        runtime.raw()?.lv_subject_set_int(second, 8)?;
+        runtime.shutdown()?;
     }
-    let removed = runtime.observe_object(first, slider, UnsafePointer(0), |_, _, _| Ok(()))?;
-    let capture = Arc::new(());
-    let held = Arc::clone(&capture);
-    let retained = runtime.observe_object(second, slider, UnsafePointer(0), move |_, _, _| {
-        let _keep_capture = &held;
-        Ok(())
-    })?;
-    unbind(&mut runtime, slider, first)?;
-    assert!(removed.pointer().is_err());
-    retained.pointer()?;
-    runtime
-        .raw()?
-        .lv_slider_set_value(slider, 7, values::LV_ANIM_OFF)?;
-    runtime
-        .raw()?
-        .lv_obj_send_event(slider, values::LV_EVENT_VALUE_CHANGED, UnsafePointer(0))?;
-    assert_eq!(runtime.raw()?.lv_subject_get_int(first)?, 0);
-    assert_eq!(runtime.raw()?.lv_subject_get_int(second)?, 7);
-    runtime.raw()?.lv_obj_delete(slider)?;
-    assert!(retained.pointer().is_err());
-    assert_eq!(Arc::strong_count(&capture), 1);
-    runtime.raw()?.lv_subject_set_int(second, 8)?;
-    runtime.shutdown()
+    Ok(())
 }
 
 #[test]
@@ -445,14 +495,20 @@ fn initial_object_deletion_does_not_revive_a_released_observer() -> Result<()> {
     assert!(observer.pointer().is_err());
     runtime.cancel_observer(&observer)?;
     runtime.raw()?.lv_subject_set_int(subject, 1)?;
-    if LEGACY {
-        for name in [
-            "lv_subject_create",
-            "lv_subject_delete",
-            "lv_subject_deinit",
-            "lv_observer_get_user_data",
-        ] {
+    if !has("lv_subject_create") {
+        for name in ["lv_subject_create", "lv_subject_delete"] {
             assert!(!API_EXPORTS.iter().any(|entry| entry.0 == name));
+        }
+        if values::LVGL_VERSION_MINOR < 2 {
+            assert!(!has("lv_subject_deinit"));
+            assert!(!has("lv_observer_get_user_data"));
+        } else if values::LVGL_VERSION_MINOR == 2 {
+            assert!(has("lv_subject_deinit"));
+            assert!(has("lv_observer_get_user_data"));
+            assert!(!has("lv_observer_set_user_data"));
+        }
+        if has("lv_subject_deinit") {
+            runtime.call_raw::<_, ()>(native("lv_subject_deinit"), subject.0)?;
         }
         runtime.free(subject.0)?;
     }

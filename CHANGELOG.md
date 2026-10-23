@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- LVGL 9.2.2 base and managed callbacks, including subject cleanup and decoder sessions.
+
 - LVGL 9.1.0 base and managed callback builds, with relocated C/C++/Zig consumers and matching TS/Rust SDKs.
 
 - Preserve third-party notice bytes across Git checkouts and source packages.

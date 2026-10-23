@@ -19,6 +19,10 @@ LEGACY = [{
     "url": "https://codeload.github.com/lvgl/lvgl/tar.gz/refs/tags/v9.1.0",
     "root": "lvgl-9.1.0", "size": 59139604,
     "sha256": "6930f1605d305fcd43f31d5f470ecf4a013c4ce0980e78ee4c33b96a589bf433",
+}, {
+    "url": "https://codeload.github.com/lvgl/lvgl/tar.gz/refs/tags/v9.2.2",
+    "root": "lvgl-9.2.2", "size": 71162193,
+    "sha256": "129b4e00e06639fa79d7e8a6cab3c1ecce2445b1a246652ccd34f22e7b17ad6f",
 }]
 CALLBACKS = {"timer": "timers", "animation": "animations", "observer": "observers", "decoder": "decoders"}
 

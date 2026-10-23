@@ -11,8 +11,8 @@
 #if LVW_DECODER_LEGACY
 void lvw_decoder_drop_header_cache(void);
 #else
-#include "image/lv_image_decoder_private.h"
-#include "misc/cache/instance/lv_image_header_cache.h"
+#include LVW_DECODER_PRIVATE_HEADER
+#include LVW_DECODER_CACHE_HEADER
 #endif
 #endif
 
