@@ -116,6 +116,7 @@ pub struct DecoderView {
     pub palette_size: u32,
     pub user_data: UnsafePointer,
     pub decoder_user_data: UnsafePointer,
+    /// Borrowed native info file, or zero when unavailable (including LVGL 9.0).
     pub file: UnsafePointer,
     pub args_flags: u32,
     pub time_to_open: u32,

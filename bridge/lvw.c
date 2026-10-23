@@ -8,8 +8,12 @@
 
 #include "lvgl/lvgl.h"
 #if LVW_MANAGED_DECODER
+#if LVW_DECODER_LEGACY
+void lvw_decoder_drop_header_cache(void);
+#else
 #include "image/lv_image_decoder_private.h"
 #include "misc/cache/instance/lv_image_header_cache.h"
+#endif
 #endif
 
 #define LVW_EXPORT(name) __attribute__((export_name(#name)))
@@ -495,7 +499,7 @@ static lv_result_t decoder_result(int32_t result) {
     return (lv_result_t)result;
 }
 
-static lv_result_t decoder_info(lv_image_decoder_t *decoder, lv_image_decoder_dsc_t *dsc,
+static lv_result_t decoder_info_session(lv_image_decoder_t *decoder, lv_image_decoder_dsc_t *dsc,
                                  lv_image_header_t *header) {
     lvw_decoder_node_t *node = find_decoder(decoder);
     if (find_decoder_session(dsc)) __builtin_trap();
@@ -506,6 +510,15 @@ static lv_result_t decoder_info(lv_image_decoder_t *decoder, lv_image_decoder_ds
     decoder_leave(&frame);
     return decoder_result(result);
 }
+
+#if LVW_DECODER_LEGACY
+static lv_result_t decoder_info(lv_image_decoder_t *decoder, const void *src, lv_image_header_t *header) {
+    lv_image_decoder_dsc_t dsc = {.decoder = decoder, .src = src, .src_type = lv_image_src_get_type(src)};
+    return decoder_info_session(decoder, &dsc, header);
+}
+#else
+#define decoder_info decoder_info_session
+#endif
 
 static lv_result_t decoder_open(lv_image_decoder_t *decoder, lv_image_decoder_dsc_t *dsc) {
     lvw_decoder_node_t *node = find_decoder(decoder);
@@ -1081,7 +1094,9 @@ LVW_EXPORT(lvw_decoder_create) uint32_t lvw_decoder_create(uint32_t user_data, u
     *node = (lvw_decoder_node_t){decoder, callback_id, flags, decoders};
     decoders = node;
     decoder->user_data = (void *)(uintptr_t)user_data;
+#if !LVW_DECODER_LEGACY
     decoder->name = "host";
+#endif
     lv_image_decoder_set_info_cb(decoder, decoder_info);
     lv_image_decoder_set_open_cb(decoder, decoder_open);
     lv_image_decoder_set_get_area_cb(decoder, flags & LVW_DECODER_GET_AREA ? decoder_area : NULL);
@@ -1098,7 +1113,11 @@ LVW_EXPORT(lvw_decoder_delete) int32_t lvw_decoder_delete(uint32_t decoder, uint
         for (lvw_decoder_session_t *session = decoder_sessions; session; session = session->next) {
             if (session->decoder == node->lvgl) return -3;
         }
+#if LVW_DECODER_LEGACY
+        lvw_decoder_drop_header_cache();
+#else
         lv_image_header_cache_drop(NULL);
+#endif
         lv_image_decoder_delete(node->lvgl);
         return 0;
     }
@@ -1113,14 +1132,19 @@ LVW_EXPORT(lvw_decoder_read) int32_t lvw_decoder_read(uint32_t decoder, uint32_t
     if (!frame || pointer_value(frame->decoder) != decoder || pointer_value(frame->dsc) != dsc) return -3;
     lv_image_decoder_dsc_t *source = frame->dsc;
     uint32_t args = (source->args.stride_align ? 1u : 0u) | (source->args.premultiply ? 2u : 0u)
-                    | (source->args.no_cache ? 4u : 0u) | (source->args.use_indexed ? 8u : 0u)
-                    | (source->args.flush_cache ? 16u : 0u);
+                    | (source->args.no_cache ? 4u : 0u) | (source->args.use_indexed ? 8u : 0u);
+    uint32_t file = 0;
+#if !LVW_DECODER_LEGACY
+    args |= source->args.flush_cache ? 16u : 0u;
+    if (frame->phase == LVW_DECODER_PHASE_INFO && source->src_type == LV_IMAGE_SRC_FILE) {
+        file = pointer_value(&source->file);
+    }
+#endif
     lvw_decoder_view_t view = {
         sizeof(view), 1u, pointer_value(source->src), (uint32_t)source->src_type,
         pointer_value(frame->header), pointer_value(source->decoded), pointer_value(source->palette),
         source->palette_size, pointer_value(source->user_data), pointer_value(frame->decoder->user_data),
-        frame->phase == LVW_DECODER_PHASE_INFO && source->src_type == LV_IMAGE_SRC_FILE
-            ? pointer_value(&source->file) : 0u,
+        file,
         args, source->time_to_open, pointer_value(source->error_msg), frame->phase, 0u,
     };
     memcpy((void *)(uintptr_t)output, &view, sizeof(view));

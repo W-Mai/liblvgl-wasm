@@ -19,6 +19,7 @@ export interface DecoderView {
   readonly paletteSize: number;
   readonly userData: UnsafePointer;
   readonly decoderUserData: UnsafePointer;
+  /** Borrowed native info file, or zero when unavailable (including LVGL 9.0). */
   readonly file: UnsafePointer;
   readonly argsFlags: number;
   readonly timeToOpen: number;

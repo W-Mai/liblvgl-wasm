@@ -6,6 +6,7 @@ import { join, resolve } from "node:path";
 test.each([
   ["timer", "src/misc", "lv_timer.c"], ["animation", "src/misc", "lv_anim.c"],
   ["observer", "src/core", "lv_observer.c"], ["observer", "src/others/observer", "lv_observer.c"],
+  ["decoder", "src/image", "lv_image_decoder.c"], ["decoder", "src/draw", "lv_image_decoder.c"],
 ])(
   "%s adaptation in %s rejects unknown source bytes and removes stale generated code",
   async (adapter, directory, filename) => {

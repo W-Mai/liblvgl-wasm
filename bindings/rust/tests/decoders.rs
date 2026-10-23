@@ -8,7 +8,10 @@ use liblvgl_wasm_host::{
 };
 
 fn load() -> Result<Runtime> {
-    Runtime::from_file(Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/wasm/liblvgl.wasm"))
+    Runtime::from_file(std::env::var_os("LVW_TEST_CORE").map_or_else(
+        || Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/wasm/liblvgl.wasm"),
+        std::path::PathBuf::from,
+    ))
 }
 
 fn offset(fields: &[values::FieldLayout], name: &str) -> u32 {
@@ -155,6 +158,8 @@ fn full_and_block_decoders_render_pixels_with_synchronous_session_ownership() ->
                     assert_eq!(view.header, output);
                     assert_eq!(view.source_type, values::LV_IMAGE_SRC_FILE as u32);
                     assert_eq!(view.decoder_user_data.0, 0xf123_4567);
+                    assert_eq!(view.file.0 == 0, values::LVGL_VERSION_MINOR == 0);
+                    assert_eq!(view.args_flags & 16, 0);
                     assert!(session.write(context, DecoderOutput::default()).is_err());
                     assert!(
                         context
@@ -266,11 +271,11 @@ fn full_and_block_decoders_render_pixels_with_synchronous_session_ownership() ->
 fn format_rejection_falls_back_to_bmp_and_open_failure_rolls_back_without_close() -> Result<()> {
     let mut runtime = load()?;
     let (display, screen) = display(&mut runtime)?;
-    let bitmap = resource(
-        &mut runtime,
-        "red.bmp",
-        include_bytes!("../../../examples/browser/red.bmp"),
-    )?;
+    let bitmap_bytes = std::fs::read(std::env::var_os("LVW_TEST_BITMAP").map_or_else(
+        || Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/browser/red.bmp"),
+        std::path::PathBuf::from,
+    ))?;
+    let bitmap = resource(&mut runtime, "red.bmp", &bitmap_bytes)?;
     let rejected = resource(&mut runtime, "fail.image", b"custom")?;
     let header = header(&mut runtime)?;
     let counts = Arc::new([AtomicU32::new(0), AtomicU32::new(0), AtomicU32::new(0)]);
@@ -328,6 +333,55 @@ fn idle_callbacks(capture: Arc<()>) -> ImageDecoderCallbacks {
         },
         |_, _| Ok(values::LV_RESULT_INVALID),
     )
+}
+
+#[test]
+fn cancellation_invalidates_cached_headers_before_decoder_replacement() -> Result<()> {
+    let mut runtime = load()?;
+    let source = resource(&mut runtime, "cached.custom", b"custom")?;
+    let output = UnsafePointer(runtime.alloc(values::LV_IMAGE_HEADER_T_SIZE)?);
+    let bytes = header(&mut runtime)?;
+    let calls = Arc::new(AtomicU32::new(0));
+    let callbacks = || {
+        let calls = Arc::clone(&calls);
+        let bytes = bytes.clone();
+        ImageDecoderCallbacks::new(
+            move |context, _, output| {
+                calls.fetch_add(1, Ordering::SeqCst);
+                context.write_memory(output.0, &bytes)?;
+                Ok(values::LV_RESULT_OK)
+            },
+            |_, _| Ok(values::LV_RESULT_INVALID),
+        )
+    };
+    let first = runtime.create_image_decoder(UnsafePointer(0), callbacks())?;
+    for _ in 0..2 {
+        assert_eq!(
+            runtime.raw()?.lv_image_decoder_get_info(source, output)?,
+            values::LV_RESULT_OK
+        );
+    }
+    assert_eq!(
+        calls.load(Ordering::SeqCst),
+        if values::LV_IMAGE_HEADER_CACHE_DEF_CNT > 0 {
+            1
+        } else {
+            2
+        }
+    );
+    runtime.cancel_image_decoder(&first)?;
+    let before = calls.load(Ordering::SeqCst);
+    let second = runtime.create_image_decoder(UnsafePointer(0), callbacks())?;
+    assert_eq!(
+        runtime.raw()?.lv_image_decoder_get_info(source, output)?,
+        values::LV_RESULT_OK
+    );
+    assert_eq!(calls.load(Ordering::SeqCst), before + 1);
+    runtime.free(source.0)?;
+    runtime.free(output.0)?;
+    runtime.shutdown()?;
+    assert!(second.pointer().is_err());
+    Ok(())
 }
 
 #[test]

@@ -25,7 +25,7 @@ def readonly(root, enabled):
 def check(output, build=None):
     custom = build is not None
     callbacks = os.environ.get("LVW_TEST_CALLBACKS", "").split()
-    if any(name not in {"timers", "animations", "observers"} for name in callbacks):
+    if any(name not in {"timers", "animations", "observers", "decoders"} for name in callbacks):
         raise ValueError(f"unknown callback contract: {callbacks}")
     build = build or ROOT / "target/wasm"
     ndk = output / "ndk"
@@ -48,6 +48,8 @@ def check(output, build=None):
             (original / "rust/tests").mkdir()
             for contract in callbacks:
                 shutil.copyfile(ROOT / f"bindings/rust/tests/{contract}.rs", original / f"rust/tests/{contract}.rs")
+            if "decoders" in callbacks:
+                shutil.copyfile(ROOT / "examples/browser/red.bmp", original / "rust/tests/red.bmp")
         files = file_inventory(original)
         package = output / f"moved {name}"
         publish_package(original, package, "sdk.json", {**metadata, "files": files})
@@ -86,6 +88,7 @@ def check(output, build=None):
             if callbacks:
                 environment = {**os.environ, "LVW_TEST_CORE": str(package / "runtime/liblvgl.wasm"),
                                "LVW_TEST_API": str(package / "metadata/api.json"),
+                               "LVW_TEST_BITMAP": str(package / "rust/tests/red.bmp"),
                                "LVW_TEST_TS_RUNTIME": str(package / "typescript/index.js"),
                                "CARGO_TARGET_DIR": str(ROOT / "target/rust")}
                 environment.pop("LVW_RUST_BINDINGS", None)

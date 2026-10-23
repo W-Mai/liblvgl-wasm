@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Managed image decoders for verified LVGL 9.0.0 sources, with borrowed info views, failed-open path cleanup, header-cache invalidation, and TS/Rust lifecycle checks.
+
 - Managed observers for verified LVGL 9.0.0 sources, with native deletion tracking, subject-scoped widget cleanup, and TS/Rust lifecycle checks on exported SDKs.
 
 - Managed animations for verified LVGL 9.0.0 and 9.6.0 sources without external data, with native descriptor binding, deletion tracking, and lifecycle checks for each version.

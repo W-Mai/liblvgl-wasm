@@ -1,14 +1,22 @@
 import { expect, test } from "bun:test";
-import {
+import type { LvglRuntime, DecoderSession, Frame, ImageDecoderCallbacks } from "../bindings/typescript/src/index.ts";
+
+const sdk = await import(Bun.env.LVW_TEST_TS_RUNTIME ?? "../bindings/typescript/src/index.ts") as
+  typeof import("../bindings/typescript/src/index.ts") & {
+    LV_IMAGE_DECODER_DSC_T_SIZE?: number;
+    LV_IMAGE_DECODER_DSC_T_FIELDS?: readonly { name: string | null; bit_offset: number; bit_width: number | null }[];
+  };
+const {
   LV_AREA_T_FIELDS, LV_COLOR_FORMAT_ARGB8888, LV_COORD_MIN, LV_EVENT_DELETE,
   LV_FS_FILE_T_SIZE, LV_FS_MODE_RD, LV_FS_RES_OK, LV_IMAGE_HEADER_MAGIC,
   LV_IMAGE_HEADER_T_FIELDS, LV_IMAGE_HEADER_T_SIZE, LV_IMAGE_SRC_FILE,
   LV_RESULT_INVALID, LV_RESULT_OK, LV_STRIDE_AUTO,
-  LvglRuntime, type DecoderSession, type Frame, type ImageDecoderCallbacks,
-} from "../bindings/typescript/src/index.ts";
+  LV_IMAGE_HEADER_CACHE_DEF_CNT,
+} = sdk;
+const legacy = Number(sdk.LVGL_VERSION_MINOR) === 0;
 
 async function load(): Promise<LvglRuntime> {
-  return LvglRuntime.load(await Bun.file("target/wasm/liblvgl.wasm").arrayBuffer());
+  return sdk.LvglRuntime.load(await Bun.file(Bun.env.LVW_TEST_CORE ?? "target/wasm/liblvgl.wasm").arrayBuffer());
 }
 
 function pixel(frame: Frame, x: number, y: number): number[] {
@@ -63,8 +71,15 @@ function register(runtime: LvglRuntime, chunked = false, failOpen = false,
       expect(view.srcType).toBe(LV_IMAGE_SRC_FILE);
       expect(view.header).toBe(output);
       expect(view.decoderUserData).toBe(0xf1234567);
-      expect(view.file).not.toBe(0);
-      const bytes = fileBytes(runtime, view.file, 8);
+      expect(view.file === 0).toBe(legacy);
+      expect(view.argsFlags & 16).toBe(0);
+      const file = legacy ? raw.lvw_alloc(LV_FS_FILE_T_SIZE) : view.file;
+      if (legacy) expect(raw.lv_fs_open(file, view.src, LV_FS_MODE_RD)).toBe(LV_FS_RES_OK);
+      const bytes = fileBytes(runtime, file, 8);
+      if (legacy) {
+        expect(raw.lv_fs_close(file)).toBe(LV_FS_RES_OK);
+        raw.lvw_free(file);
+      }
       if (!bytes.subarray(0, 4).every((value, index) => value === [76, 86, 87, 33][index])) {
         counts.rejected++;
         return LV_RESULT_INVALID;
@@ -221,9 +236,13 @@ test("decoder sessions enforce innermost borrowing and cancellation preserves bu
   expect(nested).toBeGreaterThan(0);
   for (const access of [() => saved!.read(), () => saved!.write({ decoded: 0 }),
     () => saved!.pointer, () => saved!.decoder]) expect(access).toThrow("innermost");
-  raw.lv_image_decoder_delete(decoder.handle);
+  // The rendered source can hold a cached header pointing to this decoder.
+  decoder.cancel();
   expect(() => decoder.handle).toThrow("invalid");
   decoder.cancel();
+  const idle = runtime.createImageDecoder({ info: () => 0, open: () => 0 });
+  raw.lv_image_decoder_delete(idle.handle);
+  expect(() => idle.handle).toThrow("invalid");
   const replacement = runtime.createImageDecoder({ info: () => 0, open: () => 0 });
   runtime.screen(display).on(LV_EVENT_DELETE, () => {
     expect(() => replacement.handle).toThrow("closing");
@@ -235,6 +254,59 @@ test("decoder sessions enforce innermost borrowing and cancellation preserves bu
   expect(() => replacement.handle).toThrow("closed");
   replacement.cancel();
   other.shutdown();
+});
+
+test("managed cancellation drops cached headers before a replacement decoder is queried", async () => {
+  const runtime = await load();
+  const raw = runtime.unsafe;
+  runtime.putResource("cached.custom", resource());
+  const bytes = new TextEncoder().encode("W:cached.custom\0");
+  const source = raw.lvw_alloc(bytes.length);
+  new Uint8Array(raw.memory.buffer, source, bytes.length).set(bytes);
+  const output = raw.lvw_alloc(LV_IMAGE_HEADER_T_SIZE);
+  let calls = 0;
+  const create = () => runtime.createImageDecoder({
+    info(_session, result) { calls++; header(runtime, result, 4, 3); return LV_RESULT_OK; },
+    open: () => LV_RESULT_INVALID,
+  });
+  const first = create();
+  expect(raw.lv_image_decoder_get_info(source, output)).toBe(LV_RESULT_OK);
+  expect(raw.lv_image_decoder_get_info(source, output)).toBe(LV_RESULT_OK);
+  expect(calls).toBe(Number(LV_IMAGE_HEADER_CACHE_DEF_CNT) > 0 ? 1 : 2);
+  first.cancel();
+  const before = calls;
+  create();
+  expect(raw.lv_image_decoder_get_info(source, output)).toBe(LV_RESULT_OK);
+  expect(calls).toBe(before + 1);
+  raw.lvw_free(source);
+  raw.lvw_free(output);
+  // Shutdown must release decoders without using a destroyed header cache.
+  runtime.shutdown();
+});
+
+test("failed legacy file opens release the native source copy without closing the session", async () => {
+  if (!legacy) return;
+  const runtime = await load();
+  const raw = runtime.unsafe;
+  runtime.putResource("failed.custom", resource());
+  const bytes = new TextEncoder().encode("W:failed.custom\0");
+  const source = raw.lvw_alloc(bytes.length);
+  new Uint8Array(raw.memory.buffer, source, bytes.length).set(bytes);
+  const descriptor = raw.lvw_alloc(sdk.LV_IMAGE_DECODER_DSC_T_SIZE!);
+  const field = sdk.LV_IMAGE_DECODER_DSC_T_FIELDS!.find((field) => field.name === "src")!;
+  expect(field.bit_width).toBeNull();
+  expect(field.bit_offset % 8).toBe(0);
+  const { decoder, counts } = register(runtime, false, true);
+  for (let index = 0; index < 8; index++) {
+    expect(raw.lv_image_decoder_open(descriptor, source, 0)).toBe(LV_RESULT_INVALID);
+    expect(new DataView(raw.memory.buffer).getUint32(descriptor + field.bit_offset / 8, true)).toBe(0);
+  }
+  expect(counts.rolledBack).toBe(8);
+  expect(counts.closed).toBe(0);
+  decoder.cancel();
+  raw.lvw_free(descriptor);
+  raw.lvw_free(source);
+  runtime.shutdown();
 });
 
 test("decoder callback errors, invalid results, and asynchronous results poison the shared runtime", async () => {
