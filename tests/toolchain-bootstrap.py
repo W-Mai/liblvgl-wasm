@@ -206,7 +206,7 @@ class BootstrapTests(unittest.TestCase):
     def test_ndk_failed_install_has_no_published_output(self):
         scripts = self.root / "scripts"
         scripts.mkdir()
-        (scripts / "build.sh").touch()
+        (scripts / "build-core.sh").touch()
         args = argparse.Namespace(command="export-ndk", output="target/ndk")
         reports = {"wasi-sdk": {"ok": True, "path": "/unused/sdk"},
                    "wasm-tools": {"ok": True, "executable": "/unused/validator"}}
@@ -397,12 +397,15 @@ class BootstrapTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "unsupported build host"):
                 lvw.host_platform()
 
-    def test_build_configuration_tracks_the_selected_sdk(self):
+    def test_build_configuration_tracks_source_config_features_and_sdk(self):
         project = self.root / "build project"
         scripts = project / "scripts"
         scripts.mkdir(parents=True)
-        for name in ("build.sh", "resolve-wasi-sdk.sh"):
+        for name in ("build.sh", "build-core.sh", "resolve-wasi-sdk.sh"):
             shutil.copyfile(ROOT / "scripts" / name, scripts / name)
+        config = project / "config/lv_conf.h"
+        config.parent.mkdir()
+        config.touch()
         sdk = self.root / "selected sdk"
         (sdk / "bin").mkdir(parents=True)
         (sdk / "bin/clang").write_text("#!/bin/sh\nexit 0\n")
@@ -421,17 +424,22 @@ class BootstrapTests(unittest.TestCase):
         recorder.chmod(0o755)
         environment = {**os.environ, "WASI_SDK_PATH": str(sdk),
                        "PATH": str(self.root) + os.pathsep + os.environ["PATH"]}
-        environment.pop("LVGL_SOURCE_DIR", None)
+        for name in ("LVGL_SOURCE_DIR", "LVGL_CONFIG_PATH", "LVW_BUILD_DIR", "LVW_BRIDGE_FEATURES"):
+            environment.pop(name, None)
         # A legacy cache has no successful-configuration receipt. A changed
         # CMAKE_TOOLCHAIN_FILE alone does not change CMake's cached compiler.
-        cases = [(None, str(toolchain), True), (str(sdk), str(toolchain), False),
-                 ("old-sdk", str(toolchain), True), (str(sdk), "old-toolchain", True)]
+        inputs = "\n".join([str(sdk), str(source), str(config), "timer;animation;observer;decoder"])
+        cases = [(None, str(toolchain), True), (inputs, str(toolchain), False),
+                 (inputs, "old-toolchain", True)]
+        cases += [(inputs.replace(value, "changed-input"), str(toolchain), True)
+                  for value in (str(sdk), str(source), str(config), "timer;animation;observer;decoder")]
         for recorded, cached, fresh in cases:
             with self.subTest(recorded=recorded, cached=cached):
                 (build / "CMakeCache.txt").write_text(
                     f"CMAKE_TOOLCHAIN_FILE:FILEPATH={cached}\nFETCHCONTENT_SOURCE_DIR_LVGL:PATH={source}\n")
                 if recorded is not None:
-                    (build / ".wasi-sdk").write_text(recorded + "\n")
+                    (build / ".lvw-inputs").write_text(recorded + "\n")
+                (build / "api-verification.json").write_text("stale proof")
                 result = subprocess.run(["sh", str(scripts / "build.sh")], cwd=self.root,
                                         env=environment, text=True, capture_output=True)
                 self.assertEqual(result.returncode, 37, result.stderr)
@@ -439,6 +447,8 @@ class BootstrapTests(unittest.TestCase):
                 self.assertEqual("--fresh" in arguments, fresh)
                 self.assertIn(f"-DCMAKE_TOOLCHAIN_FILE={toolchain}", arguments)
                 self.assertIn(f"-DFETCHCONTENT_SOURCE_DIR_LVGL:PATH={source}", arguments)
+                self.assertIn(f"-DLVW_CONF_PATH:FILEPATH={config}", arguments)
+                self.assertFalse((build / "api-verification.json").exists())
 
 
 if __name__ == "__main__":

@@ -7,8 +7,10 @@
 #include <string.h>
 
 #include "lvgl/lvgl.h"
+#if LVW_MANAGED_DECODER
 #include "image/lv_image_decoder_private.h"
 #include "misc/cache/instance/lv_image_header_cache.h"
+#endif
 
 #define LVW_EXPORT(name) __attribute__((export_name(#name)))
 #define LVW_MAX_FRAME_BYTES (64u * 1024u * 1024u)
@@ -39,12 +41,15 @@ typedef struct lvw_indev_node {
     struct lvw_indev_node *next;
 } lvw_indev_node_t;
 
+#if LVW_MANAGED_TIMER
 typedef struct lvw_timer_node {
     lv_timer_t *lvgl;
     uint32_t callback_id;
     struct lvw_timer_node *next;
 } lvw_timer_node_t;
+#endif
 
+#if LVW_MANAGED_ANIMATION
 typedef struct lvw_anim_node {
     lv_anim_t *lvgl;
     lv_anim_path_cb_t path;
@@ -55,7 +60,9 @@ typedef struct lvw_anim_node {
     bool finishing;
     struct lvw_anim_node *next;
 } lvw_anim_node_t;
+#endif
 
+#if LVW_MANAGED_OBSERVER
 typedef struct lvw_observer_node {
     lv_observer_t *lvgl;
     lv_subject_t *subject;
@@ -68,7 +75,9 @@ typedef struct lvw_observer_creation {
     lvw_observer_node_t *node;
     struct lvw_observer_creation *previous;
 } lvw_observer_creation_t;
+#endif
 
+#if LVW_MANAGED_DECODER
 typedef struct lvw_decoder_node {
     lv_image_decoder_t *lvgl;
     uint32_t callback_id;
@@ -92,6 +101,7 @@ typedef struct lvw_decoder_frame {
 } lvw_decoder_frame_t;
 
 _Static_assert(sizeof(lvw_decoder_view_t) == 64, "decoder view ABI size");
+#endif
 
 typedef struct lvw_resource {
     char name[LVW_RESOURCE_NAME_LEN + 1u];
@@ -107,20 +117,28 @@ typedef struct {
 
 static lvw_display_node_t *displays;
 static lvw_indev_node_t *indevs;
+#if LVW_MANAGED_TIMER
 static lvw_timer_node_t *timers;
+#endif
+#if LVW_MANAGED_ANIMATION
 static lvw_anim_node_t *animations;
+static uint32_t anim_restricted_depth;
+#endif
+#if LVW_MANAGED_OBSERVER
 static lvw_observer_node_t *observers;
 static lvw_observer_creation_t *observer_creation;
+#endif
+#if LVW_MANAGED_DECODER
 static lvw_decoder_node_t *decoders;
 static lvw_decoder_session_t *decoder_sessions;
 static lvw_decoder_frame_t *decoder_frame;
 static uint32_t decoder_callback_depth;
+#endif
 static lvw_resource_t *resources;
 static lv_fs_drv_t resource_driver;
 static uint32_t initialized;
 static uint32_t running;
 static uint32_t callback_depth;
-static uint32_t anim_restricted_depth;
 static lv_event_t *current_event;
 
 __attribute__((import_module("lvw"), import_name("event")))
@@ -228,7 +246,9 @@ static void input_callback(lv_indev_t *indev, lv_indev_data_t *data) {
     data->point.y = node->current.y;
     data->key = node->current.key;
     data->enc_diff = (int16_t)node->current.encoder_delta;
+#if LVW_INPUT_TIMESTAMP
     data->timestamp = lv_tick_get();
+#endif
     data->continue_reading = node->count != 0;
     node->current.encoder_delta = 0;
 }
@@ -244,6 +264,7 @@ static void event_callback(lv_event_t *event) {
     current_event = previous;
 }
 
+#if LVW_MANAGED_TIMER
 static void timer_callback(lv_timer_t *timer) {
     for (lvw_timer_node_t *node = timers; node; node = node->next) {
         if (node->lvgl != timer) continue;
@@ -269,6 +290,9 @@ static void timer_release(void *data) {
     callback_depth--;
 }
 
+#endif
+
+#if LVW_MANAGED_ANIMATION
 static lvw_anim_node_t *bind_animation(const lv_anim_t *animation) {
     for (lvw_anim_node_t *node = animations; node; node = node->next) {
         if (node != animation->ext_data.data) continue;
@@ -344,6 +368,9 @@ static void animation_release(void *data) {
     anim_restricted_depth--;
 }
 
+#endif
+
+#if LVW_MANAGED_OBSERVER
 static void observer_callback(lv_observer_t *observer, lv_subject_t *subject) {
     lvw_observer_node_t *node = observers;
     while (node && node->lvgl != observer) node = node->next;
@@ -378,6 +405,9 @@ void lvw_observer_release_native(lv_observer_t *observer) {
     callback_depth--;
 }
 
+#endif
+
+#if LVW_MANAGED_DECODER
 static lvw_decoder_node_t *find_decoder(lv_image_decoder_t *decoder) {
     for (lvw_decoder_node_t *node = decoders; node; node = node->next) {
         if (node->lvgl == decoder) return node;
@@ -506,6 +536,8 @@ void lvw_decoder_release_native(lv_image_decoder_t *decoder) {
     decoder_callback_depth--;
 }
 
+#endif
+
 static void *resource_open(lv_fs_drv_t *driver, const char *path, lv_fs_mode_t mode) {
     (void)driver;
     if (mode != LV_FS_MODE_RD || !path) return NULL;
@@ -592,9 +624,15 @@ LVW_EXPORT(lvw_shutdown) int32_t lvw_shutdown(void) {
         free(node->pixels);
         free(node);
     }
+#if LVW_MANAGED_TIMER
     while (timers) lv_timer_delete(timers->lvgl);
+#endif
+#if LVW_MANAGED_OBSERVER
     while (observers) lv_observer_delete(observers->lvgl);
+#endif
+#if LVW_MANAGED_DECODER
     while (decoders) lv_image_decoder_delete(decoders->lvgl);
+#endif
     lv_deinit();
     while (resources) {
         lvw_resource_t *resource = resources;
@@ -791,10 +829,12 @@ LVW_EXPORT(lvw_event_add) int32_t lvw_event_add(uint32_t object, uint32_t event_
                                                  uint32_t callback_id) {
     if (!initialized) return -1;
     if (!object || !callback_id) return -2;
-    lv_event_dsc_t *descriptor = lv_obj_add_event_cb((lv_obj_t *)(uintptr_t)object,
-                                                       event_callback, (lv_event_code_t)event_code,
-                                                       (void *)(uintptr_t)callback_id);
-    return descriptor ? 0 : -3;
+    lv_obj_t *target = (lv_obj_t *)(uintptr_t)object;
+    uint32_t before = lv_obj_get_event_count(target);
+    // Registration does not dispatch events; older LVGL returns void here.
+    lv_obj_add_event_cb(target, event_callback, (lv_event_code_t)event_code,
+                       (void *)(uintptr_t)callback_id);
+    return lv_obj_get_event_count(target) == before + 1u ? 0 : -3;
 }
 
 LVW_EXPORT(lvw_event_remove) int32_t lvw_event_remove(uint32_t object, uint32_t callback_id) {
@@ -809,6 +849,7 @@ LVW_EXPORT(lvw_event_clicked) uint32_t lvw_event_clicked(void) { return LV_EVENT
 LVW_EXPORT(lvw_event_delete) uint32_t lvw_event_delete(void) { return LV_EVENT_DELETE; }
 LVW_EXPORT(lvw_event_current) uint32_t lvw_event_current(void) { return pointer_value(current_event); }
 
+#if LVW_MANAGED_TIMER
 LVW_EXPORT(lvw_timer_create) uint32_t lvw_timer_create(uint32_t period_ms, uint32_t user_data,
                                                        uint32_t callback_id) {
     if (!initialized || !callback_id) return 0;
@@ -840,6 +881,9 @@ LVW_EXPORT(lvw_timer_delete) int32_t lvw_timer_delete(uint32_t timer, uint32_t c
     return 0;
 }
 
+#endif
+
+#if LVW_MANAGED_ANIMATION
 LVW_EXPORT(lvw_anim_start) uint32_t lvw_anim_start(uint32_t descriptor, uint32_t callback_id,
                                                    uint32_t exec_slot, uint32_t flags) {
     const uint32_t known_flags = LVW_ANIM_PATH | LVW_ANIM_GET_VALUE | LVW_ANIM_START |
@@ -919,6 +963,9 @@ LVW_EXPORT(lvw_anim_exec) void lvw_anim_exec(uint32_t exec_slot, uint32_t var, i
     __builtin_trap();
 }
 
+#endif
+
+#if LVW_MANAGED_OBSERVER
 LVW_EXPORT(lvw_observer_create) uint32_t lvw_observer_create(uint32_t subject, uint32_t target,
                                                             uint32_t user_data, uint32_t callback_id,
                                                             uint32_t mode) {
@@ -966,6 +1013,9 @@ LVW_EXPORT(lvw_observer_delete) int32_t lvw_observer_delete(uint32_t observer, u
     return 0;
 }
 
+#endif
+
+#if LVW_MANAGED_DECODER
 LVW_EXPORT(lvw_decoder_create) uint32_t lvw_decoder_create(uint32_t user_data, uint32_t callback_id,
                                                           uint32_t flags) {
     if (!initialized || !callback_id || (flags & ~(LVW_DECODER_GET_AREA | LVW_DECODER_CLOSE))) return 0;
@@ -1045,3 +1095,4 @@ LVW_EXPORT(lvw_decoder_write) int32_t lvw_decoder_write(uint32_t decoder, uint32
     frame->dsc->error_msg = (const char *)(uintptr_t)error_msg;
     return 0;
 }
+#endif

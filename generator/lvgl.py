@@ -19,6 +19,8 @@ class SourceLayout:
     @classmethod
     def discover(cls, source):
         root = Path(source).resolve(strict=True)
+        if any(char in str(root) for char in '\\"\n\r;'):
+            raise ValueError(f"unsupported header path characters: {root}")
         if (root / "include/lvgl/lvgl.h").is_file():
             return cls(root, root / "include/lvgl", "lvgl/lvgl.h")
         if (root / "lvgl.h").is_file():
@@ -76,13 +78,19 @@ def compiler_command(clang: Path, source: Path, config: Path):
     return command
 
 
-def inspect_source(source: Path, config: Path, sdk: Path):
+def inspect_source(source: Path, config: Path, sdk: Path, contained=False):
     # Reuse the generator's target evaluation, including macro expressions and exact strings.
     from constants import collect_constants
 
     layout = SourceLayout.discover(source)
     configuration = config_file(config)
     command = compiler_command(sdk / "bin/clang", layout.root, configuration)
+    if contained:
+        included, _ = preprocess(command, HEADER)
+        external = sorted(path for path in included
+                          if not path.is_relative_to(layout.root) and not path.is_relative_to(sdk.resolve()))
+        if external:
+            raise ValueError(f"installed headers depend on files outside the NDK/SDK: {external}")
     report = collect_constants(command, layout.root, configuration.parent)
     constants = {entry["name"]: entry for entry in report["constants"]}
     version = {}
@@ -105,6 +113,7 @@ def inspect_source(source: Path, config: Path, sdk: Path):
         "animation_external_data": "&lv_anim_set_external_data",
         "observer_with_target": "&lv_subject_add_observer_with_target",
         "decoder_create": "&lv_image_decoder_create",
+        "input_timestamp": "((lv_indev_data_t *)0)->timestamp",
     }.items():
         result = subprocess.run(command + ["-Werror", "-fsyntax-only", "-x", "c", "-"],
                                 input=HEADER + f"void lvw_probe(void) {{ (void)({expression}); }}\n",
@@ -127,3 +136,16 @@ def inspect_source(source: Path, config: Path, sdk: Path):
         "declaration_probes": probes,
         "build_verification": "not-run", "runtime_verification": "not-run",
     }
+
+
+if __name__ == "__main__":
+    import argparse
+    import json
+
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--source", required=True, type=Path)
+    parser.add_argument("--config", required=True, type=Path)
+    parser.add_argument("--sdk", required=True, type=Path)
+    parser.add_argument("--contained", action="store_true")
+    args = parser.parse_args()
+    print(json.dumps(inspect_source(args.source, args.config, args.sdk, args.contained), indent=2))

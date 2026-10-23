@@ -7,8 +7,9 @@
 
 ### Added
 
+- Configurable LVGL source, configuration, build directory, and managed bridge adapters, with v9.0.0 and v9.6.0 base-core consumer checks.
+- Native SDK exports containing the libraries enabled by the selected configuration and self-contained public-header validation.
 - Read-only LVGL v9+ source inspection with shared public header discovery, target-evaluated configuration, and declaration diagnostics.
-
 - Verified source snapshots and project initialization with preserved executable files and isolated build outputs.
 - Native Zig applications with configured C header translation, CMake reactor linking, and ABI and relocation checks.
 - Independent TypeScript ESM/type packages and Rust crates with bundled bindings, exact core identities, file manifests, and relocation checks.

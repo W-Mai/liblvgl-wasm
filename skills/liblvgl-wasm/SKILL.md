@@ -16,7 +16,7 @@ python3 -B toolchains/lvw.py inspect-lvgl \
   --source /path/to/lvgl --config /path/to/lv_conf.h --json
 ```
 
-Use the reported version, layout, effective configuration, and declaration probes. Inspection accepts the root and `include/lvgl` public header layouts and never downloads or builds. `build_verification` and `runtime_verification` remain `not-run`; successful inspection does not establish compatibility. The existing reactor build and native source adaptations are currently verified against 9.6.0. For an earlier v9 source or a modified fork, identify and implement the required build and native adaptations before using the build recipes below. Do not replace the selected source with 9.6.0, bypass adaptation hashes, silently disable requested features, or treat every v9 release as the same ABI.
+Use the reported version, layout, effective configuration, and declaration probes. Inspection accepts the root and `include/lvgl` public header layouts and never downloads or builds. `build_verification` and `runtime_verification` remain `not-run`; successful inspection does not establish compatibility. Base display/input/event/resource/shutdown consumers are checked with 9.0.0 and 9.6.0. Managed callback adapters and software source adaptations remain verified against 9.6.0. Check requested capabilities before choosing a configuration. Do not replace the selected source with 9.6.0, bypass adaptation hashes, silently disable requested features, or treat every v9 release as the same ABI.
 
 For an existing NDK or host SDK, inspect its manifests and exact core/API identities instead of rebuilding from a guessed version. A bare LVGL Wasm module may not implement the `lvw` bridge. Languages using a C ABI must consume headers, constants, layouts, and native libraries from the same selected source and configuration.
 
@@ -52,6 +52,18 @@ python3 -B target/source/toolchains/lvw.py init \
 The source package is Git-tracked content plus manifests. Build outputs, `.git`, `.local`, dependencies, and untracked files are not source inputs. Keep all generated artifacts under `target/`.
 
 ## Build a native reactor
+
+For an existing LVGL source and configuration, keep the output separate from the default website build:
+
+```sh
+python3 -B toolchains/lvw.py export-ndk \
+  --source /path/to/lvgl --config /path/to/lv_conf.h \
+  --build-dir target/custom-core --output target/custom-ndk --json
+```
+
+The default managed adapter list is `timer;animation;observer;decoder`. Select `--bridge-features ''` only when a base bridge satisfies the requested capabilities. `config/base/lv_conf.h` is an explicit software-rendering/BMP preset, not a replacement for the user's configuration. Old sources with unavailable requested adapters fail before building. The exporter installs the selected `lv_conf.h` and rejects config dependencies outside the NDK/SDK. Local config helper headers are not packaged automatically.
+
+The equivalent core-only command uses `LVGL_SOURCE_DIR`, `LVGL_CONFIG_PATH`, `LVW_BUILD_DIR`, and `LVW_BRIDGE_FEATURES` with `scripts/build-core.sh`. It leaves the default website and host outputs alone. Supply the resulting NDK and exact core to `export-sdk`.
 
 Export a new NDK after the core has been built:
 

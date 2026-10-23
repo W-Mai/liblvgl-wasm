@@ -357,7 +357,7 @@ def publish_package(staged, output, name, manifest):
 
 def export_ndk(args, lock, host, project, cache, sdk):
     output = new_output(args.output, project)
-    builder = project / "scripts/build.sh"
+    builder = project / "scripts/build-core.sh"
     if not builder.is_file():
         raise ValueError(f"export-ndk requires a source checkout at --project: {project}")
     reports = tool_report(args, lock, host, cache, sdk)
@@ -365,6 +365,14 @@ def export_ndk(args, lock, host, project, cache, sdk):
     if failures:
         raise ValueError("; ".join(failures))
     environment = {**os.environ, "WASI_SDK_PATH": reports["wasi-sdk"]["path"]}
+    build = resolve_path(getattr(args, "build_dir", None) or "target/wasm", project)
+    environment["LVW_BUILD_DIR"] = str(build)
+    for option, variable in (("source", "LVGL_SOURCE_DIR"), ("config", "LVGL_CONFIG_PATH")):
+        value = getattr(args, option, None)
+        if value is not None:
+            environment[variable] = str(resolve_path(value, project))
+    if getattr(args, "bridge_features", None) is not None:
+        environment["LVW_BRIDGE_FEATURES"] = args.bridge_features
 
     def run(command):
         subprocess.run([str(item) for item in command], cwd=project, env=environment,
@@ -372,7 +380,6 @@ def export_ndk(args, lock, host, project, cache, sdk):
 
     # Rebuild through the same generator/configuration path before exporting.
     run(["sh", builder])
-    build = project / "target/wasm"
     core = build / "liblvgl.wasm"
     run([reports["wasm-tools"]["executable"], "validate", core])
     run(["cmake", "--build", build, "--target", "lvw_ndk", "-j", "4"])
@@ -381,6 +388,11 @@ def export_ndk(args, lock, host, project, cache, sdk):
         staged = Path(temporary) / "package"
         run(["cmake", "--install", build, "--prefix", staged, "--component", "ndk"])
         data = staged / "share/liblvgl-wasm"
+        # Reject missing or source-tree-only configuration includes before publication.
+        subprocess.run([sys.executable, "-B", str(data / "generator/lvgl.py"), "--source", str(staged),
+                        "--config", str(staged / "include/lvgl/config/lv_conf.h"),
+                        "--sdk", reports["wasi-sdk"]["path"], "--contained"],
+                       cwd=project, env=environment, stdout=subprocess.DEVNULL, check=True)
         proof = data / "metadata/reference-verification.json"
         run([sys.executable, "-B", data / "generator/signatures.py",
              "--api", data / "metadata/api.json", "--wasm", core, "--output", proof])
@@ -391,8 +403,8 @@ def export_ndk(args, lock, host, project, cache, sdk):
             "reference": reference,
             "toolchain": {"wasi-sdk": lock["tools"]["wasi-sdk"]["version"],
                           "clang": lock["tools"]["wasi-sdk"]["clang_version"]},
-            "libraries": {name: {"path": f"lib/lib{name}.a", "sha256": files[f"lib/lib{name}.a"]}
-                          for name in ("lvw_bridge", "lvw_shims", "lvgl", "lvgl_thorvg", "freetype")},
+            "libraries": {Path(path).stem.removeprefix("lib"): {"path": path, "sha256": digest}
+                          for path, digest in files.items() if path.startswith("lib/lib") and path.endswith(".a")},
             "files": files,
         }
         publish_package(staged, output, "ndk.json", manifest)
@@ -560,6 +572,11 @@ def main():
         if name == "inspect-lvgl":
             command.add_argument("--source", required=True, help="LVGL source directory")
             command.add_argument("--config", required=True, help="lv_conf.h file or its directory")
+        if name == "export-ndk":
+            command.add_argument("--build-dir", default="target/wasm", help="isolated core build directory inside project/target")
+            command.add_argument("--source", help="LVGL source directory")
+            command.add_argument("--config", help="lv_conf.h file")
+            command.add_argument("--bridge-features", help="semicolon-separated managed callbacks; empty selects the base bridge")
         if name == "export-package":
             command.add_argument("--allow-dirty", action="store_true",
                                  help="allow a development package from a dirty checkout")

@@ -1,6 +1,6 @@
 # liblvgl-wasm
 
-`liblvgl.wasm` embeds LVGL 9.6.0 as a WASIp1 reactor. The `lvw_*` bridge accepts input, advances time, provides resources, and returns software-rendered frames. LVGL Studio runs the module and user applications in a browser workspace. Browser/Bun and Rust hosts can also load the same module directly.
+`liblvgl.wasm` builds LVGL as a WASIp1 reactor, with 9.6.0 as the default source. The `lvw_*` bridge accepts input, advances time, provides resources, and returns software-rendered frames. LVGL Studio runs the module and user applications in a browser workspace. Browser/Bun and Rust hosts can also load the same module directly.
 
 ## Build
 
@@ -17,7 +17,24 @@ WASI_SDK_PATH=/path/to/wasi-sdk ./scripts/build.sh
 
 The build script can be invoked from another working directory. Relative SDK and source paths resolve from the caller's directory. A valid cached source override is reused; a missing cached source falls back to the pinned archive. An invalid explicit `LVGL_SOURCE_DIR` stops the build with an error.
 
-Changing the SDK refreshes CMake's cached compiler configuration while retaining downloaded sources and build files. Legacy build directories without an SDK configuration record are also refreshed. The selected LVGL source override is reapplied; other manually added CMake cache settings must be supplied again after a refresh.
+Changing the SDK, source path, configuration path, or managed bridge features refreshes CMake's cached configuration while retaining downloaded sources and build files. Build directories without an input record are also refreshed. The selected inputs are reapplied; other manually added CMake cache settings must be supplied again after a refresh.
+
+### Selected sources and configurations
+
+`scripts/build-core.sh` builds the core, native C demo, API metadata, and signature proof without building the website or host packages. `LVGL_CONFIG_PATH` selects an existing file named `lv_conf.h`. `LVW_BUILD_DIR` selects a directory inside the checkout's `target/`; relative paths resolve from the caller's working directory. Keep different configurations in different directories.
+
+```sh
+LVGL_SOURCE_DIR=/path/to/lvgl-9.0.0 \
+LVGL_CONFIG_PATH=config/base/lv_conf.h \
+LVW_BRIDGE_FEATURES='' LVW_BUILD_DIR=target/v9.0 \
+    ./scripts/build-core.sh
+```
+
+`config/base/lv_conf.h` enables software rendering and BMP resources. The base bridge provides displays, pointer input, synchronous events, resources, frame copying, and shutdown. LVGL 9.0.0 and 9.6.0 base builds are exercised with relocated C/C++/Zig consumers and matching TS/Rust host SDKs. Other source revisions require their own build and runtime checks.
+
+`LVW_BRIDGE_FEATURES` is a semicolon-separated list of managed `timer;animation;observer;decoder` adapters; each listed adapter is selected by default, and an explicitly empty value selects the base bridge. Host callback adapters are selected independently of native LVGL timers and animations. The managed adapters and software source adaptations remain verified against 9.6.0. An unavailable requested adapter fails configuration. The full preset remains `config/lv_conf.h`. Future major versions require independent native adaptation.
+
+Generate a new host SDK from the resulting NDK and core before using raw APIs. Bindings, constants, and layouts from another core remain invalid even when both versions are v9. `scripts/build.sh` retains the default `target/wasm` path for website and sample builds; use `build-core.sh` for isolated outputs.
 
 ### Compiler preparation
 
@@ -48,7 +65,7 @@ python3 -B toolchains/lvw.py inspect-lvgl \
     --source /path/to/lvgl --config /path/to/lv_conf.h --json
 ```
 
-The command shares header discovery and target constant evaluation with the API generator. It reports the actual version, target, effective `LV_USE_*` values, configuration file hash, and selected declaration probes. Macro expressions are evaluated by the target compiler. Missing declarations are reported separately from a failed inspection. Inspection does not build a reactor or verify runtime compatibility; both verification fields remain `not-run`. The current reactor build and native adaptations still use LVGL 9.6.0.
+The command shares header discovery and target constant evaluation with the API generator. It reports the actual version, target, effective `LV_USE_*` values, configuration file hash, and selected declaration probes. Macro expressions are evaluated by the target compiler. Missing declarations are reported separately from a failed inspection. Inspection does not build a reactor or verify runtime compatibility; both verification fields remain `not-run`.
 
 The command is read-only and does not download tools or create a cache. `--project`, `--cache`, and `--sdk` use the preparation command's path rules; only wasi-sdk is required. Keep the source package's `generator/` directory with `toolchains/` when moving this command. The configuration can be an `lv_conf.h` file or its parent directory. Its reported hash covers that file, not its transitive includes or a complete build identity.
 
@@ -79,7 +96,7 @@ Use the SDK path reported by `prepare`. Bun, Rust with the Wasm application targ
 
 ### Native C/C++ development kit
 
-`export-ndk` rebuilds the source checkout through `scripts/build.sh`, validates the core, and exports its public headers, five static archives, CMake targets, API metadata, and Python generators. Run `prepare` first; `--sdk`, `--cache`, and `--project` use the same path rules as compiler preparation. The checkout needs the complete build prerequisites above.
+`export-ndk` rebuilds the source checkout through `scripts/build-core.sh`, validates the core, and exports its public headers, configured static archives, CMake targets, API metadata, and Python generators. The base configuration contains LVGL, bridge, and shim archives; FreeType and ThorVG archives are included when enabled. Run `prepare` first; `--sdk`, `--cache`, and `--project` use the same path rules as compiler preparation. Core export requires CMake, Ninja, Python, wasi-sdk, and wasm-tools; host SDK export also requires the Bun dependencies.
 
 ```sh
 python3 -B toolchains/lvw.py export-ndk --json
@@ -88,6 +105,16 @@ cmake -S target/ndk/examples/c -B target/apps/native-c -G Ninja \
     -DCMAKE_PREFIX_PATH="$PWD/target/ndk" -DCMAKE_BUILD_TYPE=Release
 cmake --build target/apps/native-c
 ```
+
+Select another source and configuration explicitly:
+
+```sh
+python3 -B toolchains/lvw.py export-ndk \
+    --source /path/to/lvgl-9.0.0 --config config/base/lv_conf.h \
+    --bridge-features '' --build-dir target/v9.0 --output target/ndk-v9.0 --json
+```
+
+These options use the corresponding build environment defaults when omitted, except `--build-dir`, which defaults to `target/wasm`. Relative CLI paths resolve against `--project`. The NDK installs the selected `lv_conf.h`; it must be self-contained apart from LVGL and SDK headers. Missing includes or references outside the installed NDK and compiler distribution reject export before publication.
 
 The default output is `target/ndk/`; `--output` selects another new directory. Existing outputs are rejected. Installation, reference signature verification, and per-file hashing finish in a temporary directory before the complete package is moved into place. `ndk.json` records the WASIp1 target, standard exception requirement, compiler versions, library hashes, file hashes, and reference API/core identity. The package contains LVGL, FreeType, ThorVG, wasi-libc, LLVM runtime, decoder, and bundled-font license material. `share/liblvgl-wasm/licenses/runtime/manifest.json` records the fixed source identities and hashes for the runtime notice tree. The compiler distribution remains separately prepared through `prepare`.
 
@@ -253,6 +280,8 @@ Install `wasm-tools`, `rustfmt`, and `clippy` in addition to the build prerequis
 ```sh
 bun run quality
 ```
+
+`bun run check:compatibility` downloads a SHA-256-pinned v9.0.0 fixture and checks its base configuration alongside the default 9.6.0 source. It reuses one isolated build directory to verify source changes and failed-adapter proof invalidation, then runs the existing C/C++/Zig relocation and TS/Rust package consumers. Use `bun run check:compatibility --offline` with the cached archive. Logs and successful proof identities are written under `target/compatibility/`; a failed run removes the previous aggregate report. Run the default build before this check and use Rust 1.92+ with populated Cargo dependencies. The quality workflow runs both commands.
 
 This command rebuilds the core, generated API wrappers, TypeScript bindings, C demo, browser bundles, and application samples before validating all five Wasm modules. It runs strict TypeScript checks for the generated bindings and runtime, Bun tests, Rust formatting checks, Clippy with warnings denied for both Rust packages, host tests, and the Rust host's rendering/input checks. The NDK test installs and relocates a read-only package, compiles C/C++ consumers against the generated type layouts, validates their modules, and checks matching bindings, native click callbacks, rendering, destruction, and C++ exceptions. Every command stops on failure. Dependency installation and Rust builds use the checked-in lockfiles. `bun run test` runs only the repository's `tests/` directory and requires existing build outputs.
 

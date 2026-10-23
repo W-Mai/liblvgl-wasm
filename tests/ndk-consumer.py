@@ -66,6 +66,9 @@ def zig_checks(api):
     # Check native value types; bitfields and types containing them are not Zig values.
     names = {"lv_color_t", "lv_color32_t", "lv_point_t", "lv_point_precise_t",
              "lv_area_t", "lv_matrix_t", "lv_grad_stop_t"}
+    names &= {node.get("name") for node in api["types"].values()
+              if node["kind"] == "alias" and node["layout"]["status"] == "complete"}
+    matrix = "lv_matrix_t" in names
     lines = ["const checked_layouts = blk: {", "    @setEvalBranchQuota(10000);",
              "    var count: u32 = 0;"]
     for node in api["types"].values():
@@ -97,30 +100,36 @@ extern fn ndk_eh_test() c_int;
 export fn zig_abi_eh() c_int { return ndk_eh_test(); }
 export fn zig_abi_wide(value: i64) i64 { return lv.lv_pow(value, 1); }
 export fn zig_abi_color(value: u32) u32 { return lv.lv_color_to_int(lv.lv_color_hex(value)); }
-export fn zig_abi_float(value: f32) f32 {
+''']
+    if matrix:
+        lines.append('''export fn zig_abi_float(value: f32) f32 {
     var matrix: lv.lv_matrix_t = undefined;
     lv.lv_matrix_identity(&matrix);
     lv.lv_matrix_translate(&matrix, value, 0.25);
     return matrix.m[0][2];
 }
-''']
+''')
     return "\n".join(lines)
 
 
-def check(output):
+def check(output, build=None):
+    build = build or ROOT / "target/wasm"
     sdk = subprocess.check_output(["sh", str(ROOT / "scripts/resolve-wasi-sdk.sh"), str(ROOT)],
                                   text=True).strip()
-    run("cmake", "--build", ROOT / "target/wasm", "--target", "lvw_ndk", "-j", "4")
+    run("cmake", "--build", build, "--target", "lvw_ndk", "-j", "4")
     with tempfile.TemporaryDirectory(prefix="lvw ndk contract ") as temporary:
         base = Path(temporary).resolve()
         package = base / "original package"
-        run("cmake", "--install", ROOT / "target/wasm", "--prefix", package, "--component", "ndk")
+        run("cmake", "--install", build, "--prefix", package, "--component", "ndk")
         for path in package.rglob("*.cmake"):
             text = path.read_text()
             assert str(ROOT) not in text and sdk not in text, path
         data = package / "share/liblvgl-wasm"
         verify_runtime_notices(data)
         api = json.loads((data / "metadata/api.json").read_text())
+        matrix = any(node.get("name") == "lv_matrix_t" and node["layout"]["status"] == "complete"
+                     for node in api["types"].values())
+        freetype = any(node.get("name") == "lv_freetype_font_create" for node in api["declarations"])
         header, layouts = layout_checks(api)
         project = base / "original project"
         project.mkdir()
@@ -150,10 +159,13 @@ target_sources(consumer_cpp PRIVATE eh.cpp)
 target_sources(consumer_zig PRIVATE eh.cpp)
 target_link_options(consumer_zig PRIVATE -Wl,--export=lvw_demo_create
     -Wl,--export=zig_abi_layouts -Wl,--export=zig_abi_wide
-    -Wl,--export=zig_abi_color -Wl,--export=zig_abi_float -Wl,--export=zig_abi_eh)
+    -Wl,--export=zig_abi_color -Wl,--export=zig_abi_eh)
 target_compile_options(consumer_c PRIVATE -Wall -Wextra -Werror)
 target_compile_options(consumer_cpp PRIVATE -Wall -Wextra -Werror)
 ''')
+        if matrix:
+            with (project / "CMakeLists.txt").open("a") as file:
+                file.write("target_link_options(consumer_zig PRIVATE -Wl,--export=zig_abi_float)\n")
         zig = os.environ.get("LVW_ZIG") or shutil.which("zig")
         if not zig:
             candidates = list((ROOT / "target/toolchains/tools").glob("zig-0.15.2-*/zig"))
@@ -196,6 +208,7 @@ target_compile_options(consumer_cpp PRIVATE -Wall -Wextra -Werror)
                 shutil.copytree(ROOT / "bindings/typescript/src", output / language / "bindings/typescript/src")
                 os.symlink(ROOT / "node_modules", output / language / "node_modules", target_is_directory=True)
             (output / "report.json").write_text(json.dumps({"layouts": layouts, "relocated": True,
+                                                           "matrix": matrix, "freetype": freetype,
                                                            "readonly_package": True}) + "\n")
         finally:
             for path in [package, *package.rglob("*")]:
@@ -203,4 +216,4 @@ target_compile_options(consumer_cpp PRIVATE -Wall -Wextra -Werror)
 
 
 if __name__ == "__main__":
-    check(Path(sys.argv[1]).resolve())
+    check(Path(sys.argv[1]).resolve(), Path(sys.argv[2]).resolve() if len(sys.argv) > 2 else None)

@@ -72,6 +72,7 @@ class SourceTests(unittest.TestCase):
         wrapper.write_text("#define LVGL_VERSION_MAJOR 9\n")
         with self.assertRaisesRegex(ValueError, "conflicting"):
             compiler_command(self.sdk / "bin/clang", source, self.config)
+
         wrapper.write_text('#include "include/lvgl/lvgl.h"\n#undef LVGL_VERSION_MAJOR\n#define LVGL_VERSION_MAJOR 10\n')
         with self.assertRaisesRegex(ValueError, "conflicting"):
             compiler_command(self.sdk / "bin/clang", source, self.config)
@@ -80,6 +81,16 @@ class SourceTests(unittest.TestCase):
         header.write_text(header.read_text().replace('#include "lv_conf.h"', ""))
         with self.assertRaisesRegex(ValueError, "selected public header and configuration"):
             compiler_command(self.sdk / "bin/clang", source, self.config)
+
+    def test_installed_headers_cannot_depend_on_external_config_files(self):
+        source = self.source("modern")
+        installed = source / "config/lv_conf.h"
+        installed.parent.mkdir()
+        installed.write_bytes(self.config.read_bytes())
+        inspect_source(source, installed, self.sdk, contained=True)
+        installed.write_text(f'#include "{self.config}"\n')
+        with self.assertRaisesRegex(ValueError, "outside the NDK/SDK"):
+            inspect_source(source, installed, self.sdk, contained=True)
 
     def test_cli_read_only_paths_and_unsupported_major(self):
         source = self.source("legacy")

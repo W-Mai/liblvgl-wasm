@@ -22,10 +22,12 @@ def readonly(root, enabled):
         path.chmod((0o555 if enabled else 0o755) if path.is_dir() else (0o444 if enabled else 0o644))
 
 
-def check(output):
+def check(output, build=None):
+    custom = build is not None
+    build = build or ROOT / "target/wasm"
     ndk = output / "ndk"
-    run("cmake", "--build", ROOT / "target/wasm", "--target", "lvw_ndk", "-j", "4")
-    run("cmake", "--install", ROOT / "target/wasm", "--prefix", ndk, "--component", "ndk")
+    run("cmake", "--build", build, "--target", "lvw_ndk", "-j", "4")
+    run("cmake", "--install", build, "--prefix", ndk, "--component", "ndk")
     sdk = subprocess.check_output(["sh", str(ROOT / "scripts/resolve-wasi-sdk.sh"), str(ROOT)], text=True).strip()
     run("cmake", "-S", ndk / "examples/c", "-B", output / "native build", "-G", "Ninja",
         f"-DCMAKE_TOOLCHAIN_FILE={sdk}/share/cmake/wasi-sdk-p1.cmake", f"-DCMAKE_PREFIX_PATH={ndk}",
@@ -35,7 +37,7 @@ def check(output):
     run("rustc", "--edition=2024", "--cfg", 'feature="bundled-bindings"',
         ROOT / "bindings/rust/build.rs", "-o", build_script)
     packages = []
-    for name, core in (("baseline", ROOT / "target/wasm/liblvgl.wasm"),
+    for name, core in (("baseline", build / "liblvgl.wasm"),
                        ("native", output / "native build/lvgl_native_example.wasm")):
         original = output / name
         metadata = build_host_sdk(ROOT, ndk, core, original, "wasm-tools")
@@ -70,6 +72,18 @@ def check(output):
                 if path.suffix in (".ts", ".js"):
                     assert str(ROOT) not in path.read_text() and str(output) not in path.read_text(), path
             packages.append({"package": str(package), "consumer": str(project), **metadata})
+            if custom:
+                rust = project / "rust"
+                (rust / "src").mkdir(parents=True)
+                main = (ROOT / "bindings/rust/src/main.rs").read_text()
+                (rust / "src/main.rs").write_text(main.replace("../../../examples/browser/red.bmp", "../red.bmp"))
+                shutil.copyfile(ROOT / "examples/browser/red.bmp", rust / "red.bmp")
+                (rust / "Cargo.toml").write_text('[package]\nname="lvw-compatibility-consumer"\n'
+                    'version="0.1.0"\nedition="2024"\n[dependencies]\nliblvgl-wasm-host={path='
+                    + json.dumps(str(package / "rust")) + '}\n')
+                run("cargo", "run", "--offline", "--manifest-path", rust / "Cargo.toml", "--",
+                    package / "runtime/liblvgl.wasm",
+                    env={**os.environ, "CARGO_TARGET_DIR": str(ROOT / "target/rust")})
         finally:
             readonly(package, False)
     # Use a nested crate so the fallback is confined to the test directory.
@@ -89,4 +103,4 @@ def check(output):
 
 
 if __name__ == "__main__":
-    check(Path(sys.argv[1]).resolve())
+    check(Path(sys.argv[1]).resolve(), Path(sys.argv[2]).resolve() if len(sys.argv) > 2 else None)
