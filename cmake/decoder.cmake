@@ -50,15 +50,17 @@ foreach(LVW_ANCHOR IN ITEMS "#include \"${LVW_DECODER_HEADER}\"\n"
         message(FATAL_ERROR "LVGL decoder adaptation requires a unique source anchor")
     endif()
 endforeach()
-string(REPLACE "#include \"${LVW_DECODER_HEADER}\"\n"
-    "#include \"${LVW_DECODER_HEADER}\"\n\nvoid lvw_decoder_release_native(lv_image_decoder_t * decoder);\n"
-    LVW_DECODER_CODE "${LVW_DECODER_CODE}")
-string(REPLACE "    lv_free(decoder);\n"
-    "    lvw_decoder_release_native(decoder);\n    lv_free(decoder);\n"
-    LVW_DECODER_CODE "${LVW_DECODER_CODE}")
-string(REPLACE "    ${LVW_LL_PREFIX}_ll_clear(img_decoder_ll_p);\n"
-    "    lv_image_decoder_t * decoder;\n    while((decoder = ${LVW_LL_PREFIX}_ll_get_head(img_decoder_ll_p)) != NULL) {\n        lv_image_decoder_delete(decoder);\n    }\n"
-    LVW_DECODER_CODE "${LVW_DECODER_CODE}")
+if(LVW_MANAGED_DECODER)
+    string(REPLACE "#include \"${LVW_DECODER_HEADER}\"\n"
+        "#include \"${LVW_DECODER_HEADER}\"\n\nvoid lvw_decoder_release_native(lv_image_decoder_t * decoder);\n"
+        LVW_DECODER_CODE "${LVW_DECODER_CODE}")
+    string(REPLACE "    lv_free(decoder);\n"
+        "    lvw_decoder_release_native(decoder);\n    lv_free(decoder);\n"
+        LVW_DECODER_CODE "${LVW_DECODER_CODE}")
+    string(REPLACE "    ${LVW_LL_PREFIX}_ll_clear(img_decoder_ll_p);\n"
+        "    lv_image_decoder_t * decoder;\n    while((decoder = ${LVW_LL_PREFIX}_ll_get_head(img_decoder_ll_p)) != NULL) {\n        lv_image_decoder_delete(decoder);\n    }\n"
+        LVW_DECODER_CODE "${LVW_DECODER_CODE}")
+endif()
 if(LVW_DECODER_HASH STREQUAL LVW_DECODER_OWNED_SOURCE)
     string(REPLACE "    if(dsc->src_type == LV_IMAGE_SRC_FILE) dsc->src = lv_strdup(dsc->src);\n"
         "    if(dsc->src_type == LV_IMAGE_SRC_FILE) {\n        dsc->src = lv_strdup(dsc->src);\n        if(dsc->src == NULL) return LV_RESULT_INVALID;\n    }\n"
@@ -67,7 +69,7 @@ if(LVW_DECODER_HASH STREQUAL LVW_DECODER_OWNED_SOURCE)
         "    lv_result_t res = dsc->decoder->open_cb(dsc->decoder, dsc);\n    if(res != LV_RESULT_OK && dsc->src_type == LV_IMAGE_SRC_FILE) {\n        lv_free((void *)dsc->src);\n        dsc->src = NULL;\n    }\n"
         LVW_DECODER_CODE "${LVW_DECODER_CODE}")
 endif()
-if(LVW_DECODER_LEGACY)
+if(LVW_MANAGED_DECODER AND LVW_DECODER_LEGACY)
     string(APPEND LVW_DECODER_CODE [=[
 
 /* Called only by managed cancellation while the runtime and cache are live. */

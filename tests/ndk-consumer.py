@@ -314,6 +314,41 @@ __attribute__((export_name("ndk_subject_external_data"))) int ndk_subject_extern
 }
 #endif
 '''
+        png = (ROOT / "tests/fixtures/png/rgba.png").read_bytes()
+        example += '''
+#if LV_USE_LODEPNG && LVGL_VERSION_MINOR == 0
+__attribute__((export_name("ndk_png_cleanup"))) int ndk_png_cleanup(void) {
+    static const uint8_t png[] = {PNG_BYTES};
+    static const char bad[] = "ndk-png-short.png", good[] = "ndk-png-good.png";
+    if (lvw_resource_put((uint32_t)(uintptr_t)bad, sizeof(bad) - 1,
+                         (uint32_t)(uintptr_t)png, 33) != 0) return -1;
+    if (lvw_resource_put((uint32_t)(uintptr_t)good, sizeof(good) - 1,
+                         (uint32_t)(uintptr_t)png, sizeof(png)) != 0) return -2;
+    lv_image_decoder_dsc_t dsc;
+    if (lv_image_decoder_open(&dsc, "W:ndk-png-short.png", NULL) != LV_RESULT_INVALID) return -3;
+    if (dsc.src != NULL || dsc.decoded != NULL) return -4;
+    if (lv_image_decoder_open(&dsc, "W:ndk-png-good.png", NULL) != LV_RESULT_OK) return -5;
+#if LV_CACHE_DEF_SIZE > 0
+    lv_cache_t * cache = dsc.cache;
+    lv_image_decoder_dsc_t cached;
+    if (lv_image_decoder_open(&cached, "W:ndk-png-good.png", NULL) != LV_RESULT_OK) return -6;
+    if (cached.cache_entry == NULL || cached.cache_entry != dsc.cache_entry || cached.decoded != dsc.decoded) return -7;
+    lv_image_decoder_close(&cached);
+#endif
+    lv_image_decoder_close(&dsc);
+    lv_image_cache_drop("W:ndk-png-good.png");
+#if LV_CACHE_DEF_SIZE > 0
+    lv_cache_set_max_size(cache, 1, NULL);
+    lv_result_t result = lv_image_decoder_open(&dsc, "W:ndk-png-good.png", NULL);
+    int failed = result != LV_RESULT_INVALID || dsc.src != NULL || dsc.decoded != NULL;
+    if (result == LV_RESULT_OK) lv_image_decoder_close(&dsc);
+    lv_cache_set_max_size(cache, LV_CACHE_DEF_SIZE, NULL);
+    if (failed) return -8;
+#endif
+    return 0;
+}
+#endif
+'''.replace("PNG_BYTES", ",".join(map(str, png)))
         (project / "main.c").write_text('#include "layout.h"\n' + example)
         (project / "main.cpp").write_text('#include "layout.h"\n' + example)
         (project / "eh.cpp").write_text('''#include "lvw.h"

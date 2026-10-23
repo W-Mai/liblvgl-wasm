@@ -16,6 +16,7 @@
     "build:ts-samples": "bun run generate:ts && bun build toolchains/ts/samples/*.ts --target browser --format iife --root toolchains/ts/samples --outdir target/apps/ts/samples",
     "test": "bun test ./tests",
     "check:compatibility": "python3 -B scripts/check-compatibility.py",
+    "check:software": "python3 -B scripts/check-software.py",
     "typecheck": "bun ./node_modules/typescript/bin/tsc --project tsconfig.bindings.json && bun ./node_modules/typescript/bin/tsc --project tsconfig.studio.json && bun ./node_modules/typescript/bin/tsc --project tsconfig.studio-worker.json",
     "quality": "./scripts/quality.sh"
   },

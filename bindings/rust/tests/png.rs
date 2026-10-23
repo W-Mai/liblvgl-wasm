@@ -9,13 +9,16 @@ const X: u32 = 5;
 const Y: u32 = 4;
 
 fn expected() -> Value {
-    serde_json::from_str(include_str!("../../../tests/fixtures/png/expected.json")).unwrap()
+    serde_json::from_slice(&fixture("expected.json").unwrap()).unwrap()
 }
 
 fn fixture(name: &str) -> Result<Vec<u8>> {
     Ok(std::fs::read(
-        Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../tests/fixtures/png")
+        std::env::var_os("LVW_TEST_PNG_FIXTURES")
+            .map_or_else(
+                || Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/png"),
+                std::path::PathBuf::from,
+            )
             .join(name),
     )?)
 }
@@ -31,9 +34,10 @@ fn background(expected: &Value) -> [u8; 4] {
 }
 
 fn load(expected: &Value) -> Result<(Runtime, u32, UnsafePointer)> {
-    let mut runtime = Runtime::from_file(
-        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/wasm/liblvgl.wasm"),
-    )?;
+    let mut runtime = Runtime::from_file(std::env::var_os("LVW_TEST_CORE").map_or_else(
+        || Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/wasm/liblvgl.wasm"),
+        std::path::PathBuf::from,
+    ))?;
     let display = runtime.call_raw("lvw_display_create", (WIDTH, HEIGHT, 1u32))?;
     let mut raw = runtime.raw()?;
     let screen = raw.lv_display_get_screen_active(UnsafePointer(display))?;
@@ -184,6 +188,15 @@ fn assert_background(frame: &Frame, expected: &Value, x: u32, y: u32) {
     }
 }
 
+fn offset(fields: &[values::FieldLayout], name: &str) -> u32 {
+    let field = fields
+        .iter()
+        .find(|field| field.name == Some(name))
+        .unwrap();
+    assert_eq!(field.bit_offset % 8, 0);
+    u32::try_from(field.bit_offset / 8).unwrap()
+}
+
 #[test]
 fn png_formats_preserve_dimensions_pixels_alpha_and_redraws() -> Result<()> {
     let expected = expected();
@@ -195,12 +208,13 @@ fn png_formats_preserve_dimensions_pixels_alpha_and_redraws() -> Result<()> {
         let source = upload(&mut runtime, name, &fixture(name)?)?;
         runtime.raw()?.lv_image_set_src(image, source)?;
         runtime.free(source.0)?;
+        runtime.raw()?.lv_obj_update_layout(image)?;
         assert_eq!(
-            runtime.raw()?.lv_image_get_src_width(image)?,
+            runtime.raw()?.lv_obj_get_width(image)?,
             expected["width"].as_i64().unwrap() as i32
         );
         assert_eq!(
-            runtime.raw()?.lv_image_get_src_height(image)?,
+            runtime.raw()?.lv_obj_get_height(image)?,
             expected["height"].as_i64().unwrap() as i32
         );
         for _ in 0..2 {
@@ -216,7 +230,7 @@ fn png_formats_preserve_dimensions_pixels_alpha_and_redraws() -> Result<()> {
 }
 
 #[test]
-fn rejected_png_data_leaves_background_and_valid_source_recovers() -> Result<()> {
+fn png_failures_preserve_native_source_selection_and_valid_images_recover() -> Result<()> {
     let expected = expected();
     let (mut runtime, display, screen) = load(&expected)?;
     let image = image(&mut runtime, screen, X, Y)?;
@@ -226,14 +240,28 @@ fn rejected_png_data_leaves_background_and_valid_source_recovers() -> Result<()>
     for rejected in expected["rejected"].as_array().unwrap() {
         let name = rejected.as_str().unwrap();
         let source = upload(&mut runtime, name, &fixture(name)?)?;
+        let rejected_header =
+            values::LVGL_VERSION_MINOR == 0 && name == expected["unsupported"]["file"];
         assert_eq!(
             runtime.raw()?.lv_image_decoder_get_info(source, output)?,
-            values::LV_RESULT_OK
+            if rejected_header {
+                values::LV_RESULT_INVALID
+            } else {
+                values::LV_RESULT_OK
+            }
         );
+        let previous = runtime.raw()?.lv_image_get_src(image)?;
         runtime.raw()?.lv_image_set_src(image, source)?;
+        if rejected_header {
+            assert_eq!(runtime.raw()?.lv_image_get_src(image)?, previous);
+        }
         runtime.free(source.0)?;
         step(&mut runtime)?;
-        assert_background(&frame(&mut runtime, display)?, &expected, X, Y);
+        if rejected_header {
+            assert_image(&frame(&mut runtime, display)?, &expected, true, X, Y);
+        } else {
+            assert_background(&frame(&mut runtime, display)?, &expected, X, Y);
+        }
         runtime.raw()?.lv_image_set_src(image, valid)?;
         step(&mut runtime)?;
         assert_image(&frame(&mut runtime, display)?, &expected, true, X, Y);
@@ -243,9 +271,22 @@ fn rejected_png_data_leaves_background_and_valid_source_recovers() -> Result<()>
         runtime.raw()?.lv_image_decoder_get_info(short, output)?,
         values::LV_RESULT_INVALID
     );
+    let previous = runtime.raw()?.lv_image_get_src(image)?;
     runtime.raw()?.lv_image_set_src(image, short)?;
+    assert_eq!(
+        runtime.raw()?.lv_image_get_src(image)?,
+        if values::LVGL_VERSION_MINOR == 0 {
+            previous
+        } else {
+            UnsafePointer(0)
+        }
+    );
     step(&mut runtime)?;
-    assert_background(&frame(&mut runtime, display)?, &expected, X, Y);
+    if values::LVGL_VERSION_MINOR == 0 {
+        assert_image(&frame(&mut runtime, display)?, &expected, true, X, Y);
+    } else {
+        assert_background(&frame(&mut runtime, display)?, &expected, X, Y);
+    }
     runtime.raw()?.lv_image_set_src(image, valid)?;
     step(&mut runtime)?;
     assert_image(&frame(&mut runtime, display)?, &expected, true, X, Y);
@@ -286,4 +327,101 @@ fn uploaded_png_is_owned_and_shared_across_image_deletion_and_recreation() -> Re
     runtime.shutdown()?;
     assert!(runtime.raw().err().unwrap().to_string().contains("closed"));
     Ok(())
+}
+
+#[test]
+fn legacy_png_headers_check_files_and_borrowed_descriptors_before_decoding() -> Result<()> {
+    if values::LVGL_VERSION_MINOR != 0 {
+        return Ok(());
+    }
+    let expected = expected();
+    let (mut runtime, display, screen) = load(&expected)?;
+    let descriptor = runtime.alloc(values::LV_IMAGE_DSC_T_SIZE)?;
+    let output = runtime.alloc(values::LV_IMAGE_HEADER_T_SIZE)?;
+    let bytes = fixture("rgba.png")?;
+    let data = runtime.alloc(bytes.len() as u32)?;
+    let fields = values::LV_IMAGE_DSC_T_FIELDS;
+    let header = descriptor + offset(fields, "header");
+    let width = offset(values::LV_IMAGE_HEADER_T_FIELDS, "w");
+    let height = offset(values::LV_IMAGE_HEADER_T_FIELDS, "h");
+    runtime.write_memory(descriptor, &vec![0; values::LV_IMAGE_DSC_T_SIZE as usize])?;
+    runtime.write_memory(
+        header + offset(values::LV_IMAGE_HEADER_T_FIELDS, "magic"),
+        &[values::LV_IMAGE_HEADER_MAGIC as u8],
+    )?;
+    runtime.write_memory(
+        header + offset(values::LV_IMAGE_HEADER_T_FIELDS, "cf"),
+        &[values::LV_COLOR_FORMAT_RAW_ALPHA as u8],
+    )?;
+    runtime.write_memory(header + width, &999u16.to_le_bytes())?;
+    runtime.write_memory(header + height, &999u16.to_le_bytes())?;
+    runtime.write_memory(descriptor + offset(fields, "data"), &data.to_le_bytes())?;
+    let cases: Vec<Value> = serde_json::from_slice(&fixture("headers.json")?)?;
+    for case in cases {
+        let hex = case["hex"].as_str().unwrap();
+        let prefix: Vec<u8> = (0..hex.len())
+            .step_by(2)
+            .map(|index| u8::from_str_radix(&hex[index..index + 2], 16).unwrap())
+            .collect();
+        runtime.write_memory(data, &prefix)?;
+        runtime.write_memory(
+            descriptor + offset(fields, "data_size"),
+            &(prefix.len() as u32).to_le_bytes(),
+        )?;
+        let align = values::LV_DRAW_BUF_STRIDE_ALIGN as u64;
+        let stride = (case["width"].as_u64().unwrap() * 4).div_ceil(align) * align;
+        let result = if case["valid"].as_bool().unwrap() && stride <= 65535 {
+            values::LV_RESULT_OK
+        } else {
+            values::LV_RESULT_INVALID
+        };
+        assert_eq!(
+            runtime
+                .raw()?
+                .lv_image_decoder_get_info(UnsafePointer(descriptor), UnsafePointer(output))?,
+            result,
+            "{case}"
+        );
+        if result == values::LV_RESULT_OK {
+            let mut value = [0; 2];
+            for (offset, name) in [(width, "width"), (height, "height")] {
+                runtime.read_memory(output + offset, &mut value)?;
+                assert_eq!(
+                    u16::from_le_bytes(value) as u64,
+                    case[name].as_u64().unwrap()
+                );
+            }
+        }
+        runtime.call_raw::<_, ()>("lv_image_cache_drop", (descriptor,))?;
+        let path = upload(
+            &mut runtime,
+            &format!("header-{}.png", case["name"].as_str().unwrap()),
+            &prefix,
+        )?;
+        assert_eq!(
+            runtime
+                .raw()?
+                .lv_image_decoder_get_info(path, UnsafePointer(output))?,
+            result,
+            "{case}"
+        );
+        runtime.free(path.0)?;
+    }
+    runtime.write_memory(data, &bytes)?;
+    runtime.write_memory(
+        descriptor + offset(fields, "data_size"),
+        &(bytes.len() as u32).to_le_bytes(),
+    )?;
+    let image = image(&mut runtime, screen, X, Y)?;
+    runtime
+        .raw()?
+        .lv_image_set_src(image, UnsafePointer(descriptor))?;
+    step(&mut runtime)?;
+    assert_image(&frame(&mut runtime, display)?, &expected, true, X, Y);
+    runtime.raw()?.lv_obj_delete(image)?;
+    runtime.call_raw::<_, ()>("lv_image_cache_drop", (descriptor,))?;
+    for pointer in [data, descriptor, output] {
+        runtime.free(pointer)?;
+    }
+    runtime.shutdown()
 }

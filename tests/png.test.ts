@@ -1,11 +1,21 @@
 import { expect, test } from "bun:test";
-import {
-  LV_COLOR_T_SIZE, LV_OPA_COVER, LV_PART_MAIN, LvglRuntime, type Frame,
-} from "../bindings/typescript/src/index.ts";
+import type { Frame } from "../bindings/typescript/src/index.ts";
 import fixture from "./fixtures/png/expected.json";
+import headers from "./fixtures/png/headers.json";
+
+const sdk = await import(Bun.env.LVW_TEST_TS_RUNTIME ?? "../bindings/typescript/src/index.ts") as
+  typeof import("../bindings/typescript/src/index.ts");
+const { LV_COLOR_T_SIZE, LV_OPA_COVER, LV_PART_MAIN, LvglRuntime } = sdk;
+const legacy = Number(sdk.LVGL_VERSION_MINOR) === 0;
+
+function offset(fields: readonly { name: string | null; bit_offset: number }[], name: string): number {
+  const field = fields.find((field) => field.name === name)!;
+  expect(field.bit_offset % 8).toBe(0);
+  return field.bit_offset / 8;
+}
 
 async function load() {
-  const runtime = await LvglRuntime.load(await Bun.file("target/wasm/liblvgl.wasm").arrayBuffer());
+  const runtime = await LvglRuntime.load(await Bun.file(Bun.env.LVW_TEST_CORE ?? "target/wasm/liblvgl.wasm").arrayBuffer());
   const display = runtime.createDisplay(48, 32);
   const screen = runtime.screen(display);
   const raw = runtime.unsafe;
@@ -72,8 +82,9 @@ test("RGB, RGBA, indexed transparency and Adam7 PNGs render fixed pixels across 
     expect([bytes[24], bytes[25], bytes[28]]).toEqual([sample.bit_depth, sample.color_type, sample.interlace]);
     runtime.putResource(sample.file, bytes);
     runtime.setImageSource(image, `W:${sample.file}`);
-    expect(raw.lv_image_get_src_width(image.handle)).toBe(fixture.width);
-    expect(raw.lv_image_get_src_height(image.handle)).toBe(fixture.height);
+    raw.lv_obj_update_layout(image.handle);
+    expect(raw.lv_obj_get_width(image.handle)).toBe(fixture.width);
+    expect(raw.lv_obj_get_height(image.handle)).toBe(fixture.height);
     for (let redraw = 0; redraw < 2; redraw++) {
       raw.lv_obj_invalidate(image.handle);
       runtime.step(33);
@@ -86,7 +97,7 @@ test("RGB, RGBA, indexed transparency and Adam7 PNGs render fixed pixels across 
   runtime.shutdown();
 });
 
-test("corrupt and unsupported PNGs leave the background intact and valid images recover in the same runtime", async () => {
+test("PNG failures preserve native source selection and valid images recover in the same runtime", async () => {
   const { runtime, display, screen, raw } = await load();
   const image = runtime.createImage(screen);
   image.setPosition(6, 5);
@@ -99,20 +110,29 @@ test("corrupt and unsupported PNGs leave the background intact and valid images 
       expect([bytes[24], bytes[25]]).toEqual([fixture.unsupported.bit_depth, fixture.unsupported.color_type]);
     }
     runtime.putResource(name, bytes);
+    const previous = raw.lv_image_get_src(image.handle);
     runtime.setImageSource(image, `W:${name}`);
-    expect(raw.lv_image_get_src_width(image.handle)).toBe(fixture.width);
-    expect(raw.lv_image_get_src_height(image.handle)).toBe(fixture.height);
+    raw.lv_obj_update_layout(image.handle);
+    const rejectedHeader = legacy && name === fixture.unsupported.file;
+    if (rejectedHeader) expect(raw.lv_image_get_src(image.handle)).toBe(previous);
+    else {
+      expect(raw.lv_obj_get_width(image.handle)).toBe(fixture.width);
+      expect(raw.lv_obj_get_height(image.handle)).toBe(fixture.height);
+    }
     runtime.step(33);
-    backgroundPixels(runtime.readFrame(display), 6, 5);
+    if (rejectedHeader) imagePixels(runtime.readFrame(display), 6, 5, valid.alpha);
+    else backgroundPixels(runtime.readFrame(display), 6, 5);
     runtime.setImageSource(image, `W:${valid.file}`);
     runtime.step(33);
     imagePixels(runtime.readFrame(display), 6, 5, valid.alpha);
   }
   runtime.putResource("short.png", new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]));
+  const previous = raw.lv_image_get_src(image.handle);
   runtime.setImageSource(image, "W:short.png");
-  expect(raw.lv_image_get_src(image.handle)).toBe(0);
+  expect(raw.lv_image_get_src(image.handle)).toBe(legacy ? previous : 0);
   runtime.step(33);
-  backgroundPixels(runtime.readFrame(display), 6, 5);
+  if (legacy) imagePixels(runtime.readFrame(display), 6, 5, valid.alpha);
+  else backgroundPixels(runtime.readFrame(display), 6, 5);
   runtime.setImageSource(image, `W:${valid.file}`);
   runtime.step(33);
   imagePixels(runtime.readFrame(display), 6, 5, valid.alpha);
@@ -147,5 +167,63 @@ test("uploaded PNG bytes are copied and remain reusable after individual image d
   const reused = runtime.readFrame(display);
   imagePixels(reused, 6, 5, true);
   backgroundPixels(reused, 26, 15);
+  runtime.shutdown();
+});
+
+test.skipIf(!legacy)("legacy PNG headers enforce byte and dimension bounds for files and borrowed descriptors", async () => {
+  const { runtime, display, screen, raw } = await load();
+  const descriptor = raw.lvw_alloc(sdk.LV_IMAGE_DSC_T_SIZE);
+  const output = raw.lvw_alloc(sdk.LV_IMAGE_HEADER_T_SIZE);
+  const dataOffset = offset(sdk.LV_IMAGE_DSC_T_FIELDS, "data");
+  const sizeOffset = offset(sdk.LV_IMAGE_DSC_T_FIELDS, "data_size");
+  const headerOffset = offset(sdk.LV_IMAGE_DSC_T_FIELDS, "header");
+  const widthOffset = offset(sdk.LV_IMAGE_HEADER_T_FIELDS, "w");
+  const heightOffset = offset(sdk.LV_IMAGE_HEADER_T_FIELDS, "h");
+  new Uint8Array(raw.memory.buffer, descriptor, sdk.LV_IMAGE_DSC_T_SIZE).fill(0);
+  let view = new DataView(raw.memory.buffer);
+  view.setUint8(descriptor + headerOffset + offset(sdk.LV_IMAGE_HEADER_T_FIELDS, "magic"), sdk.LV_IMAGE_HEADER_MAGIC);
+  view.setUint8(descriptor + headerOffset + offset(sdk.LV_IMAGE_HEADER_T_FIELDS, "cf"), sdk.LV_COLOR_FORMAT_RAW_ALPHA);
+  view.setUint16(descriptor + headerOffset + widthOffset, 999, true);
+  view.setUint16(descriptor + headerOffset + heightOffset, 999, true);
+  // Put truncated inputs at the memory boundary so an unchecked header read traps.
+  raw.memory.grow(1);
+  for (const sample of headers) {
+    const bytes = Uint8Array.fromHex(sample.hex);
+    const pointer = raw.memory.buffer.byteLength - bytes.length;
+    new Uint8Array(raw.memory.buffer, pointer, bytes.length).set(bytes);
+    view = new DataView(raw.memory.buffer);
+    view.setUint32(descriptor + dataOffset, pointer, true);
+    view.setUint32(descriptor + sizeOffset, bytes.length, true);
+    const stride = Math.ceil(sample.width * 4 / sdk.LV_DRAW_BUF_STRIDE_ALIGN) * sdk.LV_DRAW_BUF_STRIDE_ALIGN;
+    const valid = sample.valid && stride <= 65535;
+    const expected = valid ? sdk.LV_RESULT_OK : sdk.LV_RESULT_INVALID;
+    expect(raw.lv_image_decoder_get_info(descriptor, output), sample.name).toBe(expected);
+    if (valid) {
+      view = new DataView(raw.memory.buffer);
+      expect([view.getUint16(output + widthOffset, true), view.getUint16(output + heightOffset, true)])
+        .toEqual([sample.width, sample.height]);
+    }
+    raw.lv_image_cache_drop(descriptor);
+    const path = new TextEncoder().encode(`W:header-${sample.name}.png\0`);
+    const source = raw.lvw_alloc(path.length);
+    runtime.putResource(`header-${sample.name}.png`, bytes);
+    new Uint8Array(raw.memory.buffer, source, path.length).set(path);
+    expect(raw.lv_image_decoder_get_info(source, output), sample.name).toBe(expected);
+    raw.lvw_free(source);
+  }
+  const bytes = await Bun.file("tests/fixtures/png/rgba.png").bytes();
+  const source = raw.lvw_alloc(bytes.length);
+  new Uint8Array(raw.memory.buffer, source, bytes.length).set(bytes);
+  view = new DataView(raw.memory.buffer);
+  view.setUint32(descriptor + dataOffset, source, true);
+  view.setUint32(descriptor + sizeOffset, bytes.length, true);
+  const image = runtime.createImage(screen);
+  image.setPosition(6, 5);
+  raw.lv_image_set_src(image.handle, descriptor);
+  runtime.step(33);
+  imagePixels(runtime.readFrame(display), 6, 5, true);
+  image.delete();
+  raw.lv_image_cache_drop(descriptor);
+  for (const pointer of [source, descriptor, output]) raw.lvw_free(pointer);
   runtime.shutdown();
 });

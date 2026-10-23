@@ -53,3 +53,5 @@ jobs:
         run: bun run quality
       - name: Check LVGL configurations and callbacks
         run: bun run check:compatibility
+      - name: Check LVGL software components
+        run: bun run check:software

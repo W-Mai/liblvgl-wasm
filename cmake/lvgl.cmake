@@ -33,7 +33,7 @@ function(lvw_config_flag name)
     set("${name}" "${value}" PARENT_SCOPE)
 endfunction()
 
-foreach(flag LV_USE_THORVG LV_USE_THORVG_INTERNAL LV_USE_FREETYPE LV_USE_GIF
+foreach(flag LV_USE_THORVG LV_USE_THORVG_INTERNAL LV_USE_FREETYPE LV_USE_GIF LV_USE_LODEPNG
              LV_USE_SVG LV_USE_LOTTIE LV_USE_OBSERVER)
     lvw_config_flag(${flag})
 endforeach()

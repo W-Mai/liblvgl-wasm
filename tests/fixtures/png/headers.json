@@ -1,0 +1,247 @@
+[
+  {
+    "name": "valid",
+    "hex": "89504e470d0a1a0a0000000d4948445200000009000000070806000000da9b6760",
+    "valid": true,
+    "width": 9,
+    "height": 7
+  },
+  {
+    "name": "limits",
+    "hex": "89504e470d0a1a0a0000000d4948445200003fff0000ffff080600000017acf520",
+    "valid": true,
+    "width": 16383,
+    "height": 65535
+  },
+  {
+    "name": "zero-width",
+    "hex": "89504e470d0a1a0a0000000d4948445200000000000000070806000000268e4caa",
+    "valid": false,
+    "width": 0,
+    "height": 7
+  },
+  {
+    "name": "zero-height",
+    "hex": "89504e470d0a1a0a0000000d4948445200000009000000000806000000c79e57d8",
+    "valid": false,
+    "width": 9,
+    "height": 0
+  },
+  {
+    "name": "stride-overflow",
+    "hex": "89504e470d0a1a0a0000000d4948445200004000000000010806000000269fb658",
+    "valid": false,
+    "width": 16384,
+    "height": 1
+  },
+  {
+    "name": "width-overflow",
+    "hex": "89504e470d0a1a0a0000000d49484452000100000000000108060000006b72e3d8",
+    "valid": false,
+    "width": 65536,
+    "height": 1
+  },
+  {
+    "name": "width-high-byte",
+    "hex": "89504e470d0a1a0a0000000d4948445201000009000000070806000000070dbee5",
+    "valid": false,
+    "width": 16777225,
+    "height": 7
+  },
+  {
+    "name": "height-overflow",
+    "hex": "89504e470d0a1a0a0000000d494844520000000100010000080600000018e317b2",
+    "valid": false,
+    "width": 1,
+    "height": 65536
+  },
+  {
+    "name": "sixteen-bit",
+    "hex": "89504e470d0a1a0a0000000d49484452000000090000000710060000008a0bbb23",
+    "valid": false,
+    "width": 9,
+    "height": 7
+  },
+  {
+    "name": "header-crc",
+    "hex": "89504e470d0a1a0a0000000d4948445200000009000000070806000000da9b6761",
+    "valid": false,
+    "width": 9,
+    "height": 7
+  },
+  {
+    "name": "short-8",
+    "hex": "89504e470d0a1a0a",
+    "valid": false,
+    "width": 9,
+    "height": 7
+  },
+  {
+    "name": "short-9",
+    "hex": "89504e470d0a1a0a00",
+    "valid": false,
+    "width": 9,
+    "height": 7
+  },
+  {
+    "name": "short-10",
+    "hex": "89504e470d0a1a0a0000",
+    "valid": false,
+    "width": 9,
+    "height": 7
+  },
+  {
+    "name": "short-11",
+    "hex": "89504e470d0a1a0a000000",
+    "valid": false,
+    "width": 9,
+    "height": 7
+  },
+  {
+    "name": "short-12",
+    "hex": "89504e470d0a1a0a0000000d",
+    "valid": false,
+    "width": 9,
+    "height": 7
+  },
+  {
+    "name": "short-13",
+    "hex": "89504e470d0a1a0a0000000d49",
+    "valid": false,
+    "width": 9,
+    "height": 7
+  },
+  {
+    "name": "short-14",
+    "hex": "89504e470d0a1a0a0000000d4948",
+    "valid": false,
+    "width": 9,
+    "height": 7
+  },
+  {
+    "name": "short-15",
+    "hex": "89504e470d0a1a0a0000000d494844",
+    "valid": false,
+    "width": 9,
+    "height": 7
+  },
+  {
+    "name": "short-16",
+    "hex": "89504e470d0a1a0a0000000d49484452",
+    "valid": false,
+    "width": 9,
+    "height": 7
+  },
+  {
+    "name": "short-17",
+    "hex": "89504e470d0a1a0a0000000d4948445200",
+    "valid": false,
+    "width": 9,
+    "height": 7
+  },
+  {
+    "name": "short-18",
+    "hex": "89504e470d0a1a0a0000000d494844520000",
+    "valid": false,
+    "width": 9,
+    "height": 7
+  },
+  {
+    "name": "short-19",
+    "hex": "89504e470d0a1a0a0000000d49484452000000",
+    "valid": false,
+    "width": 9,
+    "height": 7
+  },
+  {
+    "name": "short-20",
+    "hex": "89504e470d0a1a0a0000000d4948445200000009",
+    "valid": false,
+    "width": 9,
+    "height": 7
+  },
+  {
+    "name": "short-21",
+    "hex": "89504e470d0a1a0a0000000d494844520000000900",
+    "valid": false,
+    "width": 9,
+    "height": 7
+  },
+  {
+    "name": "short-22",
+    "hex": "89504e470d0a1a0a0000000d49484452000000090000",
+    "valid": false,
+    "width": 9,
+    "height": 7
+  },
+  {
+    "name": "short-23",
+    "hex": "89504e470d0a1a0a0000000d4948445200000009000000",
+    "valid": false,
+    "width": 9,
+    "height": 7
+  },
+  {
+    "name": "short-24",
+    "hex": "89504e470d0a1a0a0000000d494844520000000900000007",
+    "valid": false,
+    "width": 9,
+    "height": 7
+  },
+  {
+    "name": "short-25",
+    "hex": "89504e470d0a1a0a0000000d49484452000000090000000708",
+    "valid": false,
+    "width": 9,
+    "height": 7
+  },
+  {
+    "name": "short-26",
+    "hex": "89504e470d0a1a0a0000000d4948445200000009000000070806",
+    "valid": false,
+    "width": 9,
+    "height": 7
+  },
+  {
+    "name": "short-27",
+    "hex": "89504e470d0a1a0a0000000d494844520000000900000007080600",
+    "valid": false,
+    "width": 9,
+    "height": 7
+  },
+  {
+    "name": "short-28",
+    "hex": "89504e470d0a1a0a0000000d49484452000000090000000708060000",
+    "valid": false,
+    "width": 9,
+    "height": 7
+  },
+  {
+    "name": "short-29",
+    "hex": "89504e470d0a1a0a0000000d4948445200000009000000070806000000",
+    "valid": false,
+    "width": 9,
+    "height": 7
+  },
+  {
+    "name": "short-30",
+    "hex": "89504e470d0a1a0a0000000d4948445200000009000000070806000000da",
+    "valid": false,
+    "width": 9,
+    "height": 7
+  },
+  {
+    "name": "short-31",
+    "hex": "89504e470d0a1a0a0000000d4948445200000009000000070806000000da9b",
+    "valid": false,
+    "width": 9,
+    "height": 7
+  },
+  {
+    "name": "short-32",
+    "hex": "89504e470d0a1a0a0000000d4948445200000009000000070806000000da9b67",
+    "valid": false,
+    "width": 9,
+    "height": 7
+  }
+]

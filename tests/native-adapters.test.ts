@@ -7,6 +7,7 @@ test.each([
   ["timer", "src/misc", "lv_timer.c"], ["animation", "src/misc", "lv_anim.c"],
   ["observer", "src/core", "lv_observer.c"], ["observer", "src/others/observer", "lv_observer.c"],
   ["decoder", "src/image", "lv_image_decoder.c"], ["decoder", "src/draw", "lv_image_decoder.c"],
+  ["lodepng", "src/image", "lv_lodepng.c"], ["lodepng", "src/libs/lodepng", "lv_lodepng.c"],
 ])(
   "%s adaptation in %s rejects unknown source bytes and removes stale generated code",
   async (adapter, directory, filename) => {
@@ -68,6 +69,38 @@ if (splitSource) test.each(["arc", "slider", "roller", "dropdown"])(
       expect(stderr.replace(/\s+/g, " ")).toContain(`Unsupported LVGL observer source: ${source}`);
       for (const file of outputs) expect(await Bun.file(join(root, "lvgl-adapted", file)).exists()).toBe(false);
       expect(await Bun.file(source).text()).toBe("/* unverified implementation */\n");
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  },
+);
+
+const pngSource = Bun.env.LVW_TEST_PNG_SOURCE;
+if (pngSource) test.each(["src/libs/lodepng/lodepng.c", "src/libs/bin_decoder/lv_bin_decoder.c", "src/misc/cache/lv_image_cache.c"])(
+  "PNG adaptation rejects changed %s and removes all generated units",
+  async (changed) => {
+    const root = await mkdtemp(join(tmpdir(), "lvw png source "));
+    const files = ["src/libs/lodepng/lv_lodepng.c", "src/libs/lodepng/lodepng.c",
+      "src/libs/bin_decoder/lv_bin_decoder.c", "src/misc/cache/lv_image_cache.c"];
+    try {
+      await mkdir(join(root, "lvgl-adapted"));
+      for (const file of files) {
+        await mkdir(join(root, file, ".."), { recursive: true });
+        await copyFile(join(pngSource, file), join(root, file));
+        await Bun.write(join(root, "lvgl-adapted", file.split("/").at(-1)!), "stale\n");
+      }
+      await Bun.write(join(root, changed), "/* changed source */\n");
+      await Bun.write(join(root, "check.cmake"),
+        `cmake_minimum_required(VERSION 3.25)\ninclude("${resolve("cmake/lodepng.cmake")}")\n`);
+      const child = Bun.spawn(["cmake", `-Dlvgl_SOURCE_DIR=${root}`, "-P", "check.cmake"], {
+        cwd: root, stdout: "pipe", stderr: "pipe",
+      });
+      const [status, stdout, stderr] = await Promise.all([
+        child.exited, new Response(child.stdout).text(), new Response(child.stderr).text(),
+      ]);
+      expect(status, stdout + stderr).not.toBe(0);
+      expect(stderr.replace(/\s+/g, " ")).toContain(`Unsupported LVGL lodepng source: ${join(root, changed)}`);
+      for (const file of files) expect(await Bun.file(join(root, "lvgl-adapted", file.split("/").at(-1)!)).exists()).toBe(false);
     } finally {
       await rm(root, { recursive: true, force: true });
     }

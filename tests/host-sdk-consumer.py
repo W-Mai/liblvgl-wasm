@@ -27,6 +27,10 @@ def check(output, build=None):
     callbacks = os.environ.get("LVW_TEST_CALLBACKS", "").split()
     if any(name not in {"timers", "animations", "observers", "decoders"} for name in callbacks):
         raise ValueError(f"unknown callback contract: {callbacks}")
+    software = os.environ.get("LVW_TEST_SOFTWARE", "").split()
+    if any(name not in {"png"} for name in software):
+        raise ValueError(f"unknown software contract: {software}")
+    contracts = callbacks + software
     build = build or ROOT / "target/wasm"
     ndk = output / "ndk"
     run("cmake", "--build", build, "--target", "lvw_ndk", "-j", "4")
@@ -45,12 +49,14 @@ def check(output, build=None):
                        ("native", output / "native build/lvgl_native_example.wasm")):
         original = output / name
         metadata = build_host_sdk(ROOT, ndk, core, original, "wasm-tools")
-        if callbacks:
+        if contracts:
             (original / "rust/tests").mkdir()
-            for contract in callbacks:
+            for contract in contracts:
                 shutil.copyfile(ROOT / f"bindings/rust/tests/{contract}.rs", original / f"rust/tests/{contract}.rs")
             if "decoders" in callbacks:
                 shutil.copyfile(ROOT / "examples/browser/red.bmp", original / "rust/tests/red.bmp")
+            if "png" in software:
+                shutil.copytree(ROOT / "tests/fixtures/png", original / "rust/tests/png")
         files = file_inventory(original)
         package = output / f"moved {name}"
         publish_package(original, package, "sdk.json", {**metadata, "files": files})
@@ -87,14 +93,15 @@ def check(output, build=None):
                 if path.suffix in (".ts", ".js"):
                     assert str(ROOT) not in path.read_text() and str(output) not in path.read_text(), path
             packages.append({"package": str(package), "consumer": str(project), **metadata})
-            if callbacks:
+            if contracts:
                 environment = {**os.environ, "LVW_TEST_CORE": str(package / "runtime/liblvgl.wasm"),
                                "LVW_TEST_API": str(package / "metadata/api.json"),
                                "LVW_TEST_BITMAP": str(package / "rust/tests/red.bmp"),
+                               "LVW_TEST_PNG_FIXTURES": str(package / "rust/tests/png"),
                                "LVW_TEST_TS_RUNTIME": str(package / "typescript/index.js"),
                                "CARGO_TARGET_DIR": str(ROOT / "target/rust")}
                 environment.pop("LVW_RUST_BINDINGS", None)
-                for contract in callbacks:
+                for contract in contracts:
                     run("bun", "test", f"./tests/{contract}.test.ts", env=environment)
                     run("cargo", "test", "--locked", "--offline", "--manifest-path", package / "rust/Cargo.toml",
                         "--test", contract, env=environment)
