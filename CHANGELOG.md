@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+- LVGL 9.5.0 base and managed callbacks, with external data enabled or disabled, subject-owned data cleanup, and verified NDK/host SDK consumers.
 - LVGL 9.4.0 base and managed callbacks, with subject-scoped cleanup across split widget sources and verified NDK/host SDK consumers.
 
 - LVGL 9.3.0 base and managed callbacks, including observer cleanup during event dispatch and relocated NDK consumers.

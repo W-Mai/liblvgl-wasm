@@ -18,6 +18,7 @@ set(LVW_OBSERVER_LEGACY_SOURCES
 set(LVW_OBSERVER_SCOPED_CLEANUP OFF)
 set(LVW_OBSERVER_DEFERRED_EVENTS OFF)
 set(LVW_OBSERVER_SPLIT_WIDGETS OFF)
+set(LVW_OBSERVER_SUBJECT_DATA OFF)
 if(LVW_OBSERVER_HASH IN_LIST LVW_OBSERVER_LEGACY_SOURCES)
     set(LVW_OBSERVER_LEGACY ON)
     list(APPEND LVW_BRIDGE_DEFINITIONS LVW_OBSERVER_DELETE=lv_observer_remove)
@@ -36,6 +37,13 @@ elseif(LVW_OBSERVER_HASH STREQUAL "f2dda22b8c18796b49b73b60f2354969826bdb4c2cffb
     set(LVW_OBSERVER_DEFERRED_EVENTS ON)
     set(LVW_OBSERVER_SPLIT_WIDGETS ON)
     list(APPEND LVW_BRIDGE_DEFINITIONS LVW_OBSERVER_DELETE=lv_observer_remove)
+elseif(LVW_OBSERVER_HASH STREQUAL "fd7b086123c9837ce3433c639aa828c46ec54e7ff2f8a8e57ae09586b3b51065") # v9.5.0
+    set(LVW_OBSERVER_LEGACY OFF)
+    set(LVW_OBSERVER_SCOPED_CLEANUP ON)
+    set(LVW_OBSERVER_DEFERRED_EVENTS ON)
+    set(LVW_OBSERVER_SPLIT_WIDGETS ON)
+    set(LVW_OBSERVER_SUBJECT_DATA ON)
+    list(APPEND LVW_BRIDGE_DEFINITIONS LVW_OBSERVER_DELETE=lv_observer_remove)
 elseif(LVW_OBSERVER_HASH STREQUAL "2eb15b1668bf035e8850798cca03f365c7b36e1b1c58d53eb857ef696a3aa0ca")
     set(LVW_OBSERVER_LEGACY OFF)
     list(APPEND LVW_BRIDGE_DEFINITIONS LVW_OBSERVER_DELETE=lv_observer_delete)
@@ -49,6 +57,12 @@ if(LVW_OBSERVER_SPLIT_WIDGETS)
     set(LVW_OBSERVER_WIDGET_HASH_slider "04f85af6888db4ebcd1f27b9187c242f3395361025b0ced47eb830ce4b6134c1")
     set(LVW_OBSERVER_WIDGET_HASH_roller "91dda7dc1cfab908b9f5f665f098cbfdc2caf3fd3518c346f52ed0c72f87463e")
     set(LVW_OBSERVER_WIDGET_HASH_dropdown "3b9d793dbe4ac37c7879d2b1b93e8df12db4602d7d6ff6a37712d4064ed45f6c")
+    if(LVW_OBSERVER_SUBJECT_DATA)
+        set(LVW_OBSERVER_WIDGET_HASH_arc "9213be494f8654290141e8af66bdbd489c921ab26b039c23ce35c9c0f657de87")
+        set(LVW_OBSERVER_WIDGET_HASH_slider "b8317769478790feaeb45c085904b3fcdbcd09c90535ed2c140b9ac0edc0a332")
+        set(LVW_OBSERVER_WIDGET_HASH_roller "9f2071ecfadb3609836230756795bb843d7eb23fa26096c4a9a903a8ff20f0d5")
+        set(LVW_OBSERVER_WIDGET_HASH_dropdown "c1398896bb08486daaca662a630827f9eed02c6380e22bfa367572c3789ef013")
+    endif()
     foreach(widget IN ITEMS arc slider roller dropdown)
         set(source "${lvgl_SOURCE_DIR}/src/widgets/${widget}/lv_${widget}.c")
         set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${source}")
@@ -101,6 +115,24 @@ if(LVW_OBSERVER_LEGACY)
         LVW_OBSERVER_CODE "${LVW_OBSERVER_CODE}")
 endif()
 if(LVW_OBSERVER_SCOPED_CLEANUP)
+    if(LVW_OBSERVER_SUBJECT_DATA)
+        # External data belongs to the subject, independent of its observers.
+        set(LVW_DATA_RELEASE [=[#if LV_USE_EXT_DATA
+    if(observer->subject->ext_data.free_cb) {
+        observer->subject->ext_data.free_cb(observer->subject->ext_data.data);
+        observer->subject->ext_data.data = NULL;
+    }
+#endif
+
+]=])
+        string(FIND "${LVW_OBSERVER_CODE}" "${LVW_DATA_RELEASE}" LVW_FIRST)
+        string(FIND "${LVW_OBSERVER_CODE}" "${LVW_DATA_RELEASE}" LVW_LAST REVERSE)
+        if(LVW_FIRST LESS 0 OR NOT LVW_FIRST EQUAL LVW_LAST)
+            file(REMOVE ${LVW_OBSERVER_OUTPUTS})
+            message(FATAL_ERROR "LVGL subject cleanup requires a unique external-data release")
+        endif()
+        string(REPLACE "${LVW_DATA_RELEASE}" "" LVW_OBSERVER_CODE "${LVW_OBSERVER_CODE}")
+    endif()
     # Both subject deinit and explicit unbinding use the same scoped cleanup.
     set(LVW_DEINIT [=[static void lvw_observer_unbind_widget(lv_obj_t * obj, lv_subject_t * subject);
 
@@ -121,6 +153,19 @@ void lv_subject_deinit(lv_subject_t * subject)
 {
     lv_obj_remove_event_cb_with_user_data(obj, obj_value_changed_event_cb, subject);
 ]=])
+    if(LVW_OBSERVER_SUBJECT_DATA)
+        set(LVW_DATA_RELEASE [=[#if LV_USE_EXT_DATA
+    void (*free_cb)(void *) = subject->ext_data.free_cb;
+    void * data = subject->ext_data.data;
+    subject->ext_data.free_cb = NULL;
+    subject->ext_data.data = NULL;
+    if(free_cb) free_cb(data);
+#endif
+]=])
+        string(REPLACE "        lv_observer_remove(observer);\n    }\n"
+            "        lv_observer_remove(observer);\n    }\n${LVW_DATA_RELEASE}"
+            LVW_DEINIT "${LVW_DEINIT}")
+    endif()
     foreach(widget IN ITEMS ARC SLIDER ROLLER DROPDOWN)
         string(TOLOWER "${widget}" callback)
         if(LVW_OBSERVER_SPLIT_WIDGETS)

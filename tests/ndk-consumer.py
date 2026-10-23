@@ -153,7 +153,7 @@ __attribute__((export_name("ndk_animation_deleted"))) int ndk_animation_deleted(
     else lv_anim_delete(&animation_deletions, NULL);
     return animation_deletions;
 }
-#if LV_USE_OBSERVER && LVGL_VERSION_MINOR >= 2 && LVGL_VERSION_MINOR <= 4
+#if LV_USE_OBSERVER && LVGL_VERSION_MINOR >= 2 && LVGL_VERSION_MINOR <= 5
 static int observer_user_events;
 static void observer_user_event(lv_event_t * event) {
     (void)event;
@@ -222,6 +222,73 @@ __attribute__((export_name("ndk_observer_cleanup"))) int ndk_observer_cleanup(in
     lv_display_delete(display);
     lv_subject_deinit(&first);
     lv_subject_deinit(&second);
+    return result;
+}
+#endif
+#if LV_USE_OBSERVER && LV_USE_EXT_DATA && LVGL_VERSION_MINOR >= 5
+static int subject_releases, subject_bad_data, subject_marker;
+static void subject_data_release(void * data) {
+    subject_releases++;
+    if (data != &subject_marker) subject_bad_data++;
+}
+static void subject_data_observer(lv_observer_t * observer, lv_subject_t * subject) {
+    (void)subject;
+    (*(int *)lv_observer_get_user_data(observer))++;
+}
+static void subject_remove_observer(lv_observer_t * observer) {
+#if LVGL_VERSION_MINOR < 6
+    lv_observer_remove(observer);
+#else
+    lv_observer_delete(observer);
+#endif
+}
+__attribute__((export_name("ndk_subject_external_data"))) int ndk_subject_external_data(void) {
+    int calls = 0, result = 0;
+    subject_releases = subject_bad_data = 0;
+#if LVGL_VERSION_MINOR < 6
+    lv_subject_t subject_storage, empty_storage;
+    lv_subject_t * subject = &subject_storage, * empty = &empty_storage;
+    lv_subject_init_int(subject, 0);
+    lv_subject_init_int(empty, 0);
+#else
+    lv_subject_t * subject = lv_subject_create(LV_SUBJECT_TYPE_INT);
+    lv_subject_t * empty = lv_subject_create(LV_SUBJECT_TYPE_INT);
+    if (!subject || !empty) {
+        lv_subject_delete(subject);
+        lv_subject_delete(empty);
+        return -6;
+    }
+#endif
+    lv_subject_set_external_data(subject, &subject_marker, subject_data_release);
+    lv_observer_t * first = lv_subject_add_observer_with_target(subject, subject_data_observer, NULL, &calls);
+    lv_observer_t * second = lv_subject_add_observer_with_target(subject, subject_data_observer, NULL, &calls);
+    subject_remove_observer(first);
+    lv_subject_set_int(subject, 1);
+    if (subject_releases != 0 || calls != 3) result = -1;
+    lv_display_t * display = lv_display_create(16, 16);
+    lv_obj_t * obj = lv_obj_create(lv_display_get_screen_active(display));
+    lv_subject_add_observer_obj(subject, subject_data_observer, obj, &calls);
+    lv_obj_delete(obj);
+    subject_remove_observer(second);
+    if (subject_releases != 0 || calls != 4) result = -2;
+#if LVGL_VERSION_MINOR < 6
+    lv_subject_deinit(subject);
+#else
+    lv_subject_delete(subject);
+#endif
+    if (subject_releases != 1) result = -3;
+#if LVGL_VERSION_MINOR == 5
+    lv_subject_deinit(subject);
+    if (subject_releases != 1) result = -4;
+#endif
+    lv_subject_set_external_data(empty, &subject_marker, subject_data_release);
+#if LVGL_VERSION_MINOR < 6
+    lv_subject_deinit(empty);
+#else
+    lv_subject_delete(empty);
+#endif
+    if (subject_releases != 2 || subject_bad_data != 0) result = -5;
+    lv_display_delete(display);
     return result;
 }
 #endif

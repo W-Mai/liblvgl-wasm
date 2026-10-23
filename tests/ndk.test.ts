@@ -67,6 +67,9 @@ test("relocated NDK preserves the C/C++/Zig ABI and native callbacks", async () 
             expect(api.ndk_observer_cleanup(1, widget)).toBe(0);
           }
         }
+        if (api.ndk_subject_external_data && api.lvw_observer_create) {
+          expect(api.ndk_subject_external_data()).toBe(0);
+        }
       }
       if (language === "cpp") expect(api.ndk_eh_test!()).toBe(42);
       if (language === "zig") {

@@ -347,7 +347,7 @@ test("object deletion inside the initial notification returns an invalid observe
     if (Number(sdk.LVGL_VERSION_MINOR) < 2) {
       expect("lv_subject_deinit" in runtime.unsafe).toBe(false);
       expect("lv_observer_get_user_data" in runtime.unsafe).toBe(false);
-    } else if (Number(sdk.LVGL_VERSION_MINOR) <= 4) {
+    } else if (Number(sdk.LVGL_VERSION_MINOR) <= 5) {
       expect("lv_subject_deinit" in runtime.unsafe).toBe(true);
       expect("lv_observer_get_user_data" in runtime.unsafe).toBe(true);
       expect("lv_observer_set_user_data" in runtime.unsafe).toBe(false);

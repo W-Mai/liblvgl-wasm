@@ -41,7 +41,9 @@ if (splitSource) test.each(["arc", "slider", "roller", "dropdown"])(
   "split observer adaptation rejects changed %s source and removes all stale units",
   async (changed) => {
     const root = await mkdtemp(join(tmpdir(), "lvw split observer "));
-    const files = ["src/others/observer/lv_observer.c",
+    const observer = await Bun.file(join(splitSource, "src/core/lv_observer.c")).exists()
+      ? "src/core/lv_observer.c" : "src/others/observer/lv_observer.c";
+    const files = [observer,
       ...["arc", "slider", "roller", "dropdown"].map((widget) => `src/widgets/${widget}/lv_${widget}.c`)];
     const outputs = ["lv_observer.c", ...["arc", "slider", "roller", "dropdown"]
       .map((widget) => `lv_observer_${widget}.c`)];

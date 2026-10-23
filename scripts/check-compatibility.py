@@ -31,6 +31,10 @@ LEGACY = [{
     "url": "https://codeload.github.com/lvgl/lvgl/tar.gz/v9.4.0",
     "root": "lvgl-9.4.0", "size": 93398106,
     "sha256": "932c864de98431b38c5758a87f1de12bbee7b76943b8312bcf13d2f29ac14627",
+}, {
+    "url": "https://codeload.github.com/lvgl/lvgl/tar.gz/v9.5.0",
+    "root": "lvgl-9.5.0", "size": 101308654,
+    "sha256": "34a955cdf3a2d005507b704e87357af669a114523b6d3f77b5344fdc68717bc6",
 }]
 CALLBACKS = {"timer": "timers", "animation": "animations", "observer": "observers", "decoder": "decoders"}
 
@@ -66,12 +70,24 @@ def check():
     config_prefix, config_suffix = base_config.read_text().rsplit("#endif", 1)
     callback_config.write_text(config_prefix + "#undef LV_IMAGE_HEADER_CACHE_DEF_CNT\n"
                               "#define LV_IMAGE_HEADER_CACHE_DEF_CNT 4\n\n#endif" + config_suffix)
+    external_config = output / "external-data/lv_conf.h"
+    external_config.parent.mkdir(exist_ok=True)
+    external_prefix, external_suffix = callback_config.read_text().rsplit("#endif", 1)
+    external_config.write_text(external_prefix + "#undef LV_USE_EXT_DATA\n#define LV_USE_EXT_DATA 1\n\n#endif"
+                               + external_suffix)
     results = []
-    cases = [(version, selected, features) for version, selected in sources for features in ((), tuple(CALLBACKS))]
-    for version, selected, features in cases:
+    cases = []
+    for version, selected in sources:
+        cases.extend((version, selected, features, callback_config if features else base_config)
+                     for features in ((), tuple(CALLBACKS)))
+        if version == "v9.5.0":
+            cases.append((version, selected, tuple(CALLBACKS), external_config))
+    for version, selected, features, configuration in cases:
         name = f"{version}-{'-'.join(features) or 'base'}"
+        if configuration == external_config:
+            name += "-external-data"
         environment = {**os.environ, "LVGL_SOURCE_DIR": str(selected),
-                       "LVGL_CONFIG_PATH": str(callback_config if features else base_config),
+                       "LVGL_CONFIG_PATH": str(configuration),
                        "LVW_BRIDGE_FEATURES": ";".join(features), "LVW_BUILD_DIR": str(build)}
         with (output / f"{name}-build.log").open("w") as log:
             subprocess.run(["sh", str(ROOT / "scripts/build-core.sh")], cwd=ROOT,
@@ -79,6 +95,8 @@ def check():
         inspected = json.loads((build / "lvgl-source.json").read_text())
         assert inspected["version"] == dict(zip(("major", "minor", "patch"),
                                                 map(int, version[1:].split("."))), info="")
+        external_data = inspected["configuration"].get("LV_USE_EXT_DATA", {}).get("value") == "1"
+        assert external_data == (configuration == external_config)
         proof = json.loads((build / "api-verification.json").read_text())
         with (output / f"{name}-consumers.log").open("w") as log:
             subprocess.run(["bun", "test", "./tests/ndk.test.ts", "./tests/host-sdk.test.ts"], cwd=ROOT,
@@ -87,10 +105,12 @@ def check():
                            stdout=log, stderr=subprocess.STDOUT, check=True)
         results.append({"version": inspected["version"], "proof": proof,
                         "configuration": inspected["config_sha256"],
+                        "external_data": external_data,
                         "bridge_features": list(features),
                         "native": ["c", "cpp", "zig"], "hosts": ["bun", "rust"]})
-        if version == "v9.4.0" and not features:
-            with (output / "v9.4-adapters.log").open("w") as log:
+        if version in {"v9.4.0", "v9.5.0"} and not features:
+            prefix = ".".join(version.split(".")[:2])
+            with (output / f"{prefix}-adapters.log").open("w") as log:
                 subprocess.run(["bun", "test", "./tests/native-adapters.test.ts"], cwd=ROOT,
                                env={**os.environ, "LVW_TEST_OBSERVER_SOURCE": str(selected)},
                                stdout=log, stderr=subprocess.STDOUT, check=True)
