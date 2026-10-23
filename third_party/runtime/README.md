@@ -6,7 +6,7 @@ The WASI libc files are from commit `2e6fb9d8ee0cdf9e431fbcabe8af3115de000a13` i
 
 The LLVM runtime files are from commit `895aa2c896ada719451be2e3673c83da8ddf1141` in `llvm/llvm-project`. `llvm/source-notices.json` records the SHA-256 and the complete notice blocks found in the selected compiler-rt, libc++, libc++abi, and libunwind source ranges. It is an attribution index, not a claim that every indexed source file is linked into every configuration.
 
-The LVGL tree preserves the original license files and font notices shipped with the pinned LVGL source archive. FreeType and ThorVG have additional source and license trees under `third_party/freetype` and `third_party/thorvg`.
+The LVGL tree preserves the original license files and font notices from commit `80ca777e37a2b176770726a02e07a6fb79ef0b39` in `lvgl/lvgl`. FreeType and ThorVG have additional source and license trees under `third_party/freetype` and `third_party/thorvg`.
 
 Git preserves third-party file bytes without line-ending conversion. The manifest hashes apply to the original bytes in both source checkouts and exported packages.
 

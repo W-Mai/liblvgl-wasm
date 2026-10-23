@@ -1,0 +1,8 @@
+execute_process(COMMAND "@Python3_EXECUTABLE@" -B "@PROJECT_SOURCE_DIR@/generator/notices.py"
+    --source "@lvgl_SOURCE_DIR@" --materials "@PROJECT_SOURCE_DIR@/third_party"
+    --report "@LVW_SOURCE_REPORT@"
+    --output "$ENV{DESTDIR}${CMAKE_INSTALL_PREFIX}/@LVW_NDK_DATA_DIR@/licenses"
+    RESULT_VARIABLE result ERROR_VARIABLE error)
+if(NOT result EQUAL 0)
+    message(FATAL_ERROR "Cannot collect selected-source notices: ${error}")
+endif()

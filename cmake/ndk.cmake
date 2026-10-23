@@ -87,18 +87,9 @@ install(FILES "${PROJECT_SOURCE_DIR}/examples/zig/CMakeLists.txt"
     DESTINATION examples/zig COMPONENT ndk)
 install(FILES "${PROJECT_SOURCE_DIR}/cmake/zig.cmake"
     DESTINATION lib/cmake/liblvgl-wasm COMPONENT ndk)
-if(LV_USE_FREETYPE)
-    install(DIRECTORY "${PROJECT_SOURCE_DIR}/third_party/freetype"
-        DESTINATION "${LVW_NDK_DATA_DIR}/licenses" COMPONENT ndk)
-endif()
-if(LV_USE_THORVG OR LV_USE_THORVG_INTERNAL)
-    install(DIRECTORY "${PROJECT_SOURCE_DIR}/third_party/thorvg"
-        DESTINATION "${LVW_NDK_DATA_DIR}/licenses" COMPONENT ndk)
-endif()
-install(DIRECTORY "${PROJECT_SOURCE_DIR}/third_party/runtime"
-    DESTINATION "${LVW_NDK_DATA_DIR}/licenses" COMPONENT ndk)
-install(FILES "${lvgl_SOURCE_DIR}/LICENCE.txt"
-    DESTINATION "${LVW_NDK_DATA_DIR}/licenses/lvgl" COMPONENT ndk)
+configure_file("${PROJECT_SOURCE_DIR}/cmake/install-notices.cmake.in"
+    "${CMAKE_BINARY_DIR}/install-notices.cmake" @ONLY)
+install(SCRIPT "${CMAKE_BINARY_DIR}/install-notices.cmake" COMPONENT ndk)
 
 configure_package_config_file("${PROJECT_SOURCE_DIR}/cmake/liblvgl-wasmConfig.cmake.in"
     "${CMAKE_BINARY_DIR}/liblvgl-wasmConfig.cmake"

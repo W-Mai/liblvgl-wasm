@@ -31,6 +31,7 @@ def check(output, build=None):
     ndk = output / "ndk"
     run("cmake", "--build", build, "--target", "lvw_ndk", "-j", "4")
     run("cmake", "--install", build, "--prefix", ndk, "--component", "ndk")
+    notices = file_inventory(ndk / "share/liblvgl-wasm/licenses")
     sdk = subprocess.check_output(["sh", str(ROOT / "scripts/resolve-wasi-sdk.sh"), str(ROOT)], text=True).strip()
     run("cmake", "-S", ndk / "examples/c", "-B", output / "native build", "-G", "Ninja",
         f"-DCMAKE_TOOLCHAIN_FILE={sdk}/share/cmake/wasi-sdk-p1.cmake", f"-DCMAKE_PREFIX_PATH={ndk}",
@@ -55,6 +56,7 @@ def check(output, build=None):
         publish_package(original, package, "sdk.json", {**metadata, "files": files})
         readonly(package, True)
         try:
+            assert file_inventory(package / "licenses") == notices
             project = output / f"consumer {name}"
             project.mkdir()
             (project / "package.json").write_text('{"type":"module"}\n')

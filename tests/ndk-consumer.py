@@ -16,11 +16,11 @@ def run(*command):
     subprocess.run([str(item) for item in command], check=True, stdout=sys.stderr)
 
 
-def verify_runtime_notices(data):
+def verify_runtime_notices(data, report):
     runtime = data / "licenses/runtime"
     manifest_path = runtime / "manifest.json"
     manifest = json.loads(manifest_path.read_text())
-    assert manifest["schema_version"] == 1
+    assert manifest["schema_version"] == 2
     expected = manifest["files"]
     actual = {}
     for path in runtime.rglob("*"):
@@ -33,9 +33,30 @@ def verify_runtime_notices(data):
         "wasi-libc/LICENSE-APACHE-LLVM",
         "wasi-libc/musl-COPYRIGHT",
         "llvm/source-notices.json",
-        "lvgl/COPYRIGHTS.md",
+        "lvgl/LICENCE.txt",
     ):
         assert required in actual and actual[required]
+    source = Path(report["source"])
+    version = report["version"]
+    assert manifest["lvgl"]["version"] == ".".join(str(version[part]) for part in ("major", "minor", "patch"))
+    for name, expected in manifest["lvgl"]["files"].items():
+        assert (source / name).read_bytes() == (runtime / "lvgl" / name).read_bytes()
+        assert expected == actual["lvgl/" + name]
+    assert (runtime / "lvgl/COPYRIGHTS.md").exists() == (source / "COPYRIGHTS.md").exists()
+    for supplement in manifest["lvgl"]["font_supplements"]:
+        pinned = json.loads((ROOT / "third_party/runtime/manifest.json").read_text())
+        assert supplement["origin"] == pinned["lvgl"]["url"]
+        for name, expected in supplement["inputs"].items():
+            assert hashlib.sha256((source / name).read_bytes()).hexdigest() == expected
+        original = ROOT / "third_party/runtime/lvgl" / supplement["origin_path"]
+        assert original.read_bytes() == (runtime / supplement["path"]).read_bytes()
+    for name in ("freetype", "thorvg"):
+        component = data / "licenses" / name
+        assert component.exists() == (name in manifest["components"])
+        if component.exists():
+            actual_component = {path.relative_to(component).as_posix(): hashlib.sha256(path.read_bytes()).hexdigest()
+                                for path in component.rglob("*") if path.is_file()}
+            assert actual_component == manifest["components"][name]["files"]
 
 
 def layout_checks(api):
@@ -125,7 +146,7 @@ def check(output, build=None):
             text = path.read_text()
             assert str(ROOT) not in text and sdk not in text, path
         data = package / "share/liblvgl-wasm"
-        verify_runtime_notices(data)
+        source_report = json.loads((build / "lvgl-source.json").read_text())
         api = json.loads((data / "metadata/api.json").read_text())
         matrix = any(node.get("name") == "lv_matrix_t" and node["layout"]["status"] == "complete"
                      for node in api["types"].values())
@@ -348,6 +369,7 @@ target_compile_options(consumer_cpp PRIVATE -Wall -Wextra -Werror)
         try:
             build()
             data = package / "share/liblvgl-wasm"
+            verify_runtime_notices(data, source_report)
             for language in ("c", "cpp", "zig"):
                 core = output / f"{language}.wasm"
                 shutil.copyfile(project / f"target/consumer_{language}.wasm", core)

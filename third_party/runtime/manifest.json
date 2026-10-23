@@ -115,7 +115,8 @@
   },
   "lvgl": {
     "version": "9.6.0",
-    "url": "https://github.com/lvgl/lvgl/releases/download/v9.6.0/lvgl-v9.6.0-lite.zip",
+    "commit": "80ca777e37a2b176770726a02e07a6fb79ef0b39",
+    "url": "https://github.com/lvgl/lvgl/tree/80ca777e37a2b176770726a02e07a6fb79ef0b39",
     "files": [
       ".github/workflows/verify_font_license.yml",
       "COPYRIGHTS.md",
@@ -151,7 +152,70 @@
       "src/stdlib/builtin/LICENSE_TLSF.txt",
       "tests/src/test_files/fonts/noto/OFL.txt",
       "tests/src/test_helpers/rnd_unicodes/rnd_unicodes/LICENSE"
-    ]
+    ],
+    "font_inputs": {
+      "Montserrat-Medium.ttf": {
+        "sha256": "421f26b23e2be6b98373d32acd3cb2897b154d4bf0a77d26534ce476e4cbed53",
+        "notice": "scripts/generators/built_in_font/font_license/Montserrat/OFL.txt",
+        "generated_sources": {
+          "src/font/lv_font_montserrat_10.c": "57b6ac802fd74f2fb07901685f5f551b832c1720bf7eb8637751719f35e85255",
+          "src/font/lv_font_montserrat_12.c": "0f3a9178e0fa2b9dd69ad90b0ebbfe6ed01292b1523d7f307156c736946ce16e",
+          "src/font/lv_font_montserrat_14.c": "636304b5f5ff30deea36893c17c701b20c310afb15ee7fe31bf85dceca05b397",
+          "src/font/lv_font_montserrat_14_aligned.c": "9b576bd9452ff8ce78a1f9f2d6421a2a9386606f4ff681e8501fd820ea4297a6",
+          "src/font/lv_font_montserrat_16.c": "3ea1e2181304d5f09d96053045f52445bfdf8e494028358862707757d37eed09",
+          "src/font/lv_font_montserrat_18.c": "8838aef36155deda72c977dafe99f16de18caf11e6a026603f42aecfd13f32c0",
+          "src/font/lv_font_montserrat_20.c": "82c45ed58a33fe338337b95071e5e1a6631930e6c0aa7cd321af2308549c11e1",
+          "src/font/lv_font_montserrat_22.c": "795fc1141a13b21989a2c0d90f49aadcf054444e327034c48f2d5cd57fa1911b",
+          "src/font/lv_font_montserrat_24.c": "51f3a991a76ecf77f8cbabb80ca67bde4638e5c9a161482f176c9c7a7ccbd1b2",
+          "src/font/lv_font_montserrat_26.c": "c132502a9d51157167da79fa7eab82f3864060aaaf76d199a2b25d52e9a48af6",
+          "src/font/lv_font_montserrat_28.c": "3b35c15538fb57c89e6cc184b08a6bab455ee304c30d82343a1d4a3ede7788ce",
+          "src/font/lv_font_montserrat_28_compressed.c": "dd0362fa1babaa4fcb663621930fa2178af36dcfec55fc298676606a1866686c",
+          "src/font/lv_font_montserrat_30.c": "6b31940ca48e25856af631bca19df91e3985920d4d3f3bd326fb44e998bd0d1c",
+          "src/font/lv_font_montserrat_32.c": "70f940b02204ff44a5986812d00a4cc11e0402c80b264d7ef8fcfc988616f77c",
+          "src/font/lv_font_montserrat_34.c": "8f73809f6abddb868f49b23997cbb30a279e1f9b39a75eb3804cf2c5cf9864f0",
+          "src/font/lv_font_montserrat_36.c": "7c0bef02639c76c2339bb5ca194bc4a4222a63171fd18d748fd7fd0d506e16c1",
+          "src/font/lv_font_montserrat_38.c": "0d08df5d5af167028be29cae22960318e05d33d381713bce76b8ae6e1f1ea755",
+          "src/font/lv_font_montserrat_40.c": "dc1ff4da6413d5a225d39d0e1b9494fb28ce8650d2a5a1df625699ce17cbbcc1",
+          "src/font/lv_font_montserrat_42.c": "521c161a46e283e31bc8225fd4902f178792880c5ac3fb65073dabf3e289226b",
+          "src/font/lv_font_montserrat_44.c": "05ba7984adf1ab088ed21afbf33cbca95fbff6b54c6ebae1993de0cc4660c6c2",
+          "src/font/lv_font_montserrat_46.c": "b7c69847c3ffe8e404ed6694e905a93791934dea07d965aa2f7cd2bbf5f13235",
+          "src/font/lv_font_montserrat_48.c": "17bf89bd8588794736bea345fa0e679458dee072cb19f69ae55fe912661d2636",
+          "src/font/lv_font_montserrat_8.c": "c4f9fcdc22874b4bf6c154371b71919ec41ebd15d23e117352245e869040685e"
+        }
+      },
+      "FontAwesome5-Solid+Brands+Regular.woff": {
+        "sha256": "f4e42f6cd69e5dbdcccc0f2f5be136cebde0e427641e45403bf9173a92da95f4",
+        "notice": "scripts/generators/built_in_font/font_license/FontAwesome5/LICENSE.txt",
+        "generated_sources": {
+          "src/font/lv_font_dejavu_16_persian_hebrew.c": "08d72ef94d9e26703f86fa1150e8e97f20682ec9f2911da4cda696fca671c05a",
+          "src/font/lv_font_montserrat_10.c": "57b6ac802fd74f2fb07901685f5f551b832c1720bf7eb8637751719f35e85255",
+          "src/font/lv_font_montserrat_12.c": "0f3a9178e0fa2b9dd69ad90b0ebbfe6ed01292b1523d7f307156c736946ce16e",
+          "src/font/lv_font_montserrat_14.c": "636304b5f5ff30deea36893c17c701b20c310afb15ee7fe31bf85dceca05b397",
+          "src/font/lv_font_montserrat_14_aligned.c": "9b576bd9452ff8ce78a1f9f2d6421a2a9386606f4ff681e8501fd820ea4297a6",
+          "src/font/lv_font_montserrat_16.c": "3ea1e2181304d5f09d96053045f52445bfdf8e494028358862707757d37eed09",
+          "src/font/lv_font_montserrat_18.c": "8838aef36155deda72c977dafe99f16de18caf11e6a026603f42aecfd13f32c0",
+          "src/font/lv_font_montserrat_20.c": "82c45ed58a33fe338337b95071e5e1a6631930e6c0aa7cd321af2308549c11e1",
+          "src/font/lv_font_montserrat_22.c": "795fc1141a13b21989a2c0d90f49aadcf054444e327034c48f2d5cd57fa1911b",
+          "src/font/lv_font_montserrat_24.c": "51f3a991a76ecf77f8cbabb80ca67bde4638e5c9a161482f176c9c7a7ccbd1b2",
+          "src/font/lv_font_montserrat_26.c": "c132502a9d51157167da79fa7eab82f3864060aaaf76d199a2b25d52e9a48af6",
+          "src/font/lv_font_montserrat_28.c": "3b35c15538fb57c89e6cc184b08a6bab455ee304c30d82343a1d4a3ede7788ce",
+          "src/font/lv_font_montserrat_28_compressed.c": "dd0362fa1babaa4fcb663621930fa2178af36dcfec55fc298676606a1866686c",
+          "src/font/lv_font_montserrat_30.c": "6b31940ca48e25856af631bca19df91e3985920d4d3f3bd326fb44e998bd0d1c",
+          "src/font/lv_font_montserrat_32.c": "70f940b02204ff44a5986812d00a4cc11e0402c80b264d7ef8fcfc988616f77c",
+          "src/font/lv_font_montserrat_34.c": "8f73809f6abddb868f49b23997cbb30a279e1f9b39a75eb3804cf2c5cf9864f0",
+          "src/font/lv_font_montserrat_36.c": "7c0bef02639c76c2339bb5ca194bc4a4222a63171fd18d748fd7fd0d506e16c1",
+          "src/font/lv_font_montserrat_38.c": "0d08df5d5af167028be29cae22960318e05d33d381713bce76b8ae6e1f1ea755",
+          "src/font/lv_font_montserrat_40.c": "dc1ff4da6413d5a225d39d0e1b9494fb28ce8650d2a5a1df625699ce17cbbcc1",
+          "src/font/lv_font_montserrat_42.c": "521c161a46e283e31bc8225fd4902f178792880c5ac3fb65073dabf3e289226b",
+          "src/font/lv_font_montserrat_44.c": "05ba7984adf1ab088ed21afbf33cbca95fbff6b54c6ebae1993de0cc4660c6c2",
+          "src/font/lv_font_montserrat_46.c": "b7c69847c3ffe8e404ed6694e905a93791934dea07d965aa2f7cd2bbf5f13235",
+          "src/font/lv_font_montserrat_48.c": "17bf89bd8588794736bea345fa0e679458dee072cb19f69ae55fe912661d2636",
+          "src/font/lv_font_montserrat_8.c": "c4f9fcdc22874b4bf6c154371b71919ec41ebd15d23e117352245e869040685e",
+          "src/font/lv_font_source_han_sans_sc_14_cjk.c": "4ef9dae73f420dbb3afa98c09ccb74ab95e4cff7399d284e8ce24ea89e37f544",
+          "src/font/lv_font_source_han_sans_sc_16_cjk.c": "e0eb5d9258bbe801313c34c88ee0be9067864b93abb8fae7aa4add47ed3398c5"
+        }
+      }
+    }
   },
   "scope": [
     "wasi-libc static runtime and allocator attribution",
@@ -160,7 +224,7 @@
     "Zig example license"
   ],
   "files": {
-    "README.md": "fbb8b729c36f39412df8fd7265cdd46bfa193499843b7a298ead30f9d786d6fb",
+    "README.md": "7ae5904c3e8ac26f00ffc1bdbcb6bc2dd3e31b1eaf51a7a6ace8f4894315c882",
     "llvm/compiler-rt/CREDITS.TXT": "a9901f47a089da41e4690682d00ce4cedaa2baf41fedbe79beee366d43ac2461",
     "llvm/compiler-rt/LICENSE.TXT": "1a8f1058753f1ba890de984e48f0242a3a5c29a6a8f2ed9fd813f36985387e8d",
     "llvm/libcxx/CREDITS.TXT": "f39081875d1c5c35aab256b676e94003b453ecb2a1cae14026dfd23804dc97b2",
@@ -216,5 +280,17 @@
     "wasi-libc/musl-fts-COPYING": "55af87e4017668f54467a3380e7ebbac5e672d8c763bfe95e6fc882a6fdc4046",
     "wasi-libc/musl-fts-NOTICE.wasi-libc.md": "6aa429513e3e883111aceab81f80f9da38613b7f74c966393ff33470c93a9daa",
     "zig/LICENSE": "5c537d6853e005298a285d508cff9ac7192cea23576c840d485b2b586a7ff177"
+  },
+  "thorvg": {
+    "origin": "https://github.com/lvgl/lvgl/releases/download/v9.6.0/lvgl-v9.6.0-lite.zip",
+    "source_directory": "src/libs/thorvg",
+    "source_tree_sha256": "43b17615efed5b309c26a03687d2fd61ef216f8db4fa37a0429d8c272d1e752d",
+    "files": {
+      "LICENSE-MPL-2.0.txt": "3f3d9e0024b1921b067d6f7f88deb4a60cbe7a78e76c64e3f1d7fc3b779b9d04",
+      "LICENSE-RapidJSON.txt": "a140e5d46fe734a1c78f1a3c3ef207871dd75648be71fdda8e309b23ab8b1f32",
+      "LICENSE.txt": "861eb0197d1b43e3c904c433b605cf38be3c4bc447bb9752dfad74c704e36af7",
+      "NOTICES.txt": "194dba4505fbfd6423e733cdd6f71723d9b51b0ba091e3fcf05e0ce593fc7658",
+      "source/tvgLottieInterpolator.cpp": "e64a8c0add96bfae813d5c28868a2d084fd4b8e25401d8e365476215353467bc"
+    }
   }
 }
