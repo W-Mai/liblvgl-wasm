@@ -58,6 +58,10 @@ test("relocated NDK preserves the C/C++/Zig ABI and native callbacks", async () 
       const api = instance.exports as unknown as Record<string, (...args: number[]) => number>;
       api._initialize!();
       expect(api.lvw_init!()).toBe(0);
+      if (language === "c" || language === "cpp") {
+        expect(api.ndk_animation_deleted!(0)).toBe(1);
+        expect(api.ndk_animation_deleted!(1)).toBe(sdk.LVGL_VERSION_MINOR === 0 ? 0 : 1);
+      }
       if (language === "cpp") expect(api.ndk_eh_test!()).toBe(42);
       if (language === "zig") {
         expect(api.zig_abi_layouts!()).toBeGreaterThanOrEqual(5);

@@ -4,13 +4,19 @@ use std::sync::atomic::{AtomicBool, AtomicI32, AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 
 use liblvgl_wasm_host::{
-    Animation, AnimationCallbacks, CallbackContext, Error, Result, Runtime, UnsafePointer, values,
+    API_EXPORTS, Animation, AnimationCallbacks, CallbackContext, Error, Result, Runtime,
+    UnsafePointer, values,
 };
 
+fn native(name: &str) -> &'static str {
+    API_EXPORTS.iter().find(|entry| entry.0 == name).unwrap().1
+}
+
 fn load() -> Result<Runtime> {
-    let mut runtime = Runtime::from_file(
-        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/wasm/liblvgl.wasm"),
-    )?;
+    let mut runtime = Runtime::from_file(std::env::var_os("LVW_TEST_CORE").map_or_else(
+        || Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/wasm/liblvgl.wasm"),
+        std::path::PathBuf::from,
+    ))?;
     let mut raw = runtime.raw()?;
     let timer = raw.lv_anim_get_timer()?;
     raw.lv_timer_set_period(timer, 1)?;
@@ -137,10 +143,17 @@ fn queries_and_notifications_follow_native_early_and_delayed_lifetimes() -> Resu
         Ok(())
     });
     let animation = runtime.start_animation(descriptor, callbacks)?;
-    assert_eq!(
-        *trace.lock().unwrap(),
-        [("get", 1000), ("path", -17), ("exec", -17)]
-    );
+    let first = if values::LVGL_VERSION_MINOR == 0 {
+        1010
+    } else {
+        -17
+    };
+    let initial = if values::LVGL_VERSION_MINOR == 0 {
+        vec![("get", 1000), ("exec", first)]
+    } else {
+        vec![("get", 1000), ("path", -17), ("exec", first)]
+    };
+    assert_eq!(*trace.lock().unwrap(), initial);
     runtime.free(descriptor.0)?;
     early.store(false, Ordering::SeqCst);
     value.store(23, Ordering::SeqCst);
@@ -154,7 +167,7 @@ fn queries_and_notifications_follow_native_early_and_delayed_lifetimes() -> Resu
             .filter(|entry| entry.0 == "exec")
             .copied()
             .collect::<Vec<_>>(),
-        [("exec", -17), ("exec", 23)]
+        [("exec", first), ("exec", 23)]
     );
     assert_eq!(
         &events[events.len() - 2..],
@@ -225,18 +238,36 @@ fn precise_cancellation_native_repeat_and_object_deletion_release_captures() -> 
     assert_eq!(counts[0].load(Ordering::SeqCst), 0);
     assert_eq!(counts[1].load(Ordering::SeqCst), 1);
     let pointer = animations[1].pointer()?;
-    runtime.raw()?.lv_anim_pause(pointer)?;
-    step(&mut runtime, 200)?;
-    assert_eq!(runtime.raw()?.lv_anim_is_paused(pointer)?, 1);
-    assert_eq!(counts[1].load(Ordering::SeqCst), 1);
+    if values::LVGL_VERSION_MINOR != 0 {
+        runtime.call_raw::<_, ()>(native("lv_anim_pause"), (pointer.0,))?;
+        step(&mut runtime, 200)?;
+        assert_eq!(
+            runtime.call_raw::<_, i32>(native("lv_anim_is_paused"), (pointer.0,))?,
+            1
+        );
+        assert_eq!(counts[1].load(Ordering::SeqCst), 1);
+    }
     {
         let mut raw = runtime.raw()?;
         raw.lv_anim_set_duration(pointer, 20)?;
         raw.lv_anim_set_repeat_count(pointer, 2)?;
         raw.lv_anim_set_repeat_delay(pointer, 5)?;
-        raw.lv_anim_set_reverse_duration(pointer, 20)?;
-        raw.lv_anim_set_reverse_delay(pointer, 5)?;
-        raw.lv_anim_resume(pointer)?;
+    }
+    let reverse = if values::LVGL_VERSION_MINOR == 0 {
+        "playback"
+    } else {
+        "reverse"
+    };
+    runtime.call_raw::<_, ()>(
+        native(&format!("lv_anim_set_{reverse}_duration")),
+        (pointer.0, 20u32),
+    )?;
+    runtime.call_raw::<_, ()>(
+        native(&format!("lv_anim_set_{reverse}_delay")),
+        (pointer.0, 5u32),
+    )?;
+    if values::LVGL_VERSION_MINOR != 0 {
+        runtime.call_raw::<_, ()>(native("lv_anim_resume"), (pointer.0,))?;
     }
     for _ in 0..12 {
         step(&mut runtime, 10)?;
@@ -345,7 +376,8 @@ fn animation_failures_poison_and_runtime_shutdown_and_drop_release_handlers() ->
             }
         });
         let outcome = catch_unwind(AssertUnwindSafe(|| {
-            runtime.start_animation(descriptor, callbacks)
+            runtime.start_animation(descriptor, callbacks)?;
+            step(&mut runtime, 1)
         }));
         if failure == 1 {
             assert!(outcome.is_err());

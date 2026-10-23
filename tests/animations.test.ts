@@ -1,14 +1,16 @@
 import { expect, test } from "bun:test";
-import {
-  LV_ANIM_T_FIELDS, LV_ANIM_T_SIZE, LvglRuntime,
-  type Animation,
-} from "../bindings/typescript/src/index.ts";
+import type { LvglRuntime as Runtime, Animation } from "../bindings/typescript/src/index.ts";
 
-async function load(): Promise<LvglRuntime> {
-  return LvglRuntime.load(await Bun.file("target/wasm/liblvgl.wasm").arrayBuffer());
+const { LV_ANIM_T_FIELDS, LV_ANIM_T_SIZE, LVGL_VERSION_MINOR, LvglRuntime } = await import(
+  Bun.env.LVW_TEST_TS_RUNTIME ?? "../bindings/typescript/src/index.ts"
+) as typeof import("../bindings/typescript/src/index.ts");
+const legacy = Number(LVGL_VERSION_MINOR) === 0;
+
+async function load(): Promise<Runtime> {
+  return LvglRuntime.load(await Bun.file(Bun.env.LVW_TEST_CORE ?? "target/wasm/liblvgl.wasm").arrayBuffer());
 }
 
-function descriptor(runtime: LvglRuntime, early = false, duration = 99, variable = 0): number {
+function descriptor(runtime: Runtime, early = false, duration = 99, variable = 0): number {
   const raw = runtime.unsafe;
   const pointer = raw.lvw_alloc(LV_ANIM_T_SIZE);
   expect(pointer).not.toBe(0);
@@ -20,7 +22,7 @@ function descriptor(runtime: LvglRuntime, early = false, duration = 99, variable
   return pointer;
 }
 
-function field(runtime: LvglRuntime, pointer: number, name: string): number {
+function field(runtime: Runtime, pointer: number, name: string): number {
   const layout = LV_ANIM_T_FIELDS.find((item) => item.name === name)!;
   expect(layout.bit_width).toBeNull();
   return new DataView(runtime.unsafe.memory.buffer).getUint32(pointer + layout.bit_offset / 8, true);
@@ -62,7 +64,7 @@ test("animation queries and exec run synchronously on the native instance clock"
       runtime.setText(label, String(value));
       expect(() => runtime.step(1)).toThrow();
       expect(() => runtime.shutdown()).toThrow();
-      if (order.length === 3) expect(() => current.cancel()).toThrow();
+      if (order.length === (legacy ? 2 : 3)) expect(() => current.cancel()).toThrow();
     },
     start(current) {
       order.push("start");
@@ -71,7 +73,7 @@ test("animation queries and exec run synchronously on the native instance clock"
     completed(current) { order.push("completed"); current.cancel(); },
     deleted(current) { order.push("deleted"); current.cancel(); },
   });
-  expect(order).toEqual(["get", "path", "exec:-123"]);
+  expect(order).toEqual(legacy ? ["get", "exec:-3"] : ["get", "path", "exec:-123"]);
   expect(animation.handle).not.toBe(source);
   expect(pointers.every((pointer) => pointer === animation.handle)).toBe(true);
   raw.lvw_free(source);
@@ -80,7 +82,9 @@ test("animation queries and exec run synchronously on the native instance clock"
   const independent = other.startAnimation(otherSource, { exec() { otherCalls++; } });
   other.unsafe.lvw_free(otherSource);
   runtime.step(33);
-  expect(order).toEqual(["get", "path", "exec:-123", "start", "path", "exec:321"]);
+  expect(order).toEqual(legacy
+    ? ["get", "exec:-3", "start", "path", "exec:-123"]
+    : ["get", "path", "exec:-123", "start", "path", "exec:321"]);
   expect(otherCalls).toBe(0);
   runtime.step(33);
   expect(order.slice(-2)).toEqual(["completed", "deleted"]);
@@ -161,7 +165,12 @@ test("animation pause, delay, repeat and reverse retain native completion order"
   const source = descriptor(runtime, false, 33);
   raw.lv_anim_set_delay(source, 66);
   raw.lv_anim_set_repeat_count(source, 2);
-  raw.lv_anim_set_reverse_duration(source, 33);
+  if (legacy) {
+    const native = raw as unknown as { lv_anim_set_playback_duration(a: number, duration: number): void };
+    native.lv_anim_set_playback_duration(source, 33);
+  } else {
+    raw.lv_anim_set_reverse_duration(source, 33);
+  }
   let starts = 0;
   const values: number[] = [];
   const terminal: string[] = [];
@@ -174,13 +183,17 @@ test("animation pause, delay, repeat and reverse retain native completion order"
   raw.lvw_free(source);
   runtime.step(33);
   expect(values).toEqual([]);
-  raw.lv_anim_pause(animation.handle);
-  runtime.step(100);
-  expect(values).toEqual([]);
-  expect(raw.lv_anim_is_paused(animation.handle)).toBe(1);
-  raw.lv_anim_resume(animation.handle);
+  if (legacy) {
+    expect("lv_anim_pause" in raw).toBe(false);
+  } else {
+    raw.lv_anim_pause(animation.handle);
+    runtime.step(100);
+    expect(values).toEqual([]);
+    expect(raw.lv_anim_is_paused(animation.handle)).toBe(1);
+    raw.lv_anim_resume(animation.handle);
+  }
   for (let index = 0; index < 8; index++) runtime.step(33);
-  expect(starts).toBe(4);
+  expect(starts).toBe(legacy ? 1 : 4);
   expect(values).toContain(30);
   expect(values).toContain(-10);
   expect(terminal).toEqual(["completed", "deleted"]);

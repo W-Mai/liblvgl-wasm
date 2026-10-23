@@ -135,6 +135,25 @@ def check(output, build=None):
         project.mkdir()
         (project / "layout.h").write_text(header)
         example = (package / "examples/c/direct_api.c").read_text()
+        example += '''
+static int animation_deletions;
+static void animation_deleted(lv_anim_t * animation) {
+    (void)animation;
+    animation_deletions++;
+}
+__attribute__((export_name("ndk_animation_deleted"))) int ndk_animation_deleted(int clear_all) {
+    lv_anim_t animation;
+    lv_anim_init(&animation);
+    lv_anim_set_var(&animation, &animation_deletions);
+    lv_anim_set_early_apply(&animation, false);
+    lv_anim_set_deleted_cb(&animation, animation_deleted);
+    animation_deletions = 0;
+    if (!lv_anim_start(&animation)) return -1;
+    if (clear_all) lv_anim_delete_all();
+    else lv_anim_delete(&animation_deletions, NULL);
+    return animation_deletions;
+}
+'''
         (project / "main.c").write_text('#include "layout.h"\n' + example)
         (project / "main.cpp").write_text('#include "layout.h"\n' + example)
         (project / "eh.cpp").write_text('''#include "lvw.h"

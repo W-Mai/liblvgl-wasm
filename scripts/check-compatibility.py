@@ -16,6 +16,7 @@ LEGACY = {
     "root": "lvgl-9.0.0", "size": 55766129,
     "sha256": "73ae6ef7b44b434b41f25755ce4f6f5d23c49c1c254c4b7774b5a9cf83a46b7f",
 }
+CALLBACKS = {"timer": "timers", "animation": "animations"}
 
 
 def check():
@@ -38,13 +39,13 @@ def check():
     # Reuse one build directory to exercise source/config cache invalidation.
     build = output / "matrix-build"
     results = []
-    cases = [(version, selected, feature) for version, selected in
-             (("v9.0.0", source), ("v9.6.0", Path(default["source"]))) for feature in ("", "timer")]
-    for version, selected, feature in cases:
-        name = f"{version}-{feature or 'base'}"
+    cases = [(version, selected, features) for version, selected in
+             (("v9.0.0", source), ("v9.6.0", Path(default["source"]))) for features in ((), tuple(CALLBACKS))]
+    for version, selected, features in cases:
+        name = f"{version}-{'-'.join(features) or 'base'}"
         environment = {**os.environ, "LVGL_SOURCE_DIR": str(selected),
                        "LVGL_CONFIG_PATH": str(ROOT / "config/base/lv_conf.h"),
-                       "LVW_BRIDGE_FEATURES": feature, "LVW_BUILD_DIR": str(build)}
+                       "LVW_BRIDGE_FEATURES": ";".join(features), "LVW_BUILD_DIR": str(build)}
         with (output / f"{name}-build.log").open("w") as log:
             subprocess.run(["sh", str(ROOT / "scripts/build-core.sh")], cwd=ROOT,
                            env=environment, stdout=log, stderr=subprocess.STDOUT, check=True)
@@ -54,13 +55,13 @@ def check():
         with (output / f"{name}-consumers.log").open("w") as log:
             subprocess.run(["bun", "test", "./tests/ndk.test.ts", "./tests/host-sdk.test.ts"], cwd=ROOT,
                            env={**os.environ, "LVW_TEST_BUILD": str(build),
-                                "LVW_TEST_CALLBACKS": "timers" if feature == "timer" else ""},
+                                "LVW_TEST_CALLBACKS": " ".join(CALLBACKS[feature] for feature in features)},
                            stdout=log, stderr=subprocess.STDOUT, check=True)
         results.append({"version": inspected["version"], "proof": proof,
                         "configuration": inspected["config_sha256"],
-                        "bridge_features": [feature] if feature else [],
+                        "bridge_features": list(features),
                         "native": ["c", "cpp", "zig"], "hosts": ["bun", "rust"]})
-        if version == "v9.0.0" and not feature:
+        if version == "v9.0.0" and not features:
             with (output / "rejected-adapter.log").open("w") as log:
                 failed = subprocess.run(["sh", str(ROOT / "scripts/build-core.sh")], cwd=ROOT,
                     env={**environment, "LVW_BRIDGE_FEATURES": "unknown"}, stdout=log, stderr=subprocess.STDOUT)

@@ -305,7 +305,11 @@ void lvw_timer_release_native(lv_timer_t *timer) {
 #if LVW_MANAGED_ANIMATION
 static lvw_anim_node_t *bind_animation(const lv_anim_t *animation) {
     for (lvw_anim_node_t *node = animations; node; node = node->next) {
+#if LVW_ANIMATION_EXTERNAL_DATA
         if (node != animation->ext_data.data) continue;
+#else
+        if (node->lvgl != animation) continue;
+#endif
         if (node->lvgl && node->lvgl != animation) __builtin_trap();
         node->lvgl = (lv_anim_t *)animation;
         return node;
@@ -330,7 +334,7 @@ static int32_t animation_query(const lv_anim_t *animation, uint32_t kind) {
 }
 
 static int32_t animation_path(const lv_anim_t *animation) {
-    // The path always runs before exec, including inside lv_anim_start.
+    // Older native early-apply paths use the start value without querying a path.
     return animation_query(animation, 1u);
 }
 
@@ -377,6 +381,35 @@ static void animation_release(void *data) {
     callback_depth--;
     anim_restricted_depth--;
 }
+
+#if !LVW_ANIMATION_EXTERNAL_DATA
+void lvw_anim_bind_native(lv_anim_t *animation) {
+    for (lvw_anim_node_t *node = animations; node; node = node->next) {
+        if (node->exec_slot != (uint32_t)(uintptr_t)animation->exec_cb) continue;
+        if (!node->creating || node->lvgl) __builtin_trap();
+        node->lvgl = animation;
+        return;
+    }
+}
+
+void lvw_anim_release_native(lv_anim_t *animation) {
+    for (lvw_anim_node_t *node = animations; node; node = node->next) {
+        if (node->lvgl != animation) continue;
+        animation_release(node);
+        return;
+    }
+}
+
+// Legacy clear_all has no native deleted notification. Notify managed records only.
+void lvw_anim_clear_native(lv_anim_t *animation) {
+    for (lvw_anim_node_t *node = animations; node; node = node->next) {
+        if (node->lvgl != animation) continue;
+        animation_deleted(animation);
+        animation_release(node);
+        return;
+    }
+}
+#endif
 
 #endif
 
@@ -906,8 +939,10 @@ LVW_EXPORT(lvw_anim_start) uint32_t lvw_anim_start(uint32_t descriptor, uint32_t
     }
     const lv_anim_t *source = (const lv_anim_t *)(uintptr_t)descriptor;
     if (!source->path_cb || source->exec_cb || source->custom_exec_cb || source->get_value_cb ||
-        source->start_cb || source->completed_cb || source->deleted_cb ||
-        source->ext_data.data || source->ext_data.free_cb) return 0;
+        source->start_cb || source->completed_cb || source->deleted_cb) return 0;
+#if LVW_ANIMATION_EXTERNAL_DATA
+    if (source->ext_data.data || source->ext_data.free_cb) return 0;
+#endif
     lvw_anim_node_t *node = calloc(1, sizeof(*node));
     if (!node) return 0;
     node->path = source->path_cb;
@@ -926,7 +961,9 @@ LVW_EXPORT(lvw_anim_start) uint32_t lvw_anim_start(uint32_t descriptor, uint32_t
     copy.start_cb = animation_start;
     copy.completed_cb = animation_completed;
     copy.deleted_cb = animation_deleted;
+#if LVW_ANIMATION_EXTERNAL_DATA
     lv_anim_set_external_data(&copy, node, animation_release);
+#endif
     lv_anim_t *created = lv_anim_start(&copy);
     if (!created) {
         animation_release(node);

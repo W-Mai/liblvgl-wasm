@@ -25,7 +25,7 @@ def readonly(root, enabled):
 def check(output, build=None):
     custom = build is not None
     callbacks = os.environ.get("LVW_TEST_CALLBACKS", "").split()
-    if any(name not in {"timers"} for name in callbacks):
+    if any(name not in {"timers", "animations"} for name in callbacks):
         raise ValueError(f"unknown callback contract: {callbacks}")
     build = build or ROOT / "target/wasm"
     ndk = output / "ndk"
