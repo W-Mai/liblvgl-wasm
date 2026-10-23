@@ -524,7 +524,7 @@ fn initial_object_deletion_does_not_revive_a_released_observer() -> Result<()> {
         if values::LVGL_VERSION_MINOR < 2 {
             assert!(!has("lv_subject_deinit"));
             assert!(!has("lv_observer_get_user_data"));
-        } else if values::LVGL_VERSION_MINOR <= 3 {
+        } else if values::LVGL_VERSION_MINOR <= 4 {
             assert!(has("lv_subject_deinit"));
             assert!(has("lv_observer_get_user_data"));
             assert!(!has("lv_observer_set_user_data"));

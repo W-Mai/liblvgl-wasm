@@ -27,6 +27,10 @@ LEGACY = [{
     "url": "https://codeload.github.com/lvgl/lvgl/tar.gz/v9.3.0",
     "root": "lvgl-9.3.0", "size": 88038059,
     "sha256": "4933becfd3603b29158a5d04138139582836ef2bc17beb6c39dccda9cb0d32e7",
+}, {
+    "url": "https://codeload.github.com/lvgl/lvgl/tar.gz/v9.4.0",
+    "root": "lvgl-9.4.0", "size": 93398106,
+    "sha256": "932c864de98431b38c5758a87f1de12bbee7b76943b8312bcf13d2f29ac14627",
 }]
 CALLBACKS = {"timer": "timers", "animation": "animations", "observer": "observers", "decoder": "decoders"}
 
@@ -85,6 +89,11 @@ def check():
                         "configuration": inspected["config_sha256"],
                         "bridge_features": list(features),
                         "native": ["c", "cpp", "zig"], "hosts": ["bun", "rust"]})
+        if version == "v9.4.0" and not features:
+            with (output / "v9.4-adapters.log").open("w") as log:
+                subprocess.run(["bun", "test", "./tests/native-adapters.test.ts"], cwd=ROOT,
+                               env={**os.environ, "LVW_TEST_OBSERVER_SOURCE": str(selected)},
+                               stdout=log, stderr=subprocess.STDOUT, check=True)
         if version == "v9.0.0" and not features:
             with (output / "rejected-adapter.log").open("w") as log:
                 failed = subprocess.run(["sh", str(ROOT / "scripts/build-core.sh")], cwd=ROOT,
