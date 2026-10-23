@@ -6,7 +6,10 @@ use std::sync::{Arc, Mutex};
 use liblvgl_wasm_host::{Error, Result, Runtime, Timer, UnsafePointer};
 
 fn load() -> Result<Runtime> {
-    Runtime::from_file(Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/wasm/liblvgl.wasm"))
+    Runtime::from_file(std::env::var_os("LVW_TEST_CORE").map_or_else(
+        || Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/wasm/liblvgl.wasm"),
+        std::path::PathBuf::from,
+    ))
 }
 
 fn step(runtime: &mut Runtime, milliseconds: u32) -> Result<()> {

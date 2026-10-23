@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- Managed timers for verified LVGL 9.0.0 and 9.6.0 sources without external data, with native deletion tracking and shared TS/Rust lifecycle checks on exported SDKs.
+- Rust SDK rebuilds replace generated bindings from read-only packages without copying their file permissions.
+
 - ThorVG software vector rendering with generated floating-point APIs, path snapshots, fill rules, transforms, and gradient pixel checks in both hosts.
 - Standard Wasm C++ exception support, empty WASI environments, and instance-local process exit errors.
 

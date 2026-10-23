@@ -290,6 +290,16 @@ static void timer_release(void *data) {
     callback_depth--;
 }
 
+#if !LVW_TIMER_EXTERNAL_DATA
+void lvw_timer_release_native(lv_timer_t *timer) {
+    for (lvw_timer_node_t *node = timers; node; node = node->next) {
+        if (node->lvgl != timer) continue;
+        timer_release(node);
+        return;
+    }
+}
+#endif
+
 #endif
 
 #if LVW_MANAGED_ANIMATION
@@ -865,7 +875,9 @@ LVW_EXPORT(lvw_timer_create) uint32_t lvw_timer_create(uint32_t period_ms, uint3
     }
     *node = (lvw_timer_node_t){timer, callback_id, timers};
     timers = node;
+#if LVW_TIMER_EXTERNAL_DATA
     lv_timer_set_external_data(timer, node, timer_release);
+#endif
     return pointer_value(timer);
 }
 

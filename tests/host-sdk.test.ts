@@ -37,4 +37,4 @@ test("exported host packages resolve types and bindings outside the checkout", a
   } finally {
     await rm(output, { recursive: true, force: true });
   }
-}, 180_000);
+}, Bun.env.LVW_TEST_CALLBACKS ? 600_000 : 180_000);

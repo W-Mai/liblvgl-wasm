@@ -24,10 +24,15 @@ fn main() {
         );
     }
     let output = PathBuf::from(env::var_os("OUT_DIR").expect("missing build output directory"));
-    fs::copy(&source, output.join("raw.rs")).unwrap_or_else(|error| {
-        panic!(
-            "cannot copy Rust bindings from {}: {error}",
-            source.display()
-        )
-    });
+    // Do not carry read-only package permissions into Cargo's generated sources.
+    let temporary = output.join("raw.rs.tmp");
+    fs::read(&source)
+        .and_then(|bytes| fs::write(&temporary, bytes))
+        .and_then(|()| fs::rename(&temporary, output.join("raw.rs")))
+        .unwrap_or_else(|error| {
+            panic!(
+                "cannot copy Rust bindings from {}: {error}",
+                source.display()
+            )
+        });
 }

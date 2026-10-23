@@ -1,4 +1,4 @@
-"""Build and exercise the LVGL v9.0 and default-source base configurations."""
+"""Build and exercise LVGL v9.0 and default-source base and managed callbacks."""
 
 import json
 import os
@@ -38,33 +38,38 @@ def check():
     # Reuse one build directory to exercise source/config cache invalidation.
     build = output / "matrix-build"
     results = []
-    for name, selected in (("v9.0.0", source), ("v9.6.0", Path(default["source"]))):
+    cases = [(version, selected, feature) for version, selected in
+             (("v9.0.0", source), ("v9.6.0", Path(default["source"]))) for feature in ("", "timer")]
+    for version, selected, feature in cases:
+        name = f"{version}-{feature or 'base'}"
         environment = {**os.environ, "LVGL_SOURCE_DIR": str(selected),
                        "LVGL_CONFIG_PATH": str(ROOT / "config/base/lv_conf.h"),
-                       "LVW_BRIDGE_FEATURES": "", "LVW_BUILD_DIR": str(build)}
+                       "LVW_BRIDGE_FEATURES": feature, "LVW_BUILD_DIR": str(build)}
         with (output / f"{name}-build.log").open("w") as log:
             subprocess.run(["sh", str(ROOT / "scripts/build-core.sh")], cwd=ROOT,
                            env=environment, stdout=log, stderr=subprocess.STDOUT, check=True)
         inspected = json.loads((build / "lvgl-source.json").read_text())
-        assert inspected["version"]["minor"] == (0 if name == "v9.0.0" else 6)
+        assert inspected["version"]["minor"] == (0 if version == "v9.0.0" else 6)
         proof = json.loads((build / "api-verification.json").read_text())
         with (output / f"{name}-consumers.log").open("w") as log:
             subprocess.run(["bun", "test", "./tests/ndk.test.ts", "./tests/host-sdk.test.ts"], cwd=ROOT,
-                           env={**os.environ, "LVW_TEST_BUILD": str(build)},
+                           env={**os.environ, "LVW_TEST_BUILD": str(build),
+                                "LVW_TEST_CALLBACKS": "timers" if feature == "timer" else ""},
                            stdout=log, stderr=subprocess.STDOUT, check=True)
         results.append({"version": inspected["version"], "proof": proof,
                         "configuration": inspected["config_sha256"],
+                        "bridge_features": [feature] if feature else [],
                         "native": ["c", "cpp", "zig"], "hosts": ["bun", "rust"]})
-        if name == "v9.0.0":
+        if version == "v9.0.0" and not feature:
             with (output / "rejected-adapter.log").open("w") as log:
                 failed = subprocess.run(["sh", str(ROOT / "scripts/build-core.sh")], cwd=ROOT,
-                    env={**environment, "LVW_BRIDGE_FEATURES": "timer"}, stdout=log, stderr=subprocess.STDOUT)
+                    env={**environment, "LVW_BRIDGE_FEATURES": "unknown"}, stdout=log, stderr=subprocess.STDOUT)
             assert failed.returncode != 0
-            assert "Requested managed timer requires an adapter" in (output / "rejected-adapter.log").read_text()
+            assert "Unknown managed bridge feature" in (output / "rejected-adapter.log").read_text()
             assert not (build / "api-verification.json").exists(), "stale proof after failed configuration"
         print(f"{name}: C/C++/Zig relocation and TS/Rust runtime contracts passed", flush=True)
-    assert results[0]["proof"]["api_sha256"] != results[1]["proof"]["api_sha256"]
-    assert results[0]["proof"]["wasm_sha256"] != results[1]["proof"]["wasm_sha256"]
+    assert results[0]["proof"]["api_sha256"] != results[2]["proof"]["api_sha256"]
+    assert len({result["proof"]["wasm_sha256"] for result in results}) == len(results)
     report.write_text(json.dumps(results, indent=2) + "\n")
 
 

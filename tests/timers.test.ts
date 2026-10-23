@@ -1,8 +1,12 @@
 import { expect, test } from "bun:test";
-import { LV_EVENT_DELETE, LvglRuntime, type Timer } from "../bindings/typescript/src/index.ts";
+import type { LvglRuntime as Runtime, Timer } from "../bindings/typescript/src/index.ts";
 
-async function load(): Promise<LvglRuntime> {
-  return LvglRuntime.load(await Bun.file("target/wasm/liblvgl.wasm").arrayBuffer());
+const { LV_EVENT_DELETE, LvglRuntime } = await import(
+  Bun.env.LVW_TEST_TS_RUNTIME ?? "../bindings/typescript/src/index.ts"
+) as typeof import("../bindings/typescript/src/index.ts");
+
+async function load(): Promise<Runtime> {
+  return LvglRuntime.load(await Bun.file(Bun.env.LVW_TEST_CORE ?? "target/wasm/liblvgl.wasm").arrayBuffer());
 }
 
 test("timers use their own instance clock and update UI and user data synchronously", async () => {

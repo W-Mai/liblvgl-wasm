@@ -24,6 +24,9 @@ def readonly(root, enabled):
 
 def check(output, build=None):
     custom = build is not None
+    callbacks = os.environ.get("LVW_TEST_CALLBACKS", "").split()
+    if any(name not in {"timers"} for name in callbacks):
+        raise ValueError(f"unknown callback contract: {callbacks}")
     build = build or ROOT / "target/wasm"
     ndk = output / "ndk"
     run("cmake", "--build", build, "--target", "lvw_ndk", "-j", "4")
@@ -41,6 +44,10 @@ def check(output, build=None):
                        ("native", output / "native build/lvgl_native_example.wasm")):
         original = output / name
         metadata = build_host_sdk(ROOT, ndk, core, original, "wasm-tools")
+        if callbacks:
+            (original / "rust/tests").mkdir()
+            for contract in callbacks:
+                shutil.copyfile(ROOT / f"bindings/rust/tests/{contract}.rs", original / f"rust/tests/{contract}.rs")
         files = file_inventory(original)
         package = output / f"moved {name}"
         publish_package(original, package, "sdk.json", {**metadata, "files": files})
@@ -66,12 +73,25 @@ def check(output, build=None):
             environment.pop("LVW_RUST_BINDINGS", None)
             run(build_script, env=environment)
             assert (out / "raw.rs").read_bytes() == (package / "rust/generated/raw.rs").read_bytes()
+            # Reusing OUT_DIR must replace an earlier read-only generated copy.
+            (out / "raw.rs").chmod(0o444)
+            run(build_script, env=environment)
+            assert (out / "raw.rs").read_bytes() == (package / "rust/generated/raw.rs").read_bytes()
             assert 'default = ["bundled-bindings"]' in (package / "rust/Cargo.toml").read_text()
             assert not (package / "rust/src/main.rs").exists()
             for path in (package / "typescript").rglob("*"):
                 if path.suffix in (".ts", ".js"):
                     assert str(ROOT) not in path.read_text() and str(output) not in path.read_text(), path
             packages.append({"package": str(package), "consumer": str(project), **metadata})
+            if callbacks:
+                environment = {**os.environ, "LVW_TEST_CORE": str(package / "runtime/liblvgl.wasm"),
+                               "LVW_TEST_TS_RUNTIME": str(package / "typescript/index.js"),
+                               "CARGO_TARGET_DIR": str(ROOT / "target/rust")}
+                environment.pop("LVW_RUST_BINDINGS", None)
+                for contract in callbacks:
+                    run("bun", "test", f"./tests/{contract}.test.ts", env=environment)
+                    run("cargo", "test", "--locked", "--offline", "--manifest-path", package / "rust/Cargo.toml",
+                        "--test", contract, env=environment)
             if custom:
                 rust = project / "rust"
                 (rust / "src").mkdir(parents=True)
