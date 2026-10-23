@@ -143,12 +143,12 @@ fn queries_and_notifications_follow_native_early_and_delayed_lifetimes() -> Resu
         Ok(())
     });
     let animation = runtime.start_animation(descriptor, callbacks)?;
-    let first = if values::LVGL_VERSION_MINOR == 0 {
+    let first = if values::LVGL_VERSION_MINOR < 3 {
         1010
     } else {
         -17
     };
-    let initial = if values::LVGL_VERSION_MINOR == 0 {
+    let initial = if values::LVGL_VERSION_MINOR < 3 {
         vec![("get", 1000), ("exec", first)]
     } else {
         vec![("get", 1000), ("path", -17), ("exec", first)]
@@ -238,7 +238,8 @@ fn precise_cancellation_native_repeat_and_object_deletion_release_captures() -> 
     assert_eq!(counts[0].load(Ordering::SeqCst), 0);
     assert_eq!(counts[1].load(Ordering::SeqCst), 1);
     let pointer = animations[1].pointer()?;
-    if values::LVGL_VERSION_MINOR != 0 {
+    let can_pause = API_EXPORTS.iter().any(|entry| entry.0 == "lv_anim_pause");
+    if can_pause {
         runtime.call_raw::<_, ()>(native("lv_anim_pause"), (pointer.0,))?;
         step(&mut runtime, 200)?;
         assert_eq!(
@@ -253,10 +254,13 @@ fn precise_cancellation_native_repeat_and_object_deletion_release_captures() -> 
         raw.lv_anim_set_repeat_count(pointer, 2)?;
         raw.lv_anim_set_repeat_delay(pointer, 5)?;
     }
-    let reverse = if values::LVGL_VERSION_MINOR == 0 {
-        "playback"
-    } else {
+    let reverse = if API_EXPORTS
+        .iter()
+        .any(|entry| entry.0 == "lv_anim_set_reverse_duration")
+    {
         "reverse"
+    } else {
+        "playback"
     };
     runtime.call_raw::<_, ()>(
         native(&format!("lv_anim_set_{reverse}_duration")),
@@ -266,7 +270,7 @@ fn precise_cancellation_native_repeat_and_object_deletion_release_captures() -> 
         native(&format!("lv_anim_set_{reverse}_delay")),
         (pointer.0, 5u32),
     )?;
-    if values::LVGL_VERSION_MINOR != 0 {
+    if can_pause {
         runtime.call_raw::<_, ()>(native("lv_anim_resume"), (pointer.0,))?;
     }
     for _ in 0..12 {

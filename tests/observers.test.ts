@@ -9,7 +9,7 @@ const {
   LV_EVENT_DELETE, LV_EVENT_VALUE_CHANGED, LV_STATE_CHECKED,
   LV_SUBJECT_T_SIZE, LV_SUBJECT_TYPE_INT, LV_SUBJECT_TYPE_POINTER,
 } = sdk;
-const legacy = Number(sdk.LVGL_VERSION_MINOR) === 0;
+const legacy = Number(sdk.LVGL_VERSION_MINOR) < 2;
 
 function old(runtime: LvglRuntime) {
   return runtime.unsafe as unknown as {

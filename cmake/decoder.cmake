@@ -7,7 +7,10 @@ get_filename_component(LVW_DECODER_DIRECTORY "${LVW_DECODER_SOURCE}" DIRECTORY)
 set(LVW_DECODER_ADAPTED "${CMAKE_CURRENT_BINARY_DIR}/lvgl-adapted/lv_image_decoder.c")
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${LVW_DECODER_SOURCE}")
 file(SHA256 "${LVW_DECODER_SOURCE}" LVW_DECODER_HASH)
-if(LVW_DECODER_HASH STREQUAL "08926fa53f119bc20bd074748e8dfca431197b77dddf8ad58c224ef1ebc7c5ae")
+set(LVW_DECODER_OWNED_SOURCE "08926fa53f119bc20bd074748e8dfca431197b77dddf8ad58c224ef1ebc7c5ae") # v9.0.0
+set(LVW_DECODER_LEGACY_SOURCES "${LVW_DECODER_OWNED_SOURCE}"
+    "7b31514277008aa87ab1f606ac36e05ed01a5f2e0652d762fcd0d28df042e894") # v9.1.0
+if(LVW_DECODER_HASH IN_LIST LVW_DECODER_LEGACY_SOURCES)
     set(LVW_DECODER_LEGACY ON)
     list(APPEND LVW_BRIDGE_DEFINITIONS LVW_DECODER_LEGACY=1)
     set(LVW_DECODER_HEADER "lv_image_decoder.h")
@@ -40,13 +43,15 @@ string(REPLACE "    lv_free(decoder);\n"
 string(REPLACE "    ${LVW_LL_PREFIX}_ll_clear(img_decoder_ll_p);\n"
     "    lv_image_decoder_t * decoder;\n    while((decoder = ${LVW_LL_PREFIX}_ll_get_head(img_decoder_ll_p)) != NULL) {\n        lv_image_decoder_delete(decoder);\n    }\n"
     LVW_DECODER_CODE "${LVW_DECODER_CODE}")
-if(LVW_DECODER_LEGACY)
+if(LVW_DECODER_HASH STREQUAL LVW_DECODER_OWNED_SOURCE)
     string(REPLACE "    if(dsc->src_type == LV_IMAGE_SRC_FILE) dsc->src = lv_strdup(dsc->src);\n"
         "    if(dsc->src_type == LV_IMAGE_SRC_FILE) {\n        dsc->src = lv_strdup(dsc->src);\n        if(dsc->src == NULL) return LV_RESULT_INVALID;\n    }\n"
         LVW_DECODER_CODE "${LVW_DECODER_CODE}")
     string(REPLACE "    lv_result_t res = dsc->decoder->open_cb(dsc->decoder, dsc);\n"
         "    lv_result_t res = dsc->decoder->open_cb(dsc->decoder, dsc);\n    if(res != LV_RESULT_OK && dsc->src_type == LV_IMAGE_SRC_FILE) {\n        lv_free((void *)dsc->src);\n        dsc->src = NULL;\n    }\n"
         LVW_DECODER_CODE "${LVW_DECODER_CODE}")
+endif()
+if(LVW_DECODER_LEGACY)
     string(APPEND LVW_DECODER_CODE [=[
 
 /* Called only by managed cancellation while the runtime and cache are live. */

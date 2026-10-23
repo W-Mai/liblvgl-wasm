@@ -7,7 +7,7 @@ use liblvgl_wasm_host::{
     API_EXPORTS, CallbackContext, Error, Observer, Result, Runtime, UnsafePointer, values,
 };
 
-const LEGACY: bool = values::LVGL_VERSION_MINOR == 0;
+const LEGACY: bool = values::LVGL_VERSION_MINOR < 2;
 
 fn native(name: &str) -> &'static str {
     API_EXPORTS.iter().find(|entry| entry.0 == name).unwrap().1

@@ -13,7 +13,7 @@ const {
   LV_RESULT_INVALID, LV_RESULT_OK, LV_STRIDE_AUTO,
   LV_IMAGE_HEADER_CACHE_DEF_CNT,
 } = sdk;
-const legacy = Number(sdk.LVGL_VERSION_MINOR) === 0;
+const legacy = Number(sdk.LVGL_VERSION_MINOR) < 2;
 
 async function load(): Promise<LvglRuntime> {
   return sdk.LvglRuntime.load(await Bun.file(Bun.env.LVW_TEST_CORE ?? "target/wasm/liblvgl.wasm").arrayBuffer());
@@ -284,7 +284,7 @@ test("managed cancellation drops cached headers before a replacement decoder is 
   runtime.shutdown();
 });
 
-test("failed legacy file opens release the native source copy without closing the session", async () => {
+test("legacy file sessions preserve copied or borrowed source lifetimes", async () => {
   if (!legacy) return;
   const runtime = await load();
   const raw = runtime.unsafe;
@@ -296,14 +296,26 @@ test("failed legacy file opens release the native source copy without closing th
   const field = sdk.LV_IMAGE_DECODER_DSC_T_FIELDS!.find((field) => field.name === "src")!;
   expect(field.bit_width).toBeNull();
   expect(field.bit_offset % 8).toBe(0);
+  const currentSource = () => new DataView(raw.memory.buffer).getUint32(descriptor + field.bit_offset / 8, true);
+  const closedSource = Number(sdk.LVGL_VERSION_MINOR) === 0 ? 0 : source;
   const { decoder, counts } = register(runtime, false, true);
   for (let index = 0; index < 8; index++) {
     expect(raw.lv_image_decoder_open(descriptor, source, 0)).toBe(LV_RESULT_INVALID);
-    expect(new DataView(raw.memory.buffer).getUint32(descriptor + field.bit_offset / 8, true)).toBe(0);
+    expect(currentSource()).toBe(closedSource);
+    expect([...new Uint8Array(raw.memory.buffer, source, bytes.length)]).toEqual([...bytes]);
   }
   expect(counts.rolledBack).toBe(8);
   expect(counts.closed).toBe(0);
   decoder.cancel();
+  const opened = register(runtime, false);
+  expect(raw.lv_image_decoder_open(descriptor, source, 0)).toBe(LV_RESULT_OK);
+  expect(currentSource()).not.toBe(0);
+  expect(currentSource() === source).toBe(Number(sdk.LVGL_VERSION_MINOR) === 1);
+  raw.lv_image_decoder_close(descriptor);
+  expect(currentSource()).toBe(closedSource);
+  expect(opened.counts.closed).toBe(1);
+  expect([...new Uint8Array(raw.memory.buffer, source, bytes.length)]).toEqual([...bytes]);
+  opened.decoder.cancel();
   raw.lvw_free(descriptor);
   raw.lvw_free(source);
   runtime.shutdown();

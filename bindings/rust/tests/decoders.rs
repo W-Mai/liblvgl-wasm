@@ -158,7 +158,7 @@ fn full_and_block_decoders_render_pixels_with_synchronous_session_ownership() ->
                     assert_eq!(view.header, output);
                     assert_eq!(view.source_type, values::LV_IMAGE_SRC_FILE as u32);
                     assert_eq!(view.decoder_user_data.0, 0xf123_4567);
-                    assert_eq!(view.file.0 == 0, values::LVGL_VERSION_MINOR == 0);
+                    assert_eq!(view.file.0 == 0, values::LVGL_VERSION_MINOR < 2);
                     assert_eq!(view.args_flags & 16, 0);
                     assert!(session.write(context, DecoderOutput::default()).is_err());
                     assert!(
