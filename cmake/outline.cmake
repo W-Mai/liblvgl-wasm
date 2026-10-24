@@ -3,7 +3,10 @@ set(LVW_OUTLINE_SOURCE "${lvgl_SOURCE_DIR}/src/draw/sw/lv_draw_sw_letter.c")
 set(LVW_OUTLINE_ADAPTED "${CMAKE_CURRENT_BINARY_DIR}/lvgl-adapted/lv_draw_sw_letter.c")
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${LVW_OUTLINE_SOURCE}")
 file(SHA256 "${LVW_OUTLINE_SOURCE}" LVW_OUTLINE_HASH)
-if(LVW_OUTLINE_HASH STREQUAL "8fcabdc31b361cf16885cfb89134cb243225d952ee7a227331d943bfefb056d5")
+set(LVW_OUTLINE_BITMAP_SOURCES
+    "8fcabdc31b361cf16885cfb89134cb243225d952ee7a227331d943bfefb056d5"
+    "209c1a33e4adb9f4e03d0bea27d009d2d6565c8300cec4364d358201b72ca1ab")
+if(LVW_OUTLINE_HASH IN_LIST LVW_OUTLINE_BITMAP_SOURCES)
     # This renderer has no outline branch. Preserve its bitmap-only implementation.
     file(REMOVE "${LVW_OUTLINE_ADAPTED}")
     return()

@@ -470,7 +470,7 @@ __attribute__((export_name("ndk_tinyttf_lifetimes"))) int ndk_tinyttf_lifetimes(
         example += r'''
 #if LV_USE_FREETYPE
 static const void * ndk_ft_bitmap(lv_font_glyph_dsc_t * glyph, uint32_t letter) {
-#if LVGL_VERSION_MINOR == 0
+#if LVGL_VERSION_MINOR == 0 || LVGL_VERSION_MINOR == 1
     return lv_font_get_glyph_bitmap(glyph, letter, NULL);
 #else
     (void)letter;
@@ -478,7 +478,7 @@ static const void * ndk_ft_bitmap(lv_font_glyph_dsc_t * glyph, uint32_t letter) 
 #endif
 }
 static void ndk_ft_release(lv_font_glyph_dsc_t * glyph) {
-#if LVGL_VERSION_MINOR == 0
+#if LVGL_VERSION_MINOR == 0 || LVGL_VERSION_MINOR == 1
     glyph->resolved_font->release_glyph(glyph->resolved_font, glyph);
 #else
     lv_font_glyph_release_draw_data(glyph);
@@ -502,14 +502,32 @@ __attribute__((export_name("ndk_freetype_lifetimes"))) int ndk_freetype_lifetime
     lv_memzero(&second, sizeof(second));
     if (!lv_font_get_glyph_dsc(small, &first, 'A', 0) || !ndk_ft_bitmap(&first, 'A')) return -4;
     if (!lv_font_get_glyph_dsc(large, &second, 'B', 0) || !ndk_ft_bitmap(&second, 'B')) return -5;
+#if LVGL_VERSION_MINOR == 1
+    if (sizeof(first.format) != 1 || first.format != LV_FONT_GLYPH_FORMAT_A8) return -13;
+    const lv_cache_t * cache = lv_cache_entry_get_cache(first.entry);
+    /* The legacy read-only getter requires a mutable cache pointer. */
+    if (lv_cache_get_max_size((lv_cache_t *)cache, NULL) != LV_FREETYPE_CACHE_FT_GLYPH_CNT) return -14;
+    if (LV_FREETYPE_CACHE_FT_GLYPH_CNT <= 8) {
+        for (uint32_t size = 17; size < 17 + LV_FREETYPE_CACHE_FT_GLYPH_CNT; size++) {
+            lv_font_t * temporary = lv_freetype_font_create("W:ndk-ft.ttf", LV_FREETYPE_FONT_RENDER_MODE_BITMAP,
+                                                           size, LV_FREETYPE_FONT_STYLE_NORMAL);
+            lv_font_glyph_dsc_t glyph;
+            lv_memzero(&glyph, sizeof(glyph));
+            if (!temporary || !lv_font_get_glyph_dsc(temporary, &glyph, 'A', 0) ||
+                !ndk_ft_bitmap(&glyph, 'A')) return -15;
+            ndk_ft_release(&glyph);
+            lv_freetype_font_delete(temporary);
+        }
+    }
+#endif
     lv_freetype_font_delete(peer);
-#if LVGL_VERSION_MINOR == 0
+#if LVGL_VERSION_MINOR == 0 || LVGL_VERSION_MINOR == 1
     if (lv_cache_entry_get_ref(first.entry) != 1 || lv_cache_entry_get_ref(second.entry) != 1) return -6;
 #endif
     ndk_ft_release(&first);
     if (first.entry != NULL) return -7;
     lv_freetype_font_delete(small);
-#if LVGL_VERSION_MINOR == 0
+#if LVGL_VERSION_MINOR == 0 || LVGL_VERSION_MINOR == 1
     if (lv_cache_entry_get_ref(second.entry) != 1) return -8;
 #endif
     ndk_ft_release(&second);
@@ -527,7 +545,7 @@ __attribute__((export_name("ndk_freetype_lifetimes"))) int ndk_freetype_lifetime
     lv_refr_now(NULL);
     if (!lv_font_get_glyph_dsc(&primary, &first, 937, 0) || first.resolved_font != fallback ||
         !ndk_ft_bitmap(&first, 937)) return -11;
-#if LVGL_VERSION_MINOR == 0
+#if LVGL_VERSION_MINOR == 0 || LVGL_VERSION_MINOR == 1
     if (lv_cache_entry_get_ref(first.entry) != 1) return -12;
 #endif
     ndk_ft_release(&first);

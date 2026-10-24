@@ -8,7 +8,7 @@ fn expected() -> Value {
     serde_json::from_slice(&std::fs::read(fixtures().join("expected.json")).unwrap()).unwrap()
 }
 
-const LEGACY: bool = values::LVGL_VERSION_MINOR == 0;
+const LEGACY: bool = matches!(values::LVGL_VERSION_MINOR, 0 | 1);
 const OUTLINE: bool = !LEGACY && values::LV_USE_VECTOR_GRAPHIC != 0;
 
 fn fixtures() -> PathBuf {
@@ -45,7 +45,7 @@ fn constant(name: &str) -> u32 {
 }
 
 fn glyph_format(runtime: &Runtime, descriptor: UnsafePointer) -> Result<u32> {
-    if LEGACY {
+    if values::LVGL_VERSION_MINOR == 0 {
         let field = values::LV_FONT_GLYPH_DSC_T_FIELDS
             .iter()
             .find(|item| item.name == Some("bpp"))
@@ -53,6 +53,13 @@ fn glyph_format(runtime: &Runtime, descriptor: UnsafePointer) -> Result<u32> {
         let mut byte = [0];
         runtime.read_memory(descriptor.0 + (field.bit_offset / 8) as u32, &mut byte)?;
         Ok(u32::from((byte[0] >> (field.bit_offset % 8)) & 15))
+    } else if values::LVGL_VERSION_MINOR == 1 {
+        let mut byte = [0];
+        runtime.read_memory(
+            descriptor.0 + offset(values::LV_FONT_GLYPH_DSC_T_FIELDS, "format"),
+            &mut byte,
+        )?;
+        Ok(u32::from(byte[0]))
     } else {
         read_u32(
             runtime,

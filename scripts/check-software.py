@@ -40,7 +40,7 @@ def check(component_filter=None, version_filter=None):
     assert default["version"] == {"major": 9, "minor": 6, "patch": 0, "info": ""}
     sources = [("v9.0.0", compatibility.source_tree(output, compatibility.LEGACY[0])),
                ("v9.6.0", Path(default["source"]))]
-    if component_filter in {None, "png", "gif", "png-gif", "tinyttf"} and version_filter in {None, "v9.1.0"}:
+    if component_filter in {None, "png", "gif", "png-gif", "tinyttf", "freetype"} and version_filter in {None, "v9.1.0"}:
         sources.insert(1, ("v9.1.0", compatibility.source_tree(output, compatibility.LEGACY[1])))
     build = output / "software-build"
     preset = (ROOT / "config/base/lv_conf.h").read_text()
@@ -64,7 +64,7 @@ def check(component_filter=None, version_filter=None):
         for version, source in sources:
             if version_filter and version != version_filter:
                 continue
-            if version == "v9.1.0" and component not in {"png", "gif", "png-gif", "tinyttf"}:
+            if version == "v9.1.0" and component not in {"png", "gif", "png-gif", "tinyttf", "freetype"}:
                 continue
             if component == "png-gif" and version not in {"v9.0.0", "v9.1.0"}:
                 continue
@@ -94,6 +94,9 @@ def check(component_filter=None, version_filter=None):
                     config.write_text(before + "#define LV_TINY_TTF_FILE_SUPPORT 0\n#endif" + after)
                 if component == "freetype" and managed:
                     config.write_text(config.read_text().replace("#define LV_USE_TINY_TTF 0", "#define LV_USE_TINY_TTF 1"))
+                if component == "freetype" and version == "v9.1.0":
+                    before, after = config.read_text().rsplit("#endif", 1)
+                    config.write_text(before + "#define LV_FREETYPE_CACHE_FT_GLYPH_CNT 4\n#endif" + after)
                 features = "timer;animation;observer;decoder" if managed else ""
                 environment = {**os.environ, "LVGL_SOURCE_DIR": str(source), "LVGL_CONFIG_PATH": str(config),
                                "LVW_BUILD_DIR": str(build), "LVW_BRIDGE_FEATURES": features}
@@ -163,7 +166,7 @@ def check(component_filter=None, version_filter=None):
                 environment["LVW_TEST_PNG_SOURCE"] = str(sources[1][1])
             if legacy_components & {"gif", "png-gif"}:
                 environment["LVW_TEST_GIF_SOURCE"] = str(sources[1][1])
-            if "tinyttf" in legacy_components:
+            if legacy_components & {"tinyttf", "freetype"}:
                 environment["LVW_TEST_TINYTTF_SOURCE"] = str(sources[1][1])
             subprocess.run(["bun", "test", "./tests/native-adapters.test.ts"], cwd=ROOT,
                            env=environment,
