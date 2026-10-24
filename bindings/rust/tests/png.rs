@@ -241,7 +241,7 @@ fn png_failures_preserve_native_source_selection_and_valid_images_recover() -> R
         let name = rejected.as_str().unwrap();
         let source = upload(&mut runtime, name, &fixture(name)?)?;
         let rejected_header =
-            matches!(values::LVGL_VERSION_MINOR, 0 | 1) && name == expected["unsupported"]["file"];
+            matches!(values::LVGL_VERSION_MINOR, 0..=2) && name == expected["unsupported"]["file"];
         assert_eq!(
             runtime.raw()?.lv_image_decoder_get_info(source, output)?,
             if rejected_header {
@@ -275,14 +275,14 @@ fn png_failures_preserve_native_source_selection_and_valid_images_recover() -> R
     runtime.raw()?.lv_image_set_src(image, short)?;
     assert_eq!(
         runtime.raw()?.lv_image_get_src(image)?,
-        if matches!(values::LVGL_VERSION_MINOR, 0 | 1) {
+        if matches!(values::LVGL_VERSION_MINOR, 0..=2) {
             previous
         } else {
             UnsafePointer(0)
         }
     );
     step(&mut runtime)?;
-    if matches!(values::LVGL_VERSION_MINOR, 0 | 1) {
+    if matches!(values::LVGL_VERSION_MINOR, 0..=2) {
         assert_image(&frame(&mut runtime, display)?, &expected, true, X, Y);
     } else {
         assert_background(&frame(&mut runtime, display)?, &expected, X, Y);
@@ -331,7 +331,7 @@ fn uploaded_png_is_owned_and_shared_across_image_deletion_and_recreation() -> Re
 
 #[test]
 fn legacy_png_headers_check_files_and_borrowed_descriptors_before_decoding() -> Result<()> {
-    if !matches!(values::LVGL_VERSION_MINOR, 0 | 1) {
+    if !matches!(values::LVGL_VERSION_MINOR, 0..=2) {
         return Ok(());
     }
     let expected = expected();

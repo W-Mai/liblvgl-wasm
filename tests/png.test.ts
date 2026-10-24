@@ -6,7 +6,7 @@ import headers from "./fixtures/png/headers.json";
 const sdk = await import(Bun.env.LVW_TEST_TS_RUNTIME ?? "../bindings/typescript/src/index.ts") as
   typeof import("../bindings/typescript/src/index.ts");
 const { LV_COLOR_T_SIZE, LV_OPA_COVER, LV_PART_MAIN, LvglRuntime } = sdk;
-const legacy = [0, 1].includes(Number(sdk.LVGL_VERSION_MINOR));
+const legacy = [0, 1, 2].includes(Number(sdk.LVGL_VERSION_MINOR));
 
 function offset(fields: readonly { name: string | null; bit_offset: number }[], name: string): number {
   const field = fields.find((field) => field.name === name)!;

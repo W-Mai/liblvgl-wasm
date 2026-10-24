@@ -12,6 +12,7 @@ set(LVW_PNG_OUTPUTS "${LVW_PNG_OUTPUT}/lv_lodepng.c" "${LVW_PNG_OUTPUT}/lodepng.
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${LVW_PNG_DECODER}" "${LVW_PNG_LIBRARY}")
 file(SHA256 "${LVW_PNG_DECODER}" LVW_PNG_HASH)
 set(LVW_PNG_ADAPT_CACHE OFF)
+set(LVW_PNG_INFO_SESSION OFF)
 if(LVW_PNG_HASH STREQUAL "a0965af70ff9f00e319fec9c993fa8e44d263c746bb5dcd4e4c9af154de062bb")
     set(LVW_PNG_EXPECTED "2e138b69f751c8dc304594dc1b4637959f2bcad8fb874bc1df57f0e68123a946")
     set(LVW_PNG_LEGACY OFF)
@@ -24,6 +25,11 @@ elseif(LVW_PNG_HASH STREQUAL "4bc2b2799f9d344a15860ad9467e658a9c4ae4dc9cced946d6
     set(LVW_PNG_EXPECTED "3c8aec65184ba2c9fd9f7192a904fa305742de4382510c6fb4b8176c5a0360c0")
     set(LVW_PNG_LEGACY ON)
     set(LVW_PNG_BINARY_HASH "9126cbdfee8a5d3bc48452d51ab34ba1202f7d2d90cf41424f5d1530e02f0199")
+elseif(LVW_PNG_HASH STREQUAL "932712a189579f179cfab21e0ebca4d474636ffdc53b38758c66f30187f5a020")
+    set(LVW_PNG_EXPECTED "160a73c414aa7f8e3c6f7d977b098bfaecb370f048a7b8e18b67f246549b696b")
+    set(LVW_PNG_LEGACY ON)
+    set(LVW_PNG_INFO_SESSION ON)
+    set(LVW_PNG_BINARY_HASH "118bf9b0cedc2276d85210480ade0415b21d63b17093da596a7c2668bb390c9a")
 else()
     file(REMOVE ${LVW_PNG_OUTPUTS})
     message(FATAL_ERROR "Unsupported LVGL lodepng source: ${LVW_PNG_DECODER}")
@@ -57,14 +63,18 @@ function(lvw_png_replace before after)
 endfunction()
 
 file(READ "${LVW_PNG_DECODER}" LVW_PNG_CODE)
-string(FIND "${LVW_PNG_CODE}" "static lv_result_t decoder_info(lv_image_decoder_t * decoder, const void * src, lv_image_header_t * header)\n{" begin)
+set(info_argument "const void * src")
+if(LVW_PNG_INFO_SESSION)
+    set(info_argument "lv_image_decoder_dsc_t * dsc")
+endif()
+string(FIND "${LVW_PNG_CODE}" "static lv_result_t decoder_info(lv_image_decoder_t * decoder, ${info_argument}, lv_image_header_t * header)\n{" begin)
 string(FIND "${LVW_PNG_CODE}" "/**\n * Open a PNG image" end)
 math(EXPR length "${end} - ${begin}")
 if(begin LESS 0 OR length LESS 0)
     message(FATAL_ERROR "LVGL lodepng info definition was not found")
 endif()
 string(SUBSTRING "${LVW_PNG_CODE}" ${begin} ${length} info)
-lvw_png_replace("${info}" [=[static lv_result_t decoder_info(lv_image_decoder_t * decoder, const void * src, lv_image_header_t * header)
+set(info_code [=[static lv_result_t decoder_info(lv_image_decoder_t * decoder, const void * src, lv_image_header_t * header)
 {
     LV_UNUSED(decoder);
     const uint8_t * data;
@@ -102,6 +112,19 @@ lvw_png_replace("${info}" [=[static lv_result_t decoder_info(lv_image_decoder_t 
 }
 
 ]=])
+if(LVW_PNG_INFO_SESSION)
+    string(REPLACE "const void * src, lv_image_header_t * header)\n{"
+        "lv_image_decoder_dsc_t * dsc, lv_image_header_t * header)\n{\n    const void * src = dsc->src;" info_code "${info_code}")
+    string(REPLACE [=[        if(lv_strcmp(lv_fs_get_ext(src), "png") != 0) return LV_RESULT_INVALID;
+        lv_fs_file_t file;
+        if(lv_fs_open(&file, src, LV_FS_MODE_RD) != LV_FS_RES_OK) return LV_RESULT_INVALID;
+        uint32_t read = 0;
+        lv_fs_res_t result = lv_fs_read(&file, prefix, sizeof(prefix), &read);
+        lv_fs_close(&file);]=]
+        [=[        uint32_t read = 0;
+        lv_fs_res_t result = lv_fs_read(&dsc->file, prefix, sizeof(prefix), &read);]=] info_code "${info_code}")
+endif()
+lvw_png_replace("${info}" "${info_code}")
 lvw_png_replace([=[    if(entry == NULL) {
         return LV_RESULT_INVALID;
     }

@@ -316,7 +316,10 @@ __attribute__((export_name("ndk_subject_external_data"))) int ndk_subject_extern
 '''
         png = (ROOT / "tests/fixtures/png/rgba.png").read_bytes()
         example += '''
-#if LV_USE_LODEPNG && (LVGL_VERSION_MINOR == 0 || LVGL_VERSION_MINOR == 1)
+#if LV_USE_LODEPNG && LVGL_VERSION_MINOR <= 2
+#if LVGL_VERSION_MINOR == 2
+#include "lvgl/src/draw/lv_image_decoder_private.h"
+#endif
 static int png_failed_source(const lv_image_decoder_dsc_t * dsc, const void * source) {
 #if LVGL_VERSION_MINOR == 0
     (void)source;
@@ -339,7 +342,7 @@ __attribute__((export_name("ndk_png_cleanup"))) int ndk_png_cleanup(void) {
     char * borrowed = lv_strdup(good_path);
     if (borrowed == NULL) return -9;
     if (lv_image_decoder_open(&dsc, borrowed, NULL) != LV_RESULT_OK) return -5;
-#if LVGL_VERSION_MINOR == 1
+#if LVGL_VERSION_MINOR == 1 || LVGL_VERSION_MINOR == 2
     if (dsc.src != borrowed) return -10;
 #endif
 #if LV_CACHE_DEF_SIZE > 0

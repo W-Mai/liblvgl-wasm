@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- LVGL 9.2.2 PNG decoding with bounded headers, native session and cache lifetimes, failed-decode cleanup, and relocated NDK/host SDK checks.
+
 - LVGL 9.1.0 vector drawing with native API signatures, resource loading, clipping, transparent layers, and source-matched NDK/host SDK packages.
 - Correct LVGL 9.1.0 point/path rotation to match the drawing matrix, verified with shared mathematical pixel checks.
 
