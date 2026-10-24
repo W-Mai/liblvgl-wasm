@@ -150,7 +150,7 @@ fn subscribe(runtime: &mut Runtime, object: UnsafePointer, id: u32) -> Result<()
 
 #[test]
 fn gif_frame_deadlines_queries_finite_loops_and_restart_preserve_pixels() -> Result<()> {
-    if values::LVGL_VERSION_MINOR == 0 {
+    if matches!(values::LVGL_VERSION_MINOR, 0 | 1) {
         return Ok(());
     }
     let expected = expected();
@@ -253,7 +253,7 @@ fn gif_frame_deadlines_queries_finite_loops_and_restart_preserve_pixels() -> Res
 
 #[test]
 fn gif_widgets_sharing_a_resource_keep_independent_clocks_and_controls() -> Result<()> {
-    if values::LVGL_VERSION_MINOR == 0 {
+    if matches!(values::LVGL_VERSION_MINOR, 0 | 1) {
         return Ok(());
     }
     let expected = expected();
@@ -301,7 +301,7 @@ fn gif_widgets_sharing_a_resource_keep_independent_clocks_and_controls() -> Resu
 
 #[test]
 fn gif_source_failures_and_synchronous_ready_mutations_leave_no_stale_work() -> Result<()> {
-    if values::LVGL_VERSION_MINOR == 0 {
+    if matches!(values::LVGL_VERSION_MINOR, 0 | 1) {
         return Ok(());
     }
     let expected = expected();
@@ -403,7 +403,7 @@ fn gif_source_failures_and_synchronous_ready_mutations_leave_no_stale_work() -> 
 
 #[test]
 fn legacy_gif_frames_loops_callbacks_and_sources_preserve_native_lifetimes() -> Result<()> {
-    if values::LVGL_VERSION_MINOR != 0 {
+    if !matches!(values::LVGL_VERSION_MINOR, 0 | 1) {
         return Ok(());
     }
     let expected = expected();

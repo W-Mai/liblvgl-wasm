@@ -371,7 +371,7 @@ __attribute__((export_name("ndk_png_cleanup"))) int ndk_png_cleanup(void) {
 '''.replace("PNG_BYTES", ",".join(map(str, png)))
         gif = (ROOT / "tests/fixtures/gif/single-pass.gif").read_bytes()
         example += '''
-#if LV_USE_GIF && LVGL_VERSION_MINOR == 0
+#if LV_USE_GIF && (LVGL_VERSION_MINOR == 0 || LVGL_VERSION_MINOR == 1)
 static int gif_ready, gif_ticks;
 static lv_timer_t * gif_replacement_timer;
 static void gif_tick(lv_timer_t * timer) { (void)timer; gif_ticks++; }

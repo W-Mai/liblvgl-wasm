@@ -4,7 +4,7 @@ import fixture from "./fixtures/gif/expected.json";
 const sdk = await import(Bun.env.LVW_TEST_TS_RUNTIME ?? "../bindings/typescript/src/index.ts") as
   typeof import("../bindings/typescript/src/index.ts");
 const { LV_COLOR_T_SIZE, LV_EVENT_READY, LV_OPA_COVER, LV_PART_MAIN, LvglRuntime, ObjectRef } = sdk;
-const legacy = Number(sdk.LVGL_VERSION_MINOR) === 0;
+const legacy = [0, 1].includes(Number(sdk.LVGL_VERSION_MINOR));
 
 async function load() {
   const runtime = await LvglRuntime.load(await Bun.file(Bun.env.LVW_TEST_CORE ?? "target/wasm/liblvgl.wasm").arrayBuffer());

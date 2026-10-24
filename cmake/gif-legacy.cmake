@@ -1,4 +1,4 @@
-# LVGL 9.0 GIF widget and gifdec share the selected source's public layouts.
+# Legacy GIF widget and gifdec share the selected source's public layouts.
 set(LVW_GIF_DECODER "${LVW_GIF_DIRECTORY}/gifdec.c")
 set(LVW_GIF_DECODER_ADAPTED "${CMAKE_CURRENT_BINARY_DIR}/lvgl-adapted/gifdec.c")
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${LVW_GIF_DECODER}")
@@ -7,7 +7,9 @@ if(NOT decoder_hash STREQUAL "225467155fb3aebab9b75ba45f01b390c19f2551ba4566f69e
     file(REMOVE "${LVW_GIF_ADAPTED}" "${LVW_GIF_DECODER_ADAPTED}")
     message(FATAL_ERROR "Unsupported LVGL GIF source: ${LVW_GIF_DECODER}")
 endif()
-include("${CMAKE_CURRENT_LIST_DIR}/image-cache.cmake")
+if(LVW_GIF_ADAPT_CACHE)
+    include("${CMAKE_CURRENT_LIST_DIR}/image-cache.cmake")
+endif()
 
 lvw_gif_replace("    /*Close previous gif if any*/" [=[    lv_timer_pause(gifobj->timer);
     lv_image_cache_drop(lv_image_get_src(obj));
