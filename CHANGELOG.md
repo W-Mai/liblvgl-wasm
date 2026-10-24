@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- LVGL 9.1.0 TinyTTF fonts with per-font cache invalidation, resolved-font glyph release, original signatures and glyph layouts, and relocated native/host SDK checks.
+
 - LVGL 9.1.0 GIF playback with native header-cache invalidation, both LZW configurations, callback-safe cleanup, and PNG/GIF package checks.
 
 - LVGL 9.1.0 PNG decoding with bounded headers, native path borrowing, cache-key ownership, failure cleanup, and relocated native/host SDK checks.

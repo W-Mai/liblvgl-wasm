@@ -16,7 +16,7 @@ fn fixtures() -> PathBuf {
 }
 
 fn release_glyph(runtime: &mut Runtime, descriptor: UnsafePointer) -> Result<()> {
-    if values::LVGL_VERSION_MINOR != 0 {
+    if !matches!(values::LVGL_VERSION_MINOR, 0 | 1) {
         return runtime.call_raw("lv_font_glyph_release_draw_data", (descriptor.0,));
     }
     let address = descriptor.0 + offset(values::LV_FONT_GLYPH_DSC_T_FIELDS, "entry");
@@ -97,7 +97,7 @@ fn create_font(
     cache: Option<i32>,
 ) -> Result<UnsafePointer> {
     let pointer = if let Some(cache) = cache {
-        UnsafePointer(if values::LVGL_VERSION_MINOR == 0 {
+        UnsafePointer(if matches!(values::LVGL_VERSION_MINOR, 0 | 1) {
             runtime.call_raw(
                 "lv_tiny_ttf_create_data_ex",
                 (data.0.0, data.1, number(&size["size"]), cache),
@@ -172,6 +172,13 @@ fn verify_glyph(
         let mut byte = [0];
         runtime.read_memory(descriptor.0 + (bit.bit_offset / 8) as u32, &mut byte)?;
         assert_eq!((byte[0] >> (bit.bit_offset % 8)) & 15, 8);
+    } else if values::LVGL_VERSION_MINOR == 1 {
+        let mut byte = [0];
+        runtime.read_memory(
+            descriptor.0 + offset(values::LV_FONT_GLYPH_DSC_T_FIELDS, "format"),
+            &mut byte,
+        )?;
+        assert_eq!(byte[0], 8);
     } else {
         assert_eq!(
             read_u32(
@@ -187,7 +194,7 @@ fn verify_glyph(
             .lv_font_get_glyph_width(font, number(&expected["codepoints"][name]), 0)?,
         number(&glyph["advance"])
     );
-    let bitmap = UnsafePointer(if values::LVGL_VERSION_MINOR == 0 {
+    let bitmap = UnsafePointer(if matches!(values::LVGL_VERSION_MINOR, 0 | 1) {
         runtime.call_raw(
             "lv_font_get_glyph_bitmap",
             (descriptor.0, number(&expected["codepoints"][name]), 0u32),
@@ -266,7 +273,7 @@ fn label(
         raw.lv_obj_set_style_pad_all(object, 0, values::LV_PART_MAIN)?;
         raw.lv_obj_set_pos(object, 4, y)?;
     }
-    if values::LVGL_VERSION_MINOR != 0 {
+    if !matches!(values::LVGL_VERSION_MINOR, 0 | 1) {
         runtime.call_raw::<_, ()>(
             "lv_obj_set_style_text_leading_trim",
             (object.0, 0i32, values::LV_PART_MAIN),
@@ -580,7 +587,7 @@ fn tinyttf_cache_resize_and_shared_labels_follow_explicit_font_lifetimes() -> Re
 
 #[test]
 fn legacy_tinyttf_cache_ownership_survives_eviction_resize_and_fallback_drawing() -> Result<()> {
-    if values::LVGL_VERSION_MINOR != 0 {
+    if !matches!(values::LVGL_VERSION_MINOR, 0 | 1) {
         return Ok(());
     }
     fn acquire(

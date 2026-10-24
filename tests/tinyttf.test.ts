@@ -9,7 +9,8 @@ const {
   LV_TEXT_LEADING_TRIM_NONE, LvglRuntime,
 } = sdk;
 import fixture from "./fixtures/tinyttf/expected.json";
-const legacy = sdk.LVGL_VERSION_MINOR === 0;
+const minor = Number(sdk.LVGL_VERSION_MINOR);
+const legacy = [0, 1].includes(minor);
 
 interface LegacyFontApi {
   lv_tiny_ttf_create_data_ex(data: number, length: number, size: number, cache: number): number;
@@ -96,10 +97,14 @@ function glyph(raw: UnsafeLvgl, font: number, name: Glyph, size: Size, resolvedF
     expect(raw.lv_font_get_glyph_dsc(font, descriptor, fixture.codepoints[name], 0)).toBe(1);
     let view = new DataView(raw.memory.buffer);
     expect(view.getUint32(descriptor + offset(LV_FONT_GLYPH_DSC_T_FIELDS, "resolved_font"), true)).toBe(resolvedFont);
-    if (legacy) {
+    if (minor === 0) {
       const bit = LV_FONT_GLYPH_DSC_T_FIELDS.find((field) => field.name === "bpp")!;
       expect((view.getUint8(descriptor + Math.floor(bit.bit_offset / 8)) >> (bit.bit_offset % 8)) & 15).toBe(8);
-    } else expect(view.getUint32(descriptor + offset(LV_FONT_GLYPH_DSC_T_FIELDS, "format"), true)).toBe(LV_FONT_GLYPH_FORMAT_A8);
+    } else {
+      const address = descriptor + offset(LV_FONT_GLYPH_DSC_T_FIELDS, "format");
+      expect(sdk.LV_FONT_GLYPH_FORMAT_T_SIZE).toBe(minor === 1 ? 1 : 4);
+      expect(minor === 1 ? view.getUint8(address) : view.getUint32(address, true)).toBe(LV_FONT_GLYPH_FORMAT_A8);
+    }
     for (const [field, value] of [["adv_w", expected.advance], ["box_w", expected.box_w], ["box_h", expected.box_h]] as const) {
       expect(view.getUint16(descriptor + offset(LV_FONT_GLYPH_DSC_T_FIELDS, field), true)).toBe(value);
     }

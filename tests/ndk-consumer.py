@@ -417,7 +417,7 @@ __attribute__((export_name("ndk_gif_lifecycle"))) int ndk_gif_lifecycle(lv_obj_t
         font = (ROOT / "tests/fixtures/tinyttf/geometry.ttf").read_bytes()
         fallback_font = (ROOT / "tests/fixtures/tinyttf/fallback.ttf").read_bytes()
         example += r'''
-#if LV_USE_TINY_TTF && LVGL_VERSION_MINOR == 0
+#if LV_USE_TINY_TTF && (LVGL_VERSION_MINOR == 0 || LVGL_VERSION_MINOR == 1)
 __attribute__((export_name("ndk_tinyttf_lifetimes"))) int ndk_tinyttf_lifetimes(lv_obj_t * parent) {
     static const uint8_t data[] = {TTF_BYTES};
     static const uint8_t fallback_data[] = {FALLBACK_BYTES};
@@ -428,6 +428,9 @@ __attribute__((export_name("ndk_tinyttf_lifetimes"))) int ndk_tinyttf_lifetimes(
     lv_memzero(&glyph, sizeof(glyph));
     if (!lv_font_get_glyph_dsc(first, &glyph, 'A', 0) ||
         !lv_font_get_glyph_bitmap(&glyph, 'A', NULL)) return -2;
+#if LVGL_VERSION_MINOR == 1
+    if (sizeof(glyph.format) != 1 || glyph.format != LV_FONT_GLYPH_FORMAT_A8) return -14;
+#endif
     first->release_glyph(first, &glyph);
     if (!lv_font_get_glyph_dsc(second, &glyph, 'B', 0) ||
         !lv_font_get_glyph_bitmap(&glyph, 'B', NULL)) return -3;

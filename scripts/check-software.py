@@ -40,7 +40,7 @@ def check(component_filter=None, version_filter=None):
     assert default["version"] == {"major": 9, "minor": 6, "patch": 0, "info": ""}
     sources = [("v9.0.0", compatibility.source_tree(output, compatibility.LEGACY[0])),
                ("v9.6.0", Path(default["source"]))]
-    if component_filter in {None, "png", "gif", "png-gif"} and version_filter in {None, "v9.1.0"}:
+    if component_filter in {None, "png", "gif", "png-gif", "tinyttf"} and version_filter in {None, "v9.1.0"}:
         sources.insert(1, ("v9.1.0", compatibility.source_tree(output, compatibility.LEGACY[1])))
     build = output / "software-build"
     preset = (ROOT / "config/base/lv_conf.h").read_text()
@@ -64,7 +64,7 @@ def check(component_filter=None, version_filter=None):
         for version, source in sources:
             if version_filter and version != version_filter:
                 continue
-            if version == "v9.1.0" and component not in {"png", "gif", "png-gif"}:
+            if version == "v9.1.0" and component not in {"png", "gif", "png-gif", "tinyttf"}:
                 continue
             if component == "png-gif" and version not in {"v9.0.0", "v9.1.0"}:
                 continue
@@ -163,6 +163,8 @@ def check(component_filter=None, version_filter=None):
                 environment["LVW_TEST_PNG_SOURCE"] = str(sources[1][1])
             if legacy_components & {"gif", "png-gif"}:
                 environment["LVW_TEST_GIF_SOURCE"] = str(sources[1][1])
+            if "tinyttf" in legacy_components:
+                environment["LVW_TEST_TINYTTF_SOURCE"] = str(sources[1][1])
             subprocess.run(["bun", "test", "./tests/native-adapters.test.ts"], cwd=ROOT,
                            env=environment,
                            stdout=log, stderr=subprocess.STDOUT, check=True)
