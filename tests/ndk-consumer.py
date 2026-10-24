@@ -556,7 +556,7 @@ __attribute__((export_name("ndk_freetype_lifetimes"))) int ndk_freetype_lifetime
 #endif
 '''.replace("FT_BYTES", ",".join(map(str, ft_font))).replace("FT_FALLBACK", ",".join(map(str, ft_fallback)))
         example += r'''
-#if LV_USE_THORVG_INTERNAL && LVGL_VERSION_MINOR == 0
+#if LV_USE_THORVG_INTERNAL && (LVGL_VERSION_MINOR == 0 || LVGL_VERSION_MINOR == 1)
 #include "lvgl/src/libs/thorvg/thorvg_capi.h"
 __attribute__((export_name("ndk_thorvg_resources"))) int ndk_thorvg_resources(void) {
     static const char name[] = "ndk-vector.svg";

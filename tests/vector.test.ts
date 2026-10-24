@@ -11,7 +11,8 @@ const {
 } = sdk;
 import fixture from "./fixtures/vector/expected.json";
 
-const legacy = sdk.LVGL_VERSION_MINOR === 0;
+const minor = Number(sdk.LVGL_VERSION_MINOR);
+const legacy = [0, 1].includes(minor);
 type Raw = UnsafeLvgl;
 type Sample = { color: number[]; opacity: number; coverage: number };
 
@@ -285,6 +286,46 @@ test("vector drawing preserves object clipping and translated transparent layers
   }
 });
 
+test.skipIf(minor === 0)("point and path transforms agree with the drawing matrix under rotation", async () => {
+  const { runtime, raw, display, screen } = await load();
+  const sample = fixture.rotation;
+  screen.on(LV_EVENT_DRAW_MAIN_END, () => {
+    const matrix = raw.lvw_alloc(LV_MATRIX_T_SIZE);
+    new Float32Array(raw.memory.buffer, matrix, 9).set(sample.matrix);
+    const point = raw.lvw_alloc(LV_FPOINT_T_SIZE);
+    sample.point.forEach((value, index) => new DataView(raw.memory.buffer)
+      .setFloat32(point + offset(LV_FPOINT_T_FIELDS, ["x", "y"][index]!), value, true));
+    raw.lv_matrix_transform_point(matrix, point);
+    expect(["x", "y"].map((field) => new DataView(raw.memory.buffer)
+      .getFloat32(point + offset(LV_FPOINT_T_FIELDS, field), true))).toEqual(sample.point_expected);
+    raw.lvw_free(point);
+    const descriptor = vector(raw, "create", raw.lv_event_get_layer(runtime.eventPointer()));
+    const path = raw.lv_vector_path_create(LV_VECTOR_PATH_QUALITY_HIGH);
+    rectangle(raw, path, sample.rectangle);
+    raw.lv_matrix_transform_path(matrix, path);
+    fill(raw, descriptor, sample.color, sample.opacity);
+    vector(raw, "add_path", descriptor, path);
+    raw.lv_vector_path_clear(path);
+    rectangle(raw, path, sample.rectangle);
+    new Float32Array(raw.memory.buffer, matrix, 9)[2]! += sample.separation;
+    vector(raw, "set_transform", descriptor, matrix);
+    vector(raw, "add_path", descriptor, path);
+    raw.lv_vector_path_delete(path);
+    raw.lvw_free(matrix);
+    raw.lv_draw_vector(descriptor);
+    vector(raw, "delete", descriptor);
+  });
+  for (let redraw = 0; redraw < 2; redraw++) {
+    raw.lv_obj_invalidate(screen.handle);
+    runtime.step(33);
+    framePixels(runtime.readFrame(display), (x, y) => {
+      const covered = coverage(sample.result, x, y) + coverage(sample.result, x - sample.separation, y);
+      return covered ? { color: sample.color, opacity: Math.floor(255 * sample.opacity / 256), coverage: covered } : undefined;
+    });
+  }
+  runtime.shutdown();
+});
+
 test("FLOAT configuration preserves fractional arc parameters and native matrix operations", async () => {
   const { runtime, raw, screen } = await load();
   const arc = raw.lv_arc_create(screen.handle);
@@ -296,21 +337,25 @@ test("FLOAT configuration preserves fractional arc parameters and native matrix 
   raw.lv_matrix_identity(matrix);
   raw.lv_matrix_translate(matrix, 2.25, -3.5);
   raw.lv_matrix_scale(matrix, 1.5, 0.5);
-  if (legacy) {
+  if (minor === 0) {
     expect(Array.from(new Float32Array(raw.memory.buffer, matrix, 9))).toEqual([1.5, 0, 2.25, 0, 0.5, -3.5, 0, 0, 1]);
     raw.lvw_free(matrix);
     raw.lv_obj_delete(arc);
     runtime.shutdown();
     return;
   }
-  const point = raw.lvw_alloc(LV_POINT_PRECISE_T_SIZE);
-  const result = raw.lvw_alloc(LV_POINT_PRECISE_T_SIZE);
-  new DataView(raw.memory.buffer).setFloat32(point + offset(LV_POINT_PRECISE_T_FIELDS, "x"), 4.5, true);
-  new DataView(raw.memory.buffer).setFloat32(point + offset(LV_POINT_PRECISE_T_FIELDS, "y"), -1.25, true);
-  raw.lv_matrix_transform_precise_point(result, matrix, point);
-  const view = new DataView(raw.memory.buffer);
-  expect([view.getFloat32(result + offset(LV_POINT_PRECISE_T_FIELDS, "x"), true),
-    view.getFloat32(result + offset(LV_POINT_PRECISE_T_FIELDS, "y"), true)]).toEqual([9, -4]);
+  if (!legacy) {
+    const point = raw.lvw_alloc(LV_POINT_PRECISE_T_SIZE);
+    const result = raw.lvw_alloc(LV_POINT_PRECISE_T_SIZE);
+    new DataView(raw.memory.buffer).setFloat32(point + offset(LV_POINT_PRECISE_T_FIELDS, "x"), 4.5, true);
+    new DataView(raw.memory.buffer).setFloat32(point + offset(LV_POINT_PRECISE_T_FIELDS, "y"), -1.25, true);
+    raw.lv_matrix_transform_precise_point(result, matrix, point);
+    const view = new DataView(raw.memory.buffer);
+    expect([view.getFloat32(result + offset(LV_POINT_PRECISE_T_FIELDS, "x"), true),
+      view.getFloat32(result + offset(LV_POINT_PRECISE_T_FIELDS, "y"), true)]).toEqual([9, -4]);
+    raw.lvw_free(result);
+    raw.lvw_free(point);
+  }
   // The precise-point helper rounds to pixels; the vector-point helper retains fractions.
   const floating = raw.lvw_alloc(LV_FPOINT_T_SIZE);
   new DataView(raw.memory.buffer).setFloat32(floating + offset(LV_FPOINT_T_FIELDS, "x"), 4.5, true);
@@ -320,8 +365,6 @@ test("FLOAT configuration preserves fractional arc parameters and native matrix 
   expect([transformed.getFloat32(floating + offset(LV_FPOINT_T_FIELDS, "x"), true),
     transformed.getFloat32(floating + offset(LV_FPOINT_T_FIELDS, "y"), true)]).toEqual([9, -4.125]);
   raw.lvw_free(floating);
-  raw.lvw_free(result);
-  raw.lvw_free(point);
   raw.lvw_free(matrix);
   raw.lv_obj_delete(arc);
   runtime.shutdown();

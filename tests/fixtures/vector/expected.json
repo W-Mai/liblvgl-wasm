@@ -14,6 +14,16 @@
     "color": [96, 160, 224],
     "opacity": 255
   },
+  "rotation": {
+    "matrix": [0, -1, 24, 1, 0, 8, 0, 0, 1],
+    "point": [2, 3],
+    "point_expected": [21, 10],
+    "rectangle": [2, 3, 6, 4],
+    "result": [17, 10, 4, 6],
+    "separation": 32,
+    "color": [96, 160, 224],
+    "opacity": 255
+  },
   "gradient": {
     "rectangle": [8, 12, 32, 12],
     "start": [8, 12],

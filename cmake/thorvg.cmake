@@ -68,6 +68,14 @@ elseif(hash STREQUAL "70c1cfdaa888d1a4d74444a7e33e956b4a84110ceb0a53c0af4873e292
     set(hashes 1d2c2e26a0b96566ecde92f72bde10588f90009cd0a1a3f41befb214f597aa2b
         81bd600c600ac16dd23db625a3b08ed4f7fc01b6e9beb8c4d1dfcb8e6f9c4c35)
     set(vector_hash 0ebf0ded4040e0763720a3ddef941b3932f05bad5b0852a1ba6be3546089500a)
+    if(LV_USE_VECTOR_GRAPHIC)
+        file(SHA256 "${lvgl_SOURCE_DIR}/src/draw/sw/lv_draw_sw_vector.c" selected_vector_hash)
+        if(selected_vector_hash STREQUAL "a0905eb8659eca9f2b00372bac4c480a29c5cbf8888108b8ab0f85fa1d8e1ac5")
+            set(vector_hash "${selected_vector_hash}")
+            list(APPEND units src/draw/lv_draw_vector.c)
+            list(APPEND hashes 70d6cce900a451c4c48ecda0aa73ce06dcff382e293c986bc67fc0e38f574272)
+        endif()
+    endif()
 else()
     set(invalid "${LVW_THORVG_CONFIG}")
 endif()
@@ -87,10 +95,13 @@ if(NOT invalid)
     endforeach()
 endif()
 if(invalid)
-    foreach(name tvgSvgLoader.cpp tvgSwRenderer.cpp lv_draw_sw_vector.c)
+    foreach(name tvgSvgLoader.cpp tvgSwRenderer.cpp lv_draw_sw_vector.c lv_draw_vector.c)
         file(REMOVE "${CMAKE_CURRENT_BINARY_DIR}/lvgl-adapted/${name}")
     endforeach()
     message(FATAL_ERROR "Unsupported ThorVG source: ${invalid}")
+endif()
+if(NOT vector_hash STREQUAL "a0905eb8659eca9f2b00372bac4c480a29c5cbf8888108b8ab0f85fa1d8e1ac5")
+    file(REMOVE "${CMAKE_CURRENT_BINARY_DIR}/lvgl-adapted/lv_draw_vector.c")
 endif()
 if(hash STREQUAL "98e59951e6a8b7a231abceec7f5a03af65c8a0b06c89f0e59aee6669f2b98823")
     lvw_thorvg_load(lvgl_thorvg src/libs/thorvg/tvgSwRenderer.cpp
@@ -158,7 +169,7 @@ if(NOT LV_USE_VECTOR_GRAPHIC)
     return()
 endif()
 lvw_thorvg_load(lvgl src/draw/sw/lv_draw_sw_vector.c
-    0ebf0ded4040e0763720a3ddef941b3932f05bad5b0852a1ba6be3546089500a)
+    "${vector_hash}")
 lvw_thorvg_replace("} _tvg_color;" [=[} _tvg_color;
 
 typedef struct {
@@ -205,3 +216,13 @@ lvw_thorvg_replace("    _lv_vector_for_each_destroy_tasks(task_list, _task_draw_
     [=[    lvw_vector_state state = {canvas, -layer->buf_area.x1, -layer->buf_area.y1, draw_unit->clip_area};
     _lv_vector_for_each_destroy_tasks(task_list, _task_draw_cb, &state);]=])
 lvw_thorvg_save()
+
+if(vector_hash STREQUAL "a0905eb8659eca9f2b00372bac4c480a29c5cbf8888108b8ab0f85fa1d8e1ac5")
+    lvw_thorvg_load(lvgl src/draw/lv_draw_vector.c
+        70d6cce900a451c4c48ecda0aa73ce06dcff382e293c986bc67fc0e38f574272)
+    lvw_thorvg_replace([=[    point->x = x * matrix->m[0][0] + y * matrix->m[1][0] + matrix->m[0][2];
+    point->y = x * matrix->m[0][1] + y * matrix->m[1][1] + matrix->m[1][2];]=]
+        [=[    point->x = x * matrix->m[0][0] + y * matrix->m[0][1] + matrix->m[0][2];
+    point->y = x * matrix->m[1][0] + y * matrix->m[1][1] + matrix->m[1][2];]=])
+    lvw_thorvg_save()
+endif()

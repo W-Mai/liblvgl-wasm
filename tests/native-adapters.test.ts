@@ -161,36 +161,41 @@ if (tinyttfSource) test("legacy TinyTTF rejects file streams and clears its adap
 });
 
 const thorvgSources = [resolve("target/sources/lvgl"), Bun.env.LVW_TEST_THORVG_SOURCE].filter(Boolean) as string[];
-for (const sourceRoot of thorvgSources) test.each([
-  "src/libs/thorvg/config.h", "src/libs/thorvg/tvgSwRenderer.cpp", "src/draw/sw/lv_draw_sw_vector.c",
-  ...(sourceRoot === Bun.env.LVW_TEST_THORVG_SOURCE ? ["src/libs/thorvg/tvgSvgLoader.cpp"] : []),
-])("ThorVG adaptation rejects changed %s and removes all stale units", async (changed) => {
-  const root = await mkdtemp(join(tmpdir(), "lvw thorvg source "));
-  const files = ["src/libs/thorvg/config.h", "src/libs/thorvg/tvgSwRenderer.cpp",
-    "src/libs/thorvg/tvgSvgLoader.cpp", "src/draw/sw/lv_draw_sw_vector.c"];
-  try {
-    await mkdir(join(root, "lvgl-adapted"));
-    for (const file of files) {
-      await mkdir(join(root, file, ".."), { recursive: true });
-      await copyFile(join(sourceRoot, file), join(root, file));
-      if (!file.endsWith("config.h")) await Bun.write(join(root, "lvgl-adapted", file.split("/").at(-1)!), "stale\n");
+for (const sourceRoot of thorvgSources) {
+  const pointTransforms = sourceRoot === Bun.env.LVW_TEST_THORVG_SOURCE &&
+    (await Bun.file(join(sourceRoot, "src/draw/lv_draw_vector.c")).text()).includes("void lv_matrix_transform_point(");
+  test.each([
+    "src/libs/thorvg/config.h", "src/libs/thorvg/tvgSwRenderer.cpp", "src/draw/sw/lv_draw_sw_vector.c",
+    ...(sourceRoot === Bun.env.LVW_TEST_THORVG_SOURCE ? ["src/libs/thorvg/tvgSvgLoader.cpp"] : []),
+    ...(pointTransforms ? ["src/draw/lv_draw_vector.c"] : []),
+  ])("ThorVG adaptation rejects changed %s and removes all stale units", async (changed) => {
+    const root = await mkdtemp(join(tmpdir(), "lvw thorvg source "));
+    const files = ["src/libs/thorvg/config.h", "src/libs/thorvg/tvgSwRenderer.cpp",
+      "src/libs/thorvg/tvgSvgLoader.cpp", "src/draw/sw/lv_draw_sw_vector.c", "src/draw/lv_draw_vector.c"];
+    try {
+      await mkdir(join(root, "lvgl-adapted"));
+      for (const file of files) {
+        await mkdir(join(root, file, ".."), { recursive: true });
+        await copyFile(join(sourceRoot, file), join(root, file));
+        if (!file.endsWith("config.h")) await Bun.write(join(root, "lvgl-adapted", file.split("/").at(-1)!), "stale\n");
+      }
+      await Bun.write(join(root, changed), "/* changed source */\n");
+      await Bun.write(join(root, "check.cmake"),
+        `cmake_minimum_required(VERSION 3.25)\nfunction(lvw_config_flag name)\nset(LV_USE_VECTOR_GRAPHIC 1 PARENT_SCOPE)\nendfunction()\ninclude("${resolve("cmake/thorvg.cmake")}")\n`);
+      const child = Bun.spawn(["cmake", `-Dlvgl_SOURCE_DIR=${root}`, "-P", "check.cmake"], {
+        cwd: root, stdout: "pipe", stderr: "pipe",
+      });
+      const [status, stdout, stderr] = await Promise.all([
+        child.exited, new Response(child.stdout).text(), new Response(child.stderr).text(),
+      ]);
+      expect(status, stdout + stderr).not.toBe(0);
+      expect(stderr.replace(/\s+/g, " ")).toContain(`Unsupported ThorVG source: ${join(root, changed)}`);
+      for (const file of files.filter((path) => !path.endsWith("config.h"))) {
+        expect(await Bun.file(join(root, "lvgl-adapted", file.split("/").at(-1)!)).exists()).toBe(false);
+      }
+      expect(await Bun.file(join(root, changed)).text()).toBe("/* changed source */\n");
+    } finally {
+      await rm(root, { recursive: true, force: true });
     }
-    await Bun.write(join(root, changed), "/* changed source */\n");
-    await Bun.write(join(root, "check.cmake"),
-      `cmake_minimum_required(VERSION 3.25)\nfunction(lvw_config_flag name)\nset(LV_USE_VECTOR_GRAPHIC 1 PARENT_SCOPE)\nendfunction()\ninclude("${resolve("cmake/thorvg.cmake")}")\n`);
-    const child = Bun.spawn(["cmake", `-Dlvgl_SOURCE_DIR=${root}`, "-P", "check.cmake"], {
-      cwd: root, stdout: "pipe", stderr: "pipe",
-    });
-    const [status, stdout, stderr] = await Promise.all([
-      child.exited, new Response(child.stdout).text(), new Response(child.stderr).text(),
-    ]);
-    expect(status, stdout + stderr).not.toBe(0);
-    expect(stderr.replace(/\s+/g, " ")).toContain(`Unsupported ThorVG source: ${join(root, changed)}`);
-    for (const file of files.filter((path) => !path.endsWith("config.h"))) {
-      expect(await Bun.file(join(root, "lvgl-adapted", file.split("/").at(-1)!)).exists()).toBe(false);
-    }
-    expect(await Bun.file(join(root, changed)).text()).toBe("/* changed source */\n");
-  } finally {
-    await rm(root, { recursive: true, force: true });
-  }
-});
+  });
+}

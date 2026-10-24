@@ -40,7 +40,7 @@ def check(component_filter=None, version_filter=None):
     assert default["version"] == {"major": 9, "minor": 6, "patch": 0, "info": ""}
     sources = [("v9.0.0", compatibility.source_tree(output, compatibility.LEGACY[0])),
                ("v9.6.0", Path(default["source"]))]
-    if component_filter in {None, "png", "gif", "png-gif", "tinyttf", "freetype"} and version_filter in {None, "v9.1.0"}:
+    if version_filter in {None, "v9.1.0"}:
         sources.insert(1, ("v9.1.0", compatibility.source_tree(output, compatibility.LEGACY[1])))
     build = output / "software-build"
     preset = (ROOT / "config/base/lv_conf.h").read_text()
@@ -63,8 +63,6 @@ def check(component_filter=None, version_filter=None):
             base = before + "#define LV_USE_FLOAT 1\n#define LV_USE_MATRIX 1\n#endif" + after
         for version, source in sources:
             if version_filter and version != version_filter:
-                continue
-            if version == "v9.1.0" and component not in {"png", "gif", "png-gif", "tinyttf", "freetype"}:
                 continue
             if component == "png-gif" and version not in {"v9.0.0", "v9.1.0"}:
                 continue
@@ -147,7 +145,7 @@ def check(component_filter=None, version_filter=None):
                     results[-1].update({"freetype_port": "lvgl", "freetype_render_modes": ["bitmap"],
                                        "software_contracts": contracts.split()})
                 if component == "vector":
-                    results[-1].update({"thorvg": "0.11.99" if version == "v9.0.0" else "0.15.3",
+                    results[-1].update({"thorvg": "0.11.99" if version in {"v9.0.0", "v9.1.0"} else "0.15.3",
                                        "software_contracts": contracts.split()})
                 print(f"{name}: pixels, source lifetimes, failure recovery, and relocated consumers passed", flush=True)
     if not results:
@@ -168,6 +166,8 @@ def check(component_filter=None, version_filter=None):
                 environment["LVW_TEST_GIF_SOURCE"] = str(sources[1][1])
             if legacy_components & {"tinyttf", "freetype"}:
                 environment["LVW_TEST_TINYTTF_SOURCE"] = str(sources[1][1])
+            if "vector" in legacy_components:
+                environment["LVW_TEST_THORVG_SOURCE"] = str(sources[1][1])
             subprocess.run(["bun", "test", "./tests/native-adapters.test.ts"], cwd=ROOT,
                            env=environment,
                            stdout=log, stderr=subprocess.STDOUT, check=True)

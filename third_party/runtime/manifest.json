@@ -282,6 +282,11 @@
     "zig/LICENSE": "5c537d6853e005298a285d508cff9ac7192cea23576c840d485b2b586a7ff177"
   },
   "thorvg_embedded": {
+    "cc5c4bddb3ee7d2c28068e262f1560ddb98fb08ed45e7c8a3edeea98fc562f4c": {
+      "version": "0.11.99",
+      "origin": "https://codeload.github.com/lvgl/lvgl/tar.gz/refs/tags/v9.1.0",
+      "source_directory": "src/libs/thorvg"
+    },
     "eb8c88e70c5d710a591e17ba2d5199052e691d468ea5dba2662e054879cd7096": {
       "version": "0.11.99",
       "origin": "https://codeload.github.com/lvgl/lvgl/tar.gz/refs/tags/v9.0.0",

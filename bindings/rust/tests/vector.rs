@@ -14,7 +14,7 @@ fn fixture() -> Value {
     serde_json::from_slice(&std::fs::read(directory.join("expected.json")).unwrap()).unwrap()
 }
 
-const LEGACY: bool = values::LVGL_VERSION_MINOR == 0;
+const LEGACY: bool = matches!(values::LVGL_VERSION_MINOR, 0 | 1);
 
 fn metadata() -> &'static Value {
     static API: OnceLock<Value> = OnceLock::new();
@@ -718,6 +718,88 @@ fn vector_drawing_preserves_clipping_and_translated_transparent_layers() -> Resu
 }
 
 #[test]
+fn point_and_path_transforms_agree_with_the_drawing_matrix_under_rotation() -> Result<()> {
+    if values::LVGL_VERSION_MINOR == 0 {
+        return Ok(());
+    }
+    fn draw(api: &mut CallbackContext<'_>, layer: UnsafePointer, data: &Value) -> Result<()> {
+        let sample = &data["rotation"];
+        let matrix = api.alloc(values::LV_MATRIX_T_SIZE)?;
+        let mut entries: Vec<_> = sample["matrix"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|v| number(v) as f32)
+            .collect();
+        let bytes: Vec<_> = entries.iter().flat_map(|v| v.to_le_bytes()).collect();
+        api.write_memory(matrix, &bytes)?;
+        let point = api.alloc(values::LV_FPOINT_T_SIZE)?;
+        for (index, name) in ["x", "y"].into_iter().enumerate() {
+            api.write_memory(
+                point + offset(values::LV_FPOINT_T_FIELDS, name),
+                &(number(&sample["point"][index]) as f32).to_le_bytes(),
+            )?;
+        }
+        api.call_raw::<_, ()>("lv_matrix_transform_point", (matrix, point))?;
+        for (index, name) in ["x", "y"].into_iter().enumerate() {
+            let mut bytes = [0; 4];
+            api.read_memory(point + offset(values::LV_FPOINT_T_FIELDS, name), &mut bytes)?;
+            assert_eq!(
+                f32::from_le_bytes(bytes),
+                number(&sample["point_expected"][index]) as f32
+            );
+        }
+        api.free(point)?;
+        let descriptor = vector_create(api, layer)?;
+        let path = api
+            .raw()?
+            .lv_vector_path_create(values::LV_VECTOR_PATH_QUALITY_HIGH)?;
+        append_rectangle(api, path, &sample["rectangle"])?;
+        api.call_raw::<_, ()>("lv_matrix_transform_path", (matrix, path.0))?;
+        fill(
+            api,
+            descriptor,
+            &sample["color"],
+            number(&sample["opacity"]) as i32,
+        )?;
+        vector!(api, "set_stroke_opa", (descriptor.0, 0i32))?;
+        vector!(api, "add_path", (descriptor.0, path.0))?;
+        api.raw()?.lv_vector_path_clear(path)?;
+        append_rectangle(api, path, &sample["rectangle"])?;
+        entries[2] += number(&sample["separation"]) as f32;
+        let bytes: Vec<_> = entries.iter().flat_map(|v| v.to_le_bytes()).collect();
+        api.write_memory(matrix, &bytes)?;
+        vector!(api, "set_transform", (descriptor.0, matrix))?;
+        vector!(api, "add_path", (descriptor.0, path.0))?;
+        api.raw()?.lv_vector_path_delete(path)?;
+        api.free(matrix)?;
+        api.raw()?.lv_draw_vector(descriptor)?;
+        vector!(api, "delete", (descriptor.0,))
+    }
+    fn reference(x: usize, y: usize, data: &Value) -> ([f64; 3], f64) {
+        let sample = &data["rotation"];
+        let rect = std::array::from_fn(|i| number(&sample["result"][i]));
+        let covered = rectangle_coverage(x, y, rect)
+            + rectangle_coverage(
+                x,
+                y,
+                [
+                    rect[0] + number(&sample["separation"]),
+                    rect[1],
+                    rect[2],
+                    rect[3],
+                ],
+            );
+        let alpha = (255.0 * number(&sample["opacity"]) / 256.0).floor();
+        (
+            solid_composite(&data["background"], rgb(&sample["color"]), alpha, covered),
+            if covered > 0.0 { 1.0 } else { 0.0 },
+        )
+    }
+    verify_scene(draw, reference)
+}
+
+#[test]
 fn float_configuration_preserves_fractional_arc_and_matrix_values() -> Result<()> {
     let data = fixture();
     let (mut runtime, _, screen) = load(&data)?;
@@ -732,7 +814,7 @@ fn float_configuration_preserves_fractional_arc_and_matrix_values() -> Result<()
     runtime.raw()?.lv_matrix_identity(matrix)?;
     runtime.raw()?.lv_matrix_translate(matrix, 1.25, -2.5)?;
     runtime.raw()?.lv_matrix_scale(matrix, 1.5, 0.5)?;
-    if LEGACY {
+    if values::LVGL_VERSION_MINOR == 0 {
         let mut bytes = [0u8; 36];
         runtime.read_memory(matrix.0, &mut bytes)?;
         let entries: Vec<_> = bytes
@@ -744,29 +826,31 @@ fn float_configuration_preserves_fractional_arc_and_matrix_values() -> Result<()
         runtime.raw()?.lv_obj_delete(arc)?;
         return runtime.shutdown();
     }
-    let point = runtime.raw()?.alloc(values::LV_POINT_PRECISE_T_SIZE)?;
-    let result = runtime.raw()?.alloc(values::LV_POINT_PRECISE_T_SIZE)?;
-    for (name, value) in [("x", 2.25f32), ("y", 7.5)] {
-        runtime.raw()?.write_memory(
-            UnsafePointer(point.0 + offset(values::LV_POINT_PRECISE_T_FIELDS, name)),
-            &value.to_le_bytes(),
+    if !LEGACY {
+        let point = runtime.raw()?.alloc(values::LV_POINT_PRECISE_T_SIZE)?;
+        let result = runtime.raw()?.alloc(values::LV_POINT_PRECISE_T_SIZE)?;
+        for (name, value) in [("x", 2.25f32), ("y", 7.5)] {
+            runtime.raw()?.write_memory(
+                UnsafePointer(point.0 + offset(values::LV_POINT_PRECISE_T_FIELDS, name)),
+                &value.to_le_bytes(),
+            )?;
+        }
+        runtime.call_raw::<_, ()>(
+            export_name("lv_matrix_transform_precise_point"),
+            (result.0, matrix.0, point.0),
         )?;
+        // The native precise-point aggregate API rounds coordinates with roundf.
+        for (name, expected) in [("x", 5.0f32), ("y", 1.0)] {
+            let mut bytes = [0; 4];
+            runtime.raw()?.read_memory(
+                UnsafePointer(result.0 + offset(values::LV_POINT_PRECISE_T_FIELDS, name)),
+                &mut bytes,
+            )?;
+            assert_eq!(f32::from_le_bytes(bytes), expected);
+        }
+        runtime.raw()?.free(result)?;
+        runtime.raw()?.free(point)?;
     }
-    runtime.call_raw::<_, ()>(
-        export_name("lv_matrix_transform_precise_point"),
-        (result.0, matrix.0, point.0),
-    )?;
-    // The native precise-point aggregate API rounds coordinates with roundf.
-    for (name, expected) in [("x", 5.0f32), ("y", 1.0)] {
-        let mut bytes = [0; 4];
-        runtime.raw()?.read_memory(
-            UnsafePointer(result.0 + offset(values::LV_POINT_PRECISE_T_FIELDS, name)),
-            &mut bytes,
-        )?;
-        assert_eq!(f32::from_le_bytes(bytes), expected);
-    }
-    runtime.raw()?.free(result)?;
-    runtime.raw()?.free(point)?;
     let point = runtime.raw()?.alloc(values::LV_FPOINT_T_SIZE)?;
     for (name, value) in [("x", 2.25f32), ("y", 7.5)] {
         runtime.raw()?.write_memory(
