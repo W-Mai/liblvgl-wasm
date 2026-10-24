@@ -394,6 +394,53 @@ __attribute__((export_name("ndk_gif_lifecycle"))) int ndk_gif_lifecycle(lv_obj_t
 }
 #endif
 '''.replace("GIF_BYTES", ",".join(map(str, gif)))
+        font = (ROOT / "tests/fixtures/tinyttf/geometry.ttf").read_bytes()
+        fallback_font = (ROOT / "tests/fixtures/tinyttf/fallback.ttf").read_bytes()
+        example += r'''
+#if LV_USE_TINY_TTF && LVGL_VERSION_MINOR == 0
+__attribute__((export_name("ndk_tinyttf_lifetimes"))) int ndk_tinyttf_lifetimes(lv_obj_t * parent) {
+    static const uint8_t data[] = {TTF_BYTES};
+    static const uint8_t fallback_data[] = {FALLBACK_BYTES};
+    lv_font_t * first = lv_tiny_ttf_create_data_ex(data, sizeof(data), 16, 0);
+    lv_font_t * second = lv_tiny_ttf_create_data_ex(data, sizeof(data), 24, 1);
+    if (!first || !second) return -1;
+    lv_font_glyph_dsc_t glyph;
+    lv_memzero(&glyph, sizeof(glyph));
+    if (!lv_font_get_glyph_dsc(first, &glyph, 'A', 0) ||
+        !lv_font_get_glyph_bitmap(&glyph, 'A', NULL)) return -2;
+    first->release_glyph(first, &glyph);
+    if (!lv_font_get_glyph_dsc(second, &glyph, 'B', 0) ||
+        !lv_font_get_glyph_bitmap(&glyph, 'B', NULL)) return -3;
+    lv_cache_t * cache = (lv_cache_t *)lv_cache_entry_get_cache(glyph.entry);
+    if (lv_cache_get_max_size(cache, NULL) != 128 || lv_cache_get_size(cache, NULL) != 2) return -4;
+    lv_tiny_ttf_set_size(first, 32);
+    if (lv_cache_get_size(cache, NULL) != 1) return -5;
+    lv_tiny_ttf_destroy(first);
+    if (lv_cache_get_size(cache, NULL) != 1 || lv_cache_entry_get_ref(glyph.entry) != 1) return -6;
+    second->release_glyph(second, &glyph);
+    if (glyph.entry != NULL) return -7;
+    lv_tiny_ttf_destroy(second);
+    if (lv_cache_get_size(cache, NULL) != 0) return -8;
+    lv_font_t * fallback = lv_tiny_ttf_create_data(fallback_data, sizeof(fallback_data), 16);
+    if (!fallback) return -9;
+    lv_font_t primary = *LV_FONT_DEFAULT;
+    if (primary.release_glyph != NULL) return -10;
+    primary.fallback = fallback;
+    lv_obj_t * label = lv_label_create(parent);
+    lv_obj_set_style_text_font(label, &primary, 0);
+    lv_label_set_text(label, "\xCE\xA9");
+    lv_obj_update_layout(parent);
+    lv_refr_now(NULL);
+    if (!lv_font_get_glyph_dsc(&primary, &glyph, 937, 0) || glyph.resolved_font != fallback ||
+        !lv_font_get_glyph_bitmap(&glyph, 937, NULL)) return -11;
+    if (lv_cache_entry_get_ref(glyph.entry) != 1) return -12;
+    fallback->release_glyph(fallback, &glyph);
+    lv_obj_delete(label);
+    lv_tiny_ttf_destroy(fallback);
+    return lv_cache_get_size(cache, NULL) == 0 ? 0 : -13;
+}
+#endif
+'''.replace("TTF_BYTES", ",".join(map(str, font))).replace("FALLBACK_BYTES", ",".join(map(str, fallback_font)))
         (project / "main.c").write_text('#include "layout.h"\n' + example)
         (project / "main.cpp").write_text('#include "layout.h"\n' + example)
         (project / "eh.cpp").write_text('''#include "lvw.h"

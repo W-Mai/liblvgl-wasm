@@ -34,7 +34,7 @@ function(lvw_config_flag name)
 endfunction()
 
 foreach(flag LV_USE_THORVG LV_USE_THORVG_INTERNAL LV_USE_FREETYPE LV_USE_GIF LV_USE_LODEPNG
-             LV_USE_SVG LV_USE_LOTTIE LV_USE_OBSERVER)
+             LV_USE_SVG LV_USE_LOTTIE LV_USE_OBSERVER LV_USE_TINY_TTF)
     lvw_config_flag(${flag})
 endforeach()
 

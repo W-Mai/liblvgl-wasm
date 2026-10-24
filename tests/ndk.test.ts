@@ -86,6 +86,7 @@ test("relocated NDK preserves the C/C++/Zig ABI and native callbacks", async () 
       api.lvw_demo_create!(display);
       const screen = api.lv_display_get_screen_active!(display);
       if (api.ndk_gif_lifecycle) expect(api.ndk_gif_lifecycle(screen)).toBe(0);
+      if (api.ndk_tinyttf_lifetimes) expect(api.ndk_tinyttf_lifetimes(screen)).toBe(0);
       const button = api.lv_obj_get_child!(screen, 0);
       const label = api.lv_obj_get_child!(button, 0);
       const input = api.lvw_indev_create!(display, 1);

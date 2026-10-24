@@ -1,13 +1,32 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use liblvgl_wasm_host::{Result, Runtime, UnsafePointer, values};
 use serde_json::Value;
 
 fn expected() -> Value {
-    serde_json::from_str(include_str!(
-        "../../../tests/fixtures/tinyttf/expected.json"
-    ))
-    .unwrap()
+    serde_json::from_slice(&std::fs::read(fixtures().join("expected.json")).unwrap()).unwrap()
+}
+
+fn fixtures() -> PathBuf {
+    std::env::var_os("LVW_TEST_TINYTTF_FIXTURES")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| {
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/tinyttf")
+        })
+}
+
+fn release_glyph(runtime: &mut Runtime, descriptor: UnsafePointer) -> Result<()> {
+    if values::LVGL_VERSION_MINOR != 0 {
+        return runtime.call_raw("lv_font_glyph_release_draw_data", (descriptor.0,));
+    }
+    let address = descriptor.0 + offset(values::LV_FONT_GLYPH_DSC_T_FIELDS, "entry");
+    let entry = read_u32(runtime, address)?;
+    if entry != 0 {
+        let cache: u32 = runtime.call_raw("lv_cache_entry_get_cache", (entry,))?;
+        runtime.call_raw::<_, ()>("lv_cache_release", (cache, entry, 0u32))?;
+        runtime.write_memory(address, &0u32.to_le_bytes())?;
+    }
+    Ok(())
 }
 
 fn number(value: &Value) -> i32 {
@@ -42,7 +61,11 @@ fn color(runtime: &mut Runtime, rgb: &Value) -> Result<UnsafePointer> {
 
 fn load(expected: &Value) -> Result<(Runtime, u32, UnsafePointer)> {
     let mut runtime = Runtime::from_file(
-        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/wasm/liblvgl.wasm"),
+        std::env::var_os("LVW_TEST_CORE")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| {
+                Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/wasm/liblvgl.wasm")
+            }),
     )?;
     let display = runtime.call_raw("lvw_display_create", (160u32, 96u32, 1u32))?;
     let screen = runtime
@@ -60,11 +83,7 @@ fn load(expected: &Value) -> Result<(Runtime, u32, UnsafePointer)> {
 }
 
 fn data(runtime: &mut Runtime, fixture: &Value) -> Result<(UnsafePointer, i32)> {
-    let bytes = std::fs::read(
-        Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../tests/fixtures/tinyttf")
-            .join(fixture["file"].as_str().unwrap()),
-    )?;
+    let bytes = std::fs::read(fixtures().join(fixture["file"].as_str().unwrap()))?;
     let pointer = runtime.alloc(bytes.len() as u32)?;
     runtime.write_memory(pointer, &bytes)?;
     // Native TinyTTF borrows these bytes until all fonts using them are destroyed.
@@ -78,13 +97,23 @@ fn create_font(
     cache: Option<i32>,
 ) -> Result<UnsafePointer> {
     let pointer = if let Some(cache) = cache {
-        runtime.raw()?.lv_tiny_ttf_create_data_ex(
-            data.0,
-            data.1,
-            number(&size["size"]),
-            values::LV_FONT_KERNING_NORMAL,
-            cache,
-        )?
+        UnsafePointer(if values::LVGL_VERSION_MINOR == 0 {
+            runtime.call_raw(
+                "lv_tiny_ttf_create_data_ex",
+                (data.0.0, data.1, number(&size["size"]), cache),
+            )?
+        } else {
+            runtime.call_raw(
+                "lv_tiny_ttf_create_data_ex",
+                (
+                    data.0.0,
+                    data.1,
+                    number(&size["size"]),
+                    values::LV_FONT_KERNING_NORMAL,
+                    cache,
+                ),
+            )?
+        })
     } else {
         runtime
             .raw()?
@@ -134,23 +163,38 @@ fn verify_glyph(
         )?,
         resolved.0
     );
-    assert_eq!(values::LV_FONT_GLYPH_FORMAT_T_SIZE, 4);
-    assert_eq!(
-        read_u32(
-            runtime,
-            descriptor.0 + offset(values::LV_FONT_GLYPH_DSC_T_FIELDS, "format")
-        )?,
-        values::LV_FONT_GLYPH_FORMAT_A8 as u32
-    );
+    if values::LVGL_VERSION_MINOR == 0 {
+        let bit = values::LV_FONT_GLYPH_DSC_T_FIELDS
+            .iter()
+            .find(|field| field.name == Some("bpp"))
+            .unwrap();
+        assert_eq!(bit.bit_width, Some(4));
+        let mut byte = [0];
+        runtime.read_memory(descriptor.0 + (bit.bit_offset / 8) as u32, &mut byte)?;
+        assert_eq!((byte[0] >> (bit.bit_offset % 8)) & 15, 8);
+    } else {
+        assert_eq!(
+            read_u32(
+                runtime,
+                descriptor.0 + offset(values::LV_FONT_GLYPH_DSC_T_FIELDS, "format")
+            )?,
+            8
+        );
+    }
     assert_eq!(
         runtime
             .raw()?
             .lv_font_get_glyph_width(font, number(&expected["codepoints"][name]), 0)?,
         number(&glyph["advance"])
     );
-    let bitmap = runtime
-        .raw()?
-        .lv_font_get_glyph_bitmap(descriptor, UnsafePointer(0))?;
+    let bitmap = UnsafePointer(if values::LVGL_VERSION_MINOR == 0 {
+        runtime.call_raw(
+            "lv_font_get_glyph_bitmap",
+            (descriptor.0, number(&expected["codepoints"][name]), 0u32),
+        )?
+    } else {
+        runtime.call_raw("lv_font_get_glyph_bitmap", (descriptor.0, 0u32))?
+    });
     assert_ne!(bitmap.0, 0);
     assert_ne!(
         read_u32(
@@ -172,7 +216,7 @@ fn verify_glyph(
             );
         }
     }
-    runtime.raw()?.lv_font_glyph_release_draw_data(descriptor)?;
+    release_glyph(runtime, descriptor)?;
     assert_eq!(
         read_u32(
             runtime,
@@ -217,15 +261,16 @@ fn label(
         raw.lv_obj_set_style_text_opa(object, values::LV_OPA_COVER, values::LV_PART_MAIN)?;
         raw.lv_obj_set_style_text_letter_space(object, 0, values::LV_PART_MAIN)?;
         raw.lv_obj_set_style_text_line_space(object, 0, values::LV_PART_MAIN)?;
-        raw.lv_obj_set_style_text_leading_trim(
-            object,
-            values::LV_TEXT_LEADING_TRIM_NONE,
-            values::LV_PART_MAIN,
-        )?;
         raw.lv_obj_set_style_text_align(object, values::LV_TEXT_ALIGN_LEFT, values::LV_PART_MAIN)?;
         raw.lv_obj_set_style_text_decor(object, values::LV_TEXT_DECOR_NONE, values::LV_PART_MAIN)?;
         raw.lv_obj_set_style_pad_all(object, 0, values::LV_PART_MAIN)?;
         raw.lv_obj_set_pos(object, 4, y)?;
+    }
+    if values::LVGL_VERSION_MINOR != 0 {
+        runtime.call_raw::<_, ()>(
+            "lv_obj_set_style_text_leading_trim",
+            (object.0, 0i32, values::LV_PART_MAIN),
+        )?;
     }
     runtime.free(color.0)?;
     set_text(runtime, object, expected, names)?;
@@ -530,5 +575,131 @@ fn tinyttf_cache_resize_and_shared_labels_follow_explicit_font_lifetimes() -> Re
         runtime.raw()?.lv_tiny_ttf_destroy(replacement)?;
     }
     runtime.free(data.0.0)?;
+    runtime.shutdown()
+}
+
+#[test]
+fn legacy_tinyttf_cache_ownership_survives_eviction_resize_and_fallback_drawing() -> Result<()> {
+    if values::LVGL_VERSION_MINOR != 0 {
+        return Ok(());
+    }
+    fn acquire(
+        runtime: &mut Runtime,
+        font: UnsafePointer,
+        descriptor: UnsafePointer,
+        letter: i32,
+    ) -> Result<u32> {
+        assert_eq!(
+            runtime
+                .raw()?
+                .lv_font_get_glyph_dsc(font, descriptor, letter, 0)?,
+            1
+        );
+        assert_ne!(
+            runtime.call_raw::<_, u32>("lv_font_get_glyph_bitmap", (descriptor.0, letter, 0u32))?,
+            0
+        );
+        read_u32(
+            runtime,
+            descriptor.0 + offset(values::LV_FONT_GLYPH_DSC_T_FIELDS, "entry"),
+        )
+    }
+    fn count(runtime: &mut Runtime, cache: u32) -> Result<u32> {
+        runtime.call_raw("lv_cache_get_size", (cache, 0u32))
+    }
+    let expected = expected();
+    let (mut runtime, display, screen) = load(&expected)?;
+    let input = data(&mut runtime, &expected["font"])?;
+    let first = create_font(&mut runtime, input, &expected["sizes"][0], Some(0))?;
+    let second = create_font(&mut runtime, input, &expected["sizes"][1], Some(1))?;
+    let descriptor = UnsafePointer(runtime.alloc(values::LV_FONT_GLYPH_DSC_T_SIZE)?);
+    acquire(&mut runtime, first, descriptor, 65)?;
+    release_glyph(&mut runtime, descriptor)?;
+    let entry = acquire(&mut runtime, second, descriptor, 66)?;
+    let cache: u32 = runtime.call_raw("lv_cache_entry_get_cache", (entry,))?;
+    assert_eq!(
+        runtime.call_raw::<_, u32>("lv_cache_get_max_size", (cache, 0u32))?,
+        128
+    );
+    assert_eq!(count(&mut runtime, cache)?, 2);
+    runtime.raw()?.lv_tiny_ttf_set_size(first, 32)?;
+    assert_eq!(count(&mut runtime, cache)?, 1);
+    verify_glyph(
+        &mut runtime,
+        first,
+        first,
+        &expected,
+        &expected["sizes"][2],
+        "A",
+    )?;
+    runtime.raw()?.lv_tiny_ttf_destroy(first)?;
+    assert_eq!(count(&mut runtime, cache)?, 1);
+    assert_eq!(
+        runtime.call_raw::<_, i32>("lv_cache_entry_get_ref", (entry,))?,
+        1
+    );
+    release_glyph(&mut runtime, descriptor)?;
+    runtime.raw()?.lv_tiny_ttf_destroy(second)?;
+    assert_eq!(count(&mut runtime, cache)?, 0);
+    let mut fonts = Vec::new();
+    for _ in 0..132 {
+        let font = create_font(&mut runtime, input, &expected["sizes"][0], None)?;
+        acquire(&mut runtime, font, descriptor, 65)?;
+        release_glyph(&mut runtime, descriptor)?;
+        fonts.push(font);
+    }
+    assert_eq!(count(&mut runtime, cache)?, 128);
+    for font in &fonts[..4] {
+        runtime.raw()?.lv_tiny_ttf_destroy(*font)?;
+    }
+    assert_eq!(count(&mut runtime, cache)?, 128);
+    for font in &fonts[4..] {
+        runtime.raw()?.lv_tiny_ttf_destroy(*font)?;
+    }
+    assert_eq!(count(&mut runtime, cache)?, 0);
+    runtime.free(input.0.0)?;
+
+    let input = data(&mut runtime, &expected["fallback"])?;
+    let fallback = create_font(&mut runtime, input, &expected["sizes"][0], None)?;
+    let original = runtime
+        .raw()?
+        .lv_obj_get_style_text_font(screen, values::LV_PART_MAIN)?;
+    let primary = UnsafePointer(runtime.alloc(values::LV_FONT_T_SIZE)?);
+    let mut bytes = vec![0; values::LV_FONT_T_SIZE as usize];
+    runtime.read_memory(original.0, &mut bytes)?;
+    runtime.write_memory(primary.0, &bytes)?;
+    runtime.write_memory(
+        primary.0 + offset(values::LV_FONT_T_FIELDS, "fallback"),
+        &fallback.0.to_le_bytes(),
+    )?;
+    assert_eq!(
+        read_u32(
+            &runtime,
+            primary.0 + offset(values::LV_FONT_T_FIELDS, "release_glyph")
+        )?,
+        0
+    );
+    let object = label(&mut runtime, screen, primary, &expected, &["Omega"], 4)?;
+    runtime.raw()?.lv_obj_update_layout(screen)?;
+    runtime.raw()?.lv_refr_now(UnsafePointer(display))?;
+    let entry = acquire(&mut runtime, primary, descriptor, 937)?;
+    assert_eq!(
+        read_u32(
+            &runtime,
+            descriptor.0 + offset(values::LV_FONT_GLYPH_DSC_T_FIELDS, "resolved_font")
+        )?,
+        fallback.0
+    );
+    assert_eq!(
+        runtime.call_raw::<_, i32>("lv_cache_entry_get_ref", (entry,))?,
+        1
+    );
+    release_glyph(&mut runtime, descriptor)?;
+    runtime.raw()?.lv_obj_delete(object)?;
+    runtime.free(primary.0)?;
+    runtime.raw()?.lv_tiny_ttf_destroy(fallback)?;
+    assert_eq!(count(&mut runtime, cache)?, 0);
+    runtime.free(input.0.0)?;
+    runtime.free(descriptor.0)?;
     runtime.shutdown()
 }

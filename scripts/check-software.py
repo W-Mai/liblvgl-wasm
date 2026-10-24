@@ -26,7 +26,8 @@ def check(component_filter=None):
     build = output / "software-build"
     preset = (ROOT / "config/base/lv_conf.h").read_text()
     results = []
-    for component, macro in (("gif", "LV_USE_GIF"), ("png", "LV_USE_LODEPNG"), ("png-gif", "LV_USE_GIF")):
+    for component, macro in (("gif", "LV_USE_GIF"), ("png", "LV_USE_LODEPNG"), ("png-gif", "LV_USE_GIF"),
+                             ("tinyttf", "LV_USE_TINY_TTF")):
         if component_filter and component != component_filter:
             continue
         base = preset.replace(f"#define {macro} 0", f"#define {macro} 1")
@@ -38,6 +39,8 @@ def check(component_filter=None):
             cases = [("uncached", 0, 0, 1, component == "gif" and version == "v9.6.0"), ("cached", 16384, 4, 8, True)]
             if component == "png-gif":
                 cases = cases[1:]
+            if component == "tinyttf":
+                cases = [("packed", 0, 0, 1, False), ("aligned", 0, 0, 8, True)]
             if component == "png" and version == "v9.0.0":
                 cases.insert(1, ("headers", 0, 4, 8, False))
             for label, cache_bytes, header_entries, stride, managed in cases:
@@ -54,6 +57,9 @@ def check(component_filter=None):
                     text = config.read_text()
                     before, after = text.rsplit("#endif", 1)
                     config.write_text(before + f"#define LV_GIF_CACHE_DECODE_DATA {int(managed)}\n#endif" + after)
+                if component == "tinyttf":
+                    before, after = config.read_text().rsplit("#endif", 1)
+                    config.write_text(before + "#define LV_TINY_TTF_FILE_SUPPORT 0\n#endif" + after)
                 features = "timer;animation;observer;decoder" if managed else ""
                 environment = {**os.environ, "LVGL_SOURCE_DIR": str(source), "LVGL_CONFIG_PATH": str(config),
                                "LVW_BUILD_DIR": str(build), "LVW_BRIDGE_FEATURES": features}
@@ -69,6 +75,8 @@ def check(component_filter=None):
                     assert constants["LV_USE_LODEPNG"] == "1"
                 if legacy_gif:
                     assert constants["LV_GIF_CACHE_DECODE_DATA"] == str(int(managed))
+                if component == "tinyttf":
+                    assert constants["LV_TINY_TTF_FILE_SUPPORT"] == "0"
                 assert constants["LV_DRAW_BUF_STRIDE_ALIGN"] == str(stride)
                 with (output / f"{name}-consumers.log").open("w") as log:
                     subprocess.run(["bun", "test", "./tests/ndk.test.ts", "./tests/host-sdk.test.ts"], cwd=ROOT,
@@ -88,11 +96,14 @@ def check(component_filter=None):
                                 "evidence": evidence.relative_to(ROOT).as_posix()})
                 if legacy_gif:
                     results[-1]["gif_decode_cache"] = bool(managed)
+                if component == "tinyttf":
+                    results[-1]["tinyttf_file_support"] = False
                 print(f"{name}: pixels, source lifetimes, failure recovery, and relocated consumers passed", flush=True)
     with (output / "software-adapters.log").open("w") as log:
         subprocess.run(["bun", "test", "./tests/native-adapters.test.ts"], cwd=ROOT,
                        env={**os.environ, "LVW_TEST_PNG_SOURCE": str(sources[0][1]),
-                            "LVW_TEST_GIF_SOURCE": str(sources[0][1])},
+                            "LVW_TEST_GIF_SOURCE": str(sources[0][1]),
+                            "LVW_TEST_TINYTTF_SOURCE": str(sources[0][1])},
                        stdout=log, stderr=subprocess.STDOUT, check=True)
     report.write_text(json.dumps(results, indent=2) + "\n")
 
@@ -100,5 +111,5 @@ def check(component_filter=None):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--offline", action="store_true", help="use the cached source archive")
-    parser.add_argument("--component", choices=("png", "gif", "png-gif"), help="check one component group and write a scoped report")
+    parser.add_argument("--component", choices=("png", "gif", "png-gif", "tinyttf"), help="check one component group and write a scoped report")
     check(parser.parse_args().component)
