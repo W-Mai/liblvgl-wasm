@@ -42,6 +42,13 @@ add_custom_target(lvw_ndk DEPENDS lvw_bridge lvw_shims)
 set(LVW_NDK_TARGETS lvgl lvw_wasm_sjlj lvw_bridge lvw_shims)
 if(LV_USE_THORVG OR LV_USE_THORVG_INTERNAL)
     set_target_properties(lvgl_thorvg PROPERTIES EXPORT_NAME thorvg)
+    if(LVW_HEADER_LAYOUT STREQUAL "root")
+        set_property(TARGET lvgl_thorvg PROPERTY INTERFACE_INCLUDE_DIRECTORIES
+            "$<BUILD_INTERFACE:${lvgl_SOURCE_DIR}/src/libs/thorvg>"
+            "$<INSTALL_INTERFACE:include/lvgl/src/libs/thorvg>")
+        set_property(TARGET lvgl_thorvg PROPERTY INTERFACE_SYSTEM_INCLUDE_DIRECTORIES
+            "$<BUILD_INTERFACE:${lvgl_SOURCE_DIR}/src/libs/thorvg>")
+    endif()
     list(APPEND LVW_NDK_TARGETS lvgl_thorvg)
 endif()
 if(LV_USE_FREETYPE)

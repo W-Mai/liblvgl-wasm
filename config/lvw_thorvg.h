@@ -13,7 +13,8 @@
 #undef THORVG_LOTTIE_LOADER_SUPPORT
 #endif
 
-#if LV_USE_LOTTIE
+#if LV_USE_LOTTIE || LVW_THORVG_FILE_LOADER
+#include "lvgl.h"
 /* Both ThorVG file loaders use the same LVGL resource drivers. */
 static inline char * lvw_thorvg_read_file(const char * path, uint32_t * size)
 {

@@ -514,6 +514,47 @@ __attribute__((export_name("ndk_freetype_lifetimes"))) int ndk_freetype_lifetime
 }
 #endif
 '''.replace("FT_BYTES", ",".join(map(str, ft_font))).replace("FT_FALLBACK", ",".join(map(str, ft_fallback)))
+        example += r'''
+#if LV_USE_THORVG_INTERNAL && LVGL_VERSION_MINOR == 0
+#include "lvgl/src/libs/thorvg/thorvg_capi.h"
+__attribute__((export_name("ndk_thorvg_resources"))) int ndk_thorvg_resources(void) {
+    static const char name[] = "ndk-vector.svg";
+    static const char svg[] = "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"8\" height=\"8\">"
+        "<rect x=\"2\" y=\"1\" width=\"3\" height=\"4\" fill=\"#123456\"/></svg>";
+    if (lvw_resource_put((uint32_t)(uintptr_t)name, sizeof(name) - 1,
+                         (uint32_t)(uintptr_t)svg, sizeof(svg) - 1) != 0) return -1;
+    Tvg_Paint * missing = tvg_picture_new();
+    if (tvg_picture_load(missing, "W:absent.svg") == TVG_RESULT_SUCCESS) return -2;
+    tvg_paint_del(missing);
+    Tvg_Canvas * canvases[2];
+    uint32_t pixels[2][64];
+    for (int i = 0; i < 2; i++) {
+        for (int p = 0; p < 64; p++) pixels[i][p] = 0xff202830;
+        canvases[i] = tvg_swcanvas_create();
+        if (!canvases[i]) return -3;
+        if (tvg_swcanvas_set_target(canvases[i], pixels[i], 8, 8, 8, TVG_COLORSPACE_ARGB8888)
+            != TVG_RESULT_SUCCESS) return -4;
+        Tvg_Paint * picture = tvg_picture_new();
+        char path[] = "W:ndk-vector.svg";
+        if (tvg_picture_load(picture, path) != TVG_RESULT_SUCCESS) return -5;
+        lv_memzero(path, sizeof(path));
+        if (tvg_canvas_push(canvases[i], picture) != TVG_RESULT_SUCCESS) return -6;
+    }
+    for (int i = 0; i < 2; i++) {
+        if (tvg_canvas_draw(canvases[i]) != TVG_RESULT_SUCCESS ||
+            tvg_canvas_sync(canvases[i]) != TVG_RESULT_SUCCESS) return -7;
+        for (int y = 0; y < 8; y++) {
+            for (int x = 0; x < 8; x++) {
+                uint32_t expected = x >= 2 && x < 5 && y >= 1 && y < 5 ? 0xff123456 : 0xff202830;
+                if (pixels[i][y * 8 + x] != expected) return -8;
+            }
+        }
+        if (tvg_canvas_destroy(canvases[i]) != TVG_RESULT_SUCCESS) return -9;
+    }
+    return 0;
+}
+#endif
+'''
         (project / "main.c").write_text('#include "layout.h"\n' + example)
         (project / "main.cpp").write_text('#include "layout.h"\n' + example)
         (project / "eh.cpp").write_text('''#include "lvw.h"

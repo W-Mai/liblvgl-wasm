@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- LVGL 9.0.0 vector drawing with original API signatures, resource-backed ThorVG loading, object clipping, layer offsets, and source-matched NDK/host SDK packages.
+- Correct straight-alpha vector composition in LVGL 9.0.0 and 9.6.0 transparent layers while preserving existing target pixels.
+
 - LVGL 9.0.0 FreeType bitmap fonts with copied resource paths, shared font caches, resolved-font glyph release, and relocated native/host SDK checks.
 - Source inspection includes component configuration macros outside `LV_USE_*`, preserving file-support and filesystem-port checks.
 - LVGL 9.0.0 TinyTTF fonts with cache invalidation scoped to each font, glyph release through the resolved font, original API signatures, and relocated native/host SDK checks.

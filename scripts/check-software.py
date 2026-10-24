@@ -30,10 +30,11 @@ def cached_freetype(build):
         shutil.copyfile(archive, destination)
 
 
-def check(component_filter=None):
+def check(component_filter=None, version_filter=None):
     output = ROOT / "target/compatibility"
     output.mkdir(parents=True, exist_ok=True)
-    report = output / (f"software-{component_filter}-report.json" if component_filter else "software-report.json")
+    scope = "-".join(filter(None, ("software", component_filter, version_filter)))
+    report = output / f"{scope}-report.json"
     report.unlink(missing_ok=True)
     default = json.loads((ROOT / "target/wasm/lvgl-source.json").read_text())
     assert default["version"] == {"major": 9, "minor": 6, "patch": 0, "info": ""}
@@ -43,7 +44,8 @@ def check(component_filter=None):
     preset = (ROOT / "config/base/lv_conf.h").read_text()
     results = []
     for component, macro in (("gif", "LV_USE_GIF"), ("png", "LV_USE_LODEPNG"), ("png-gif", "LV_USE_GIF"),
-                             ("tinyttf", "LV_USE_TINY_TTF"), ("freetype", "LV_USE_FREETYPE")):
+                             ("tinyttf", "LV_USE_TINY_TTF"), ("freetype", "LV_USE_FREETYPE"),
+                             ("vector", "LV_USE_VECTOR_GRAPHIC")):
         if component_filter and component != component_filter:
             continue
         base = preset.replace(f"#define {macro} 0", f"#define {macro} 1")
@@ -52,13 +54,20 @@ def check(component_filter=None):
         if component == "freetype":
             base = base.replace("#define LV_USE_FREETYPE 1", "#define LV_USE_FREETYPE 1\n#define LV_FREETYPE_USE_LVGL_PORT 1")
             cached_freetype(build)
+        if component == "vector":
+            base = base.replace("#define LV_USE_THORVG 0", "#define LV_USE_THORVG 1")
+            base = base.replace("#define LV_USE_THORVG_INTERNAL 0", "#define LV_USE_THORVG_INTERNAL 1")
+            before, after = base.rsplit("#endif", 1)
+            base = before + "#define LV_USE_FLOAT 1\n#define LV_USE_MATRIX 1\n#endif" + after
         for version, source in sources:
+            if version_filter and version != version_filter:
+                continue
             if component == "png-gif" and version != "v9.0.0":
                 continue
             cases = [("uncached", 0, 0, 1, component == "gif" and version == "v9.6.0"), ("cached", 16384, 4, 8, True)]
             if component == "png-gif":
                 cases = cases[1:]
-            if component in {"tinyttf", "freetype"}:
+            if component in {"tinyttf", "freetype", "vector"}:
                 cases = [("packed", 0, 0, 1, False), ("aligned", 0, 0, 8, True)]
             if component == "png" and version == "v9.0.0":
                 cases.insert(1, ("headers", 0, 4, 8, False))
@@ -102,6 +111,9 @@ def check(component_filter=None):
                     assert constants["LV_FREETYPE_USE_LVGL_PORT"] == "1"
                     assert constants["LV_USE_VECTOR_GRAPHIC"] == "0"
                     assert constants["LV_USE_TINY_TTF"] == str(int(managed))
+                if component == "vector":
+                    assert constants["LV_USE_FLOAT"] == "1"
+                    assert constants["LV_USE_THORVG_INTERNAL"] == "1"
                 assert constants["LV_DRAW_BUF_STRIDE_ALIGN"] == str(stride)
                 contracts = component.replace("-", " ") + (" tinyttf" if component == "freetype" and managed else "")
                 with (output / f"{name}-consumers.log").open("w") as log:
@@ -127,12 +139,18 @@ def check(component_filter=None):
                 if component == "freetype":
                     results[-1].update({"freetype_port": "lvgl", "freetype_render_modes": ["bitmap"],
                                        "software_contracts": contracts.split()})
+                if component == "vector":
+                    results[-1].update({"thorvg": "0.11.99" if version == "v9.0.0" else "0.15.3",
+                                       "software_contracts": contracts.split()})
                 print(f"{name}: pixels, source lifetimes, failure recovery, and relocated consumers passed", flush=True)
+    if not results:
+        raise ValueError("No software configurations match the requested component and version")
     with (output / "software-adapters.log").open("w") as log:
         subprocess.run(["bun", "test", "./tests/native-adapters.test.ts"], cwd=ROOT,
                        env={**os.environ, "LVW_TEST_PNG_SOURCE": str(sources[0][1]),
                             "LVW_TEST_GIF_SOURCE": str(sources[0][1]),
-                            "LVW_TEST_TINYTTF_SOURCE": str(sources[0][1])},
+                            "LVW_TEST_TINYTTF_SOURCE": str(sources[0][1]),
+                            "LVW_TEST_THORVG_SOURCE": str(sources[0][1])},
                        stdout=log, stderr=subprocess.STDOUT, check=True)
     report.write_text(json.dumps(results, indent=2) + "\n")
 
@@ -140,5 +158,7 @@ def check(component_filter=None):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--offline", action="store_true", help="use the cached source archive")
-    parser.add_argument("--component", choices=("png", "gif", "png-gif", "tinyttf", "freetype"), help="check one component group and write a scoped report")
-    check(parser.parse_args().component)
+    parser.add_argument("--component", choices=("png", "gif", "png-gif", "tinyttf", "freetype", "vector"), help="check one component group and write a scoped report")
+    parser.add_argument("--version", choices=("v9.0.0", "v9.6.0"), help="check one version and write a scoped report")
+    args = parser.parse_args()
+    check(args.component, args.version)

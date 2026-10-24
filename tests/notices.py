@@ -99,6 +99,23 @@ def check():
         link.unlink()
         report["configuration"] = {"LV_USE_THORVG_INTERNAL": {"category": "integer", "value": "1"}}
         collect("requires matching supplemental materials")
+        thorvg = source / "src/libs/thorvg"
+        thorvg.mkdir(parents=True)
+        (thorvg / "raster.cpp").write_bytes(original)
+        files = {"raster.cpp": hashlib.sha256(original).hexdigest()}
+        identity = hashlib.sha256(json.dumps(files, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+        pinned["thorvg_embedded"] = {identity: {"version": "fixture", "origin": "fixture://thorvg",
+                                               "source_directory": "src/libs/thorvg"}}
+        pinned_path.write_text(json.dumps(pinned))
+        collect()
+        component = json.loads(manifest_path.read_text())["components"]["thorvg"]
+        assert component["source_tree_sha256"] == identity and component["files"] == files
+        assert component["version"] == "fixture"
+        assert (output / "thorvg/raster.cpp").read_bytes() == original
+        previous = manifest_path.read_bytes()
+        (thorvg / "raster.cpp").write_bytes(original + b"changed")
+        collect("requires matching supplemental materials")
+        assert manifest_path.read_bytes() == previous
         report["source"] = str(root)
         collect("belongs to a different source directory")
         report["source"] = str(source)

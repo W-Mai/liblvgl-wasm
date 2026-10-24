@@ -28,7 +28,7 @@ def check(output, build=None):
     if any(name not in {"timers", "animations", "observers", "decoders"} for name in callbacks):
         raise ValueError(f"unknown callback contract: {callbacks}")
     software = os.environ.get("LVW_TEST_SOFTWARE", "").split()
-    if any(name not in {"png", "gif", "tinyttf", "freetype"} for name in software):
+    if any(name not in {"png", "gif", "tinyttf", "freetype", "vector"} for name in software):
         raise ValueError(f"unknown software contract: {software}")
     contracts = callbacks + software
     build = build or ROOT / "target/wasm"
@@ -105,6 +105,7 @@ def check(output, build=None):
                                "LVW_TEST_GIF_FIXTURES": str(package / "rust/tests/gif"),
                                "LVW_TEST_TINYTTF_FIXTURES": str(package / "rust/tests/tinyttf"),
                                "LVW_TEST_FREETYPE_FIXTURES": str(package / "rust/tests/freetype"),
+                               "LVW_TEST_VECTOR_FIXTURES": str(package / "rust/tests/vector"),
                                "LVW_TEST_TS_RUNTIME": str(package / "typescript/index.js"),
                                "CARGO_TARGET_DIR": str(ROOT / "target/rust")}
                 environment.pop("LVW_RUST_BINDINGS", None)

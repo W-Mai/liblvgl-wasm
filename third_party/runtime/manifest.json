@@ -281,6 +281,13 @@
     "wasi-libc/musl-fts-NOTICE.wasi-libc.md": "6aa429513e3e883111aceab81f80f9da38613b7f74c966393ff33470c93a9daa",
     "zig/LICENSE": "5c537d6853e005298a285d508cff9ac7192cea23576c840d485b2b586a7ff177"
   },
+  "thorvg_embedded": {
+    "eb8c88e70c5d710a591e17ba2d5199052e691d468ea5dba2662e054879cd7096": {
+      "version": "0.11.99",
+      "origin": "https://codeload.github.com/lvgl/lvgl/tar.gz/refs/tags/v9.0.0",
+      "source_directory": "src/libs/thorvg"
+    }
+  },
   "thorvg": {
     "origin": "https://github.com/lvgl/lvgl/releases/download/v9.6.0/lvgl-v9.6.0-lite.zip",
     "source_directory": "src/libs/thorvg",

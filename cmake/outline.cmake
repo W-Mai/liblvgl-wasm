@@ -1,4 +1,4 @@
-# Adapt outline compositing and scaling without modifying the pinned source checkout.
+# Adapt outline scaling without modifying the pinned source checkout.
 set(LVW_OUTLINE_SOURCE "${lvgl_SOURCE_DIR}/src/draw/sw/lv_draw_sw_letter.c")
 set(LVW_OUTLINE_ADAPTED "${CMAKE_CURRENT_BINARY_DIR}/lvgl-adapted/lv_draw_sw_letter.c")
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${LVW_OUTLINE_SOURCE}")
@@ -30,14 +30,6 @@ lvw_outline_replace([=[        scale = LV_FREETYPE_F26DOT6_TO_FLOAT(lv_freetype_
         scale = (float)font_dsc->size / (float)font_dsc->cache_node->ref_size;
 ]=])
 
-lvw_outline_replace([=[    lv_draw_image_dsc_init(&img_dsc);
-    img_dsc.src = draw_buf;
-]=] [=[    /* ThorVG writes premultiplied pixels; select the matching image compositor. */
-    draw_buf->header.cf = LV_COLOR_FORMAT_ARGB8888_PREMULTIPLIED;
-    draw_buf->header.flags |= LV_IMAGE_FLAGS_PREMULTIPLIED;
-    lv_draw_image_dsc_init(&img_dsc);
-    img_dsc.src = draw_buf;
-]=])
 file(CONFIGURE OUTPUT "${LVW_OUTLINE_ADAPTED}" CONTENT "${LVW_OUTLINE_CODE}" @ONLY)
 
 get_target_property(LVW_LVGL_SOURCES lvgl SOURCES)

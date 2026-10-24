@@ -1,12 +1,89 @@
-use std::path::Path;
-use std::sync::Arc;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::{Arc, OnceLock};
 
-use liblvgl_wasm_host::{RawApi, Result, Runtime, UnsafePointer, values};
+use liblvgl_wasm_host::{CallbackContext, RawApi, Result, Runtime, UnsafePointer, values};
 use serde_json::Value;
 
 fn fixture() -> Value {
-    serde_json::from_str(include_str!("../../../tests/fixtures/vector/expected.json")).unwrap()
+    let directory = std::env::var_os("LVW_TEST_VECTOR_FIXTURES")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| {
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/vector")
+        });
+    serde_json::from_slice(&std::fs::read(directory.join("expected.json")).unwrap()).unwrap()
+}
+
+const LEGACY: bool = values::LVGL_VERSION_MINOR == 0;
+
+fn metadata() -> &'static Value {
+    static API: OnceLock<Value> = OnceLock::new();
+    API.get_or_init(|| {
+        let path = std::env::var_os("LVW_TEST_API")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| {
+                Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/wasm/api.json")
+            });
+        serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap()
+    })
+}
+
+fn record(name: &str) -> &'static Value {
+    metadata()["types"]
+        .as_object()
+        .unwrap()
+        .values()
+        .find(|node| node["kind"] == "record" && node["name"] == name)
+        .unwrap()
+}
+
+fn field(record: &Value, name: &str) -> u32 {
+    let field = record["fields"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|field| field["name"] == name)
+        .unwrap();
+    assert!(field["bit_width"].is_null());
+    let bits = field["bit_offset"].as_u64().unwrap();
+    assert_eq!(bits % 8, 0);
+    (bits / 8) as u32
+}
+
+fn vector_name(method: &str) -> String {
+    let name = format!(
+        "{}{}",
+        if LEGACY {
+            "lv_vector_dsc_"
+        } else {
+            "lv_draw_vector_dsc_"
+        },
+        method
+    );
+    export_name(&name).to_owned()
+}
+
+fn export_name(name: &str) -> &'static str {
+    metadata()["declarations"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|entry| entry["name"] == name)
+        .unwrap()["export_name"]
+        .as_str()
+        .unwrap()
+}
+
+macro_rules! vector {
+    ($context:expr, $method:literal, $params:expr) => {
+        $context.call_raw::<_, ()>(&vector_name($method), $params)
+    };
+}
+
+fn vector_create(context: &mut CallbackContext<'_>, layer: UnsafePointer) -> Result<UnsafePointer> {
+    context
+        .call_raw(&vector_name("create"), (layer.0,))
+        .map(UnsafePointer)
 }
 
 fn number(value: &Value) -> f64 {
@@ -34,7 +111,11 @@ fn color(api: &mut RawApi<'_>, rgb: &Value) -> Result<UnsafePointer> {
 
 fn load(data: &Value) -> Result<(Runtime, u32, UnsafePointer)> {
     let mut runtime = Runtime::from_file(
-        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/wasm/liblvgl.wasm"),
+        std::env::var_os("LVW_TEST_CORE")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| {
+                Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/wasm/liblvgl.wasm")
+            }),
     )?;
     let display = runtime.call_raw(
         "lvw_display_create",
@@ -77,23 +158,43 @@ fn frame(runtime: &mut Runtime, display: u32, screen: UnsafePointer) -> Result<V
     Ok(image)
 }
 
-fn append_rectangle(api: &mut RawApi<'_>, path: UnsafePointer, rectangle: &Value) -> Result<()> {
-    api.lv_vector_path_append_rectangle(
-        path,
-        number(&rectangle[0]) as f32,
-        number(&rectangle[1]) as f32,
-        number(&rectangle[2]) as f32,
-        number(&rectangle[3]) as f32,
-        0.0,
-        0.0,
-    )
+fn append_rectangle(
+    api: &mut CallbackContext<'_>,
+    path: UnsafePointer,
+    rectangle: &Value,
+) -> Result<()> {
+    let [x, y, w, h] = std::array::from_fn(|index| number(&rectangle[index]) as f32);
+    if !LEGACY {
+        return api.call_raw(
+            "lv_vector_path_append_rectangle",
+            (path.0, x, y, w, h, 0f32, 0f32),
+        );
+    }
+    let area = api.alloc(values::LV_AREA_T_SIZE)?;
+    for (name, value) in ["x1", "y1", "x2", "y2"]
+        .into_iter()
+        .zip([x, y, x + w - 1.0, y + h - 1.0])
+    {
+        assert_eq!(value.fract(), 0.0);
+        api.write_memory(
+            area + offset(values::LV_AREA_T_FIELDS, name),
+            &(value as i32).to_le_bytes(),
+        )?;
+    }
+    api.call_raw::<_, ()>("lv_vector_path_append_rect", (path.0, area, 0f32, 0f32))?;
+    api.free(area)
 }
 
-fn fill(api: &mut RawApi<'_>, descriptor: UnsafePointer, rgb: &Value, opacity: i32) -> Result<()> {
-    let pointer = color(api, rgb)?;
-    api.lv_draw_vector_dsc_set_fill_color(descriptor, pointer)?;
-    api.lv_draw_vector_dsc_set_fill_opa(descriptor, opacity)?;
-    api.free(pointer)
+fn fill(
+    api: &mut CallbackContext<'_>,
+    descriptor: UnsafePointer,
+    rgb: &Value,
+    opacity: i32,
+) -> Result<()> {
+    let pointer = color(&mut api.raw()?, rgb)?;
+    vector!(api, "set_fill_color", (descriptor.0, pointer.0))?;
+    vector!(api, "set_fill_opa", (descriptor.0, opacity))?;
+    api.free(pointer.0)
 }
 
 fn assert_pixel(image: &[u8], width: usize, x: usize, y: usize, rgb: [f64; 3], tolerance: f64) {
@@ -113,6 +214,34 @@ fn composite(background: &Value, foreground: [f64; 3], alpha: f64) -> [f64; 3] {
     })
 }
 
+fn solid_composite(
+    background: &Value,
+    foreground: [f64; 3],
+    opacity: f64,
+    coverage: f64,
+) -> [f64; 3] {
+    if !LEGACY || coverage == 0.0 {
+        return composite(background, foreground, opacity * coverage);
+    }
+    // ThorVG 0.11.99 rounds each premultiplication and blend term upward.
+    let multiply = |value: f64, factor: f64| ((value * factor + 255.0) / 256.0).floor();
+    let byte = (coverage * 255.0).floor();
+    let alpha = if coverage == 1.0 {
+        opacity
+    } else {
+        multiply(opacity, byte)
+    };
+    std::array::from_fn(|channel| {
+        let color = multiply(foreground[channel], opacity);
+        let color = if coverage == 1.0 {
+            color
+        } else {
+            multiply(color, byte)
+        };
+        color + multiply(number(&background[channel]), 255.0 - alpha)
+    })
+}
+
 fn rgb(value: &Value) -> [f64; 3] {
     std::array::from_fn(|channel| number(&value[channel]))
 }
@@ -125,7 +254,7 @@ fn rectangle_coverage(x: usize, y: usize, rectangle: [f64; 4]) -> f64 {
 }
 
 fn verify_scene(
-    draw: fn(&mut RawApi<'_>, UnsafePointer, &Value) -> Result<()>,
+    draw: fn(&mut CallbackContext<'_>, UnsafePointer, &Value) -> Result<()>,
     reference: fn(usize, usize, &Value) -> ([f64; 3], f64),
 ) -> Result<()> {
     let data = fixture();
@@ -136,10 +265,9 @@ fn verify_scene(
     runtime.set_event_handler_with_context(move |context, event| {
         assert_eq!(event.callback_id, 1);
         let event = context.event_pointer()?;
-        let mut api = context.raw()?;
-        let layer = api.lv_event_get_layer(event)?;
+        let layer = context.raw()?.lv_event_get_layer(event)?;
         assert_ne!(layer.0, 0);
-        draw(&mut api, layer, &captured)?;
+        draw(context, layer, &captured)?;
         observed.fetch_add(1, Ordering::SeqCst);
         Ok(())
     })?;
@@ -186,21 +314,24 @@ fn verify_scene(
     runtime.shutdown()
 }
 
-fn draw_solid(api: &mut RawApi<'_>, layer: UnsafePointer, data: &Value) -> Result<()> {
+fn draw_solid(api: &mut CallbackContext<'_>, layer: UnsafePointer, data: &Value) -> Result<()> {
     let rectangle = &data["solid"]["rectangle"];
     let triangle = &data["solid"]["triangle"];
-    let descriptor = api.lv_draw_vector_dsc_create(layer)?;
-    let path = api.lv_vector_path_create(values::LV_VECTOR_PATH_QUALITY_HIGH)?;
+    let descriptor = vector_create(api, layer)?;
+    let path = api
+        .raw()?
+        .lv_vector_path_create(values::LV_VECTOR_PATH_QUALITY_HIGH)?;
     assert_ne!(descriptor.0, 0);
     assert_ne!(path.0, 0);
-    api.lv_vector_path_append_rectangle(
+    append_rectangle(
+        api,
         path,
-        number(&rectangle["x"]) as f32,
-        number(&rectangle["y"]) as f32,
-        number(&rectangle["width"]) as f32,
-        number(&rectangle["height"]) as f32,
-        0.0,
-        0.0,
+        &serde_json::json!([
+            rectangle["x"],
+            rectangle["y"],
+            rectangle["width"],
+            rectangle["height"]
+        ]),
     )?;
     fill(
         api,
@@ -208,37 +339,37 @@ fn draw_solid(api: &mut RawApi<'_>, layer: UnsafePointer, data: &Value) -> Resul
         &rectangle["color"],
         number(&rectangle["opacity"]) as i32,
     )?;
-    api.lv_draw_vector_dsc_add_path(descriptor, path)?;
+    vector!(api, "add_path", (descriptor.0, path.0))?;
     // add_path snapshots geometry and style before the original path is reused.
-    api.lv_vector_path_clear(path)?;
-    let point = api.alloc(values::LV_FPOINT_T_SIZE)?;
+    api.raw()?.lv_vector_path_clear(path)?;
+    let point = api.raw()?.alloc(values::LV_FPOINT_T_SIZE)?;
     for (index, coordinates) in triangle["points"].as_array().unwrap().iter().enumerate() {
         for (axis, field) in ["x", "y"].into_iter().enumerate() {
-            api.write_memory(
+            api.raw()?.write_memory(
                 UnsafePointer(point.0 + offset(values::LV_FPOINT_T_FIELDS, field)),
                 &(number(&coordinates[axis]) as f32).to_le_bytes(),
             )?;
         }
         if index == 0 {
-            api.lv_vector_path_move_to(path, point)?;
+            api.raw()?.lv_vector_path_move_to(path, point)?;
         } else {
-            api.lv_vector_path_line_to(path, point)?;
+            api.raw()?.lv_vector_path_line_to(path, point)?;
         }
     }
-    api.free(point)?;
-    api.lv_vector_path_close(path)?;
+    api.raw()?.free(point)?;
+    api.raw()?.lv_vector_path_close(path)?;
     fill(
         api,
         descriptor,
         &triangle["color"],
         number(&triangle["opacity"]) as i32,
     )?;
-    api.lv_draw_vector_dsc_add_path(descriptor, path)?;
-    api.lv_vector_path_clear(path)?;
-    api.lv_vector_path_delete(path)?;
+    vector!(api, "add_path", (descriptor.0, path.0))?;
+    api.raw()?.lv_vector_path_clear(path)?;
+    api.raw()?.lv_vector_path_delete(path)?;
     fill(api, descriptor, &data["background"], 0)?;
-    api.lv_draw_vector(descriptor)?;
-    api.lv_draw_vector_dsc_delete(descriptor)
+    api.raw()?.lv_draw_vector(descriptor)?;
+    vector!(api, "delete", (descriptor.0,))
 }
 
 fn solid_reference(x: usize, y: usize, data: &Value) -> ([f64; 3], f64) {
@@ -255,10 +386,11 @@ fn solid_reference(x: usize, y: usize, data: &Value) -> ([f64; 3], f64) {
     );
     if coverage != 0.0 {
         return (
-            composite(
+            solid_composite(
                 &data["background"],
                 rgb(&rectangle["color"]),
-                coverage * (255.0 * number(&rectangle["opacity"]) / 256.0).floor(),
+                (255.0 * number(&rectangle["opacity"]) / 256.0).floor(),
+                coverage,
             ),
             1.0,
         );
@@ -275,10 +407,11 @@ fn solid_reference(x: usize, y: usize, data: &Value) -> ([f64; 3], f64) {
         1.0
     };
     (
-        composite(
+        solid_composite(
             &data["background"],
             rgb(&triangle["color"]),
-            coverage * (255.0 * number(&triangle["opacity"]) / 256.0).floor(),
+            (255.0 * number(&triangle["opacity"]) / 256.0).floor(),
+            coverage,
         ),
         if coverage == 0.0 { 0.0 } else { 1.0 },
     )
@@ -289,10 +422,16 @@ fn vector_paths_snapshot_geometry_style_and_render_transparent_edges() -> Result
     verify_scene(draw_solid, solid_reference)
 }
 
-fn draw_fill_rules(api: &mut RawApi<'_>, layer: UnsafePointer, data: &Value) -> Result<()> {
+fn draw_fill_rules(
+    api: &mut CallbackContext<'_>,
+    layer: UnsafePointer,
+    data: &Value,
+) -> Result<()> {
     let fill_data = &data["fill"];
-    let descriptor = api.lv_draw_vector_dsc_create(layer)?;
-    let path = api.lv_vector_path_create(values::LV_VECTOR_PATH_QUALITY_HIGH)?;
+    let descriptor = vector_create(api, layer)?;
+    let path = api
+        .raw()?
+        .lv_vector_path_create(values::LV_VECTOR_PATH_QUALITY_HIGH)?;
     assert_ne!(descriptor.0, 0);
     assert_ne!(path.0, 0);
     append_rectangle(api, path, &fill_data["outer"])?;
@@ -311,23 +450,31 @@ fn draw_fill_rules(api: &mut RawApi<'_>, layer: UnsafePointer, data: &Value) -> 
     .enumerate()
     {
         let translation = &fill_data["translations"][index];
-        api.lv_draw_vector_dsc_identity(descriptor)?;
-        api.lv_draw_vector_dsc_translate(
-            descriptor,
-            number(&translation[0]) as f32,
-            number(&translation[1]) as f32,
+        vector!(api, "identity", (descriptor.0,))?;
+        vector!(
+            api,
+            "translate",
+            (
+                descriptor.0,
+                number(&translation[0]) as f32,
+                number(&translation[1]) as f32
+            )
         )?;
-        api.lv_draw_vector_dsc_scale(
-            descriptor,
-            number(&fill_data["scale"][0]) as f32,
-            number(&fill_data["scale"][1]) as f32,
+        vector!(
+            api,
+            "scale",
+            (
+                descriptor.0,
+                number(&fill_data["scale"][0]) as f32,
+                number(&fill_data["scale"][1]) as f32
+            )
         )?;
-        api.lv_draw_vector_dsc_set_fill_rule(descriptor, rule)?;
-        api.lv_draw_vector_dsc_add_path(descriptor, path)?;
+        vector!(api, "set_fill_rule", (descriptor.0, rule))?;
+        vector!(api, "add_path", (descriptor.0, path.0))?;
     }
-    api.lv_vector_path_delete(path)?;
-    api.lv_draw_vector(descriptor)?;
-    api.lv_draw_vector_dsc_delete(descriptor)
+    api.raw()?.lv_vector_path_delete(path)?;
+    api.raw()?.lv_draw_vector(descriptor)?;
+    vector!(api, "delete", (descriptor.0,))
 }
 
 fn fill_reference(x: usize, y: usize, data: &Value) -> ([f64; 3], f64) {
@@ -348,10 +495,11 @@ fn fill_reference(x: usize, y: usize, data: &Value) -> ([f64; 3], f64) {
         }
     }
     (
-        composite(
+        solid_composite(
             &data["background"],
             rgb(&fill["color"]),
-            coverage * (255.0 * number(&fill["opacity"]) / 256.0).floor(),
+            (255.0 * number(&fill["opacity"]) / 256.0).floor(),
+            coverage,
         ),
         if coverage == 0.0 { 0.0 } else { 1.0 },
     )
@@ -362,47 +510,92 @@ fn vector_fill_rules_and_fractional_transforms_match_pixel_coverage() -> Result<
     verify_scene(draw_fill_rules, fill_reference)
 }
 
-fn draw_gradient(api: &mut RawApi<'_>, layer: UnsafePointer, data: &Value) -> Result<()> {
+fn draw_gradient(api: &mut CallbackContext<'_>, layer: UnsafePointer, data: &Value) -> Result<()> {
     let gradient = &data["gradient"];
-    let descriptor = api.lv_draw_vector_dsc_create(layer)?;
-    let path = api.lv_vector_path_create(values::LV_VECTOR_PATH_QUALITY_HIGH)?;
+    let descriptor = vector_create(api, layer)?;
+    let path = api
+        .raw()?
+        .lv_vector_path_create(values::LV_VECTOR_PATH_QUALITY_HIGH)?;
     assert_ne!(descriptor.0, 0);
     assert_ne!(path.0, 0);
     append_rectangle(api, path, &gradient["rectangle"])?;
-    let stops = api.alloc(2 * values::LV_GRAD_STOP_T_SIZE)?;
+    let stop_type = record(if LEGACY {
+        "lv_gradient_stop_t"
+    } else {
+        "lv_grad_stop_t"
+    });
+    let stop_size = stop_type["layout"]["size"].as_u64().unwrap() as u32;
+    let grad_type = record("lv_grad_dsc_t");
+    let bytes = if LEGACY {
+        grad_type["layout"]["size"].as_u64().unwrap() as u32
+    } else {
+        2 * stop_size
+    };
+    let storage = api.alloc(bytes)?;
+    api.write_memory(storage, &vec![0; bytes as usize])?;
+    let stops = storage + if LEGACY { field(grad_type, "stops") } else { 0 };
     for (index, stop) in gradient["stops"].as_array().unwrap().iter().enumerate() {
-        let base = stops.0 + index as u32 * values::LV_GRAD_STOP_T_SIZE;
+        let base = stops + index as u32 * stop_size;
         let rgb = &stop["color"];
-        api.lv_color_hex(
-            UnsafePointer(base + offset(values::LV_GRAD_STOP_T_FIELDS, "color")),
+        api.raw()?.lv_color_hex(
+            UnsafePointer(base + field(stop_type, "color")),
             ((number(&rgb[0]) as i32) << 16)
                 | ((number(&rgb[1]) as i32) << 8)
                 | number(&rgb[2]) as i32,
         )?;
         api.write_memory(
-            UnsafePointer(base + offset(values::LV_GRAD_STOP_T_FIELDS, "opa")),
+            base + field(stop_type, "opa"),
             &[number(&stop["opacity"]) as u8],
         )?;
         api.write_memory(
-            UnsafePointer(base + offset(values::LV_GRAD_STOP_T_FIELDS, "frac")),
+            base + field(stop_type, "frac"),
             &[number(&stop["fraction"]) as u8],
         )?;
     }
-    api.lv_draw_vector_dsc_set_fill_linear_gradient(
-        descriptor,
-        number(&gradient["start"][0]) as f32,
-        number(&gradient["start"][1]) as f32,
-        number(&gradient["end"][0]) as f32,
-        number(&gradient["end"][1]) as f32,
-    )?;
-    api.lv_draw_vector_dsc_set_fill_gradient_color_stops(descriptor, stops, 2)?;
-    // The setter copies the stop array; rendering must not retain guest scratch.
-    api.write_memory(stops, &vec![0; 2 * values::LV_GRAD_STOP_T_SIZE as usize])?;
-    api.free(stops)?;
-    api.lv_draw_vector_dsc_add_path(descriptor, path)?;
-    api.lv_vector_path_delete(path)?;
-    api.lv_draw_vector(descriptor)?;
-    api.lv_draw_vector_dsc_delete(descriptor)
+    if LEGACY {
+        api.write_memory(storage + field(grad_type, "stops_count"), &[2])?;
+        let direction = grad_type["fields"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|f| f["name"] == "dir")
+            .unwrap();
+        assert_eq!(direction["bit_width"], 3);
+        let bit = direction["bit_offset"].as_u64().unwrap() as u32;
+        api.write_memory(
+            storage + bit / 8,
+            &[(values::LV_GRAD_DIR_HOR as u8) << (bit % 8)],
+        )?;
+        vector!(
+            api,
+            "set_fill_linear_gradient",
+            (descriptor.0, storage, values::LV_VECTOR_GRADIENT_SPREAD_PAD)
+        )?;
+    } else {
+        vector!(
+            api,
+            "set_fill_linear_gradient",
+            (
+                descriptor.0,
+                number(&gradient["start"][0]) as f32,
+                number(&gradient["start"][1]) as f32,
+                number(&gradient["end"][0]) as f32,
+                number(&gradient["end"][1]) as f32
+            )
+        )?;
+        vector!(
+            api,
+            "set_fill_gradient_color_stops",
+            (descriptor.0, stops, 2i32)
+        )?;
+    }
+    // Both native gradient setters copy the supplied storage.
+    api.write_memory(storage, &vec![0; bytes as usize])?;
+    api.free(storage)?;
+    vector!(api, "add_path", (descriptor.0, path.0))?;
+    api.raw()?.lv_vector_path_delete(path)?;
+    api.raw()?.lv_draw_vector(descriptor)?;
+    vector!(api, "delete", (descriptor.0,))
 }
 
 fn gradient_reference(x: usize, y: usize, data: &Value) -> ([f64; 3], f64) {
@@ -436,59 +629,162 @@ fn vector_linear_gradient_interpolates_color_alpha_and_copies_stops() -> Result<
 }
 
 #[test]
+fn vector_drawing_preserves_clipping_and_translated_transparent_layers() -> Result<()> {
+    for (opacity, backdrop_opacity) in [(255, 0), (128, 0), (128, 96)] {
+        let data = fixture();
+        let (mut runtime, display, screen) = load(&data)?;
+        let object = runtime.raw()?.lv_obj_create(screen)?;
+        runtime.raw()?.lv_obj_remove_style_all(object)?;
+        runtime.raw()?.lv_obj_set_pos(object, 7, 5)?;
+        runtime.raw()?.lv_obj_set_size(object, 24, 20)?;
+        runtime
+            .raw()?
+            .lv_obj_set_style_opa_layered(object, opacity, values::LV_PART_MAIN)?;
+        let backdrop = color(&mut runtime.raw()?, &data["fill"]["color"])?;
+        runtime
+            .raw()?
+            .lv_obj_set_style_bg_color(object, backdrop, values::LV_PART_MAIN)?;
+        runtime.raw()?.free(backdrop)?;
+        runtime
+            .raw()?
+            .lv_obj_set_style_bg_opa(object, backdrop_opacity, values::LV_PART_MAIN)?;
+        let captured = data.clone();
+        runtime.set_event_handler_with_context(move |context, event| {
+            assert_eq!(event.callback_id, 1);
+            let event = context.event_pointer()?;
+            let layer = context.raw()?.lv_event_get_layer(event)?;
+            let descriptor = vector_create(context, layer)?;
+            let path = context
+                .raw()?
+                .lv_vector_path_create(values::LV_VECTOR_PATH_QUALITY_HIGH)?;
+            append_rectangle(context, path, &serde_json::json!([0, 0, 50, 40]))?;
+            fill(
+                context,
+                descriptor,
+                &captured["solid"]["rectangle"]["color"],
+                160,
+            )?;
+            vector!(context, "add_path", (descriptor.0, path.0))?;
+            context.raw()?.lv_vector_path_delete(path)?;
+            context.raw()?.lv_draw_vector(descriptor)?;
+            vector!(context, "delete", (descriptor.0,))
+        })?;
+        assert_eq!(
+            runtime.call_raw::<_, i32>(
+                "lvw_event_add",
+                (object.0, values::LV_EVENT_DRAW_MAIN_END, 1u32)
+            )?,
+            0
+        );
+        let width = number(&data["width"]) as usize;
+        let height = number(&data["height"]) as usize;
+        for _ in 0..2 {
+            let image = frame(&mut runtime, display, screen)?;
+            for y in 0..height {
+                for x in 0..width {
+                    let painted = (7..31).contains(&x) && (5..25).contains(&y);
+                    let expected = if painted {
+                        let a = 159.0 / 255.0;
+                        let b = f64::from(backdrop_opacity) / 255.0 * (1.0 - a);
+                        let foreground = std::array::from_fn(|channel| {
+                            (number(&data["solid"]["rectangle"]["color"][channel]) * a
+                                + number(&data["fill"]["color"][channel]) * b)
+                                / (a + b)
+                        });
+                        composite(
+                            &data["background"],
+                            foreground,
+                            (a + b) * f64::from(opacity),
+                        )
+                    } else {
+                        rgb(&data["background"])
+                    };
+                    assert_pixel(
+                        &image,
+                        width,
+                        x,
+                        y,
+                        expected,
+                        if painted { 3.0 } else { 0.0 },
+                    );
+                }
+            }
+        }
+        runtime.call_raw::<_, i32>("lvw_event_remove", (object.0, 1u32))?;
+        runtime.raw()?.lv_obj_delete(object)?;
+        runtime.shutdown()?;
+    }
+    Ok(())
+}
+
+#[test]
 fn float_configuration_preserves_fractional_arc_and_matrix_values() -> Result<()> {
     let data = fixture();
     let (mut runtime, _, screen) = load(&data)?;
-    let mut api = runtime.raw()?;
-    let arc = api.lv_arc_create(screen)?;
-    api.lv_arc_set_bg_angles(arc, 10.25, 280.75)?;
-    api.lv_arc_set_angles(arc, 20.5, 190.25)?;
-    assert_eq!(api.lv_arc_get_bg_angle_start(arc)?, 10.25);
-    assert_eq!(api.lv_arc_get_bg_angle_end(arc)?, 280.75);
-    assert_eq!(api.lv_arc_get_angle_start(arc)?, 20.5);
-    assert_eq!(api.lv_arc_get_angle_end(arc)?, 190.25);
-    let matrix = api.alloc(values::LV_MATRIX_T_SIZE)?;
-    let point = api.alloc(values::LV_POINT_PRECISE_T_SIZE)?;
-    let result = api.alloc(values::LV_POINT_PRECISE_T_SIZE)?;
-    api.lv_matrix_identity(matrix)?;
-    api.lv_matrix_translate(matrix, 1.25, -2.5)?;
-    api.lv_matrix_scale(matrix, 1.5, 0.5)?;
+    let arc = runtime.raw()?.lv_arc_create(screen)?;
+    runtime.raw()?.lv_arc_set_bg_angles(arc, 10.25, 280.75)?;
+    runtime.raw()?.lv_arc_set_angles(arc, 20.5, 190.25)?;
+    assert_eq!(runtime.raw()?.lv_arc_get_bg_angle_start(arc)?, 10.25);
+    assert_eq!(runtime.raw()?.lv_arc_get_bg_angle_end(arc)?, 280.75);
+    assert_eq!(runtime.raw()?.lv_arc_get_angle_start(arc)?, 20.5);
+    assert_eq!(runtime.raw()?.lv_arc_get_angle_end(arc)?, 190.25);
+    let matrix = runtime.raw()?.alloc(values::LV_MATRIX_T_SIZE)?;
+    runtime.raw()?.lv_matrix_identity(matrix)?;
+    runtime.raw()?.lv_matrix_translate(matrix, 1.25, -2.5)?;
+    runtime.raw()?.lv_matrix_scale(matrix, 1.5, 0.5)?;
+    if LEGACY {
+        let mut bytes = [0u8; 36];
+        runtime.read_memory(matrix.0, &mut bytes)?;
+        let entries: Vec<_> = bytes
+            .chunks_exact(4)
+            .map(|v| f32::from_le_bytes(v.try_into().unwrap()))
+            .collect();
+        assert_eq!(entries, [1.5, 0.0, 1.25, 0.0, 0.5, -2.5, 0.0, 0.0, 1.0]);
+        runtime.free(matrix.0)?;
+        runtime.raw()?.lv_obj_delete(arc)?;
+        return runtime.shutdown();
+    }
+    let point = runtime.raw()?.alloc(values::LV_POINT_PRECISE_T_SIZE)?;
+    let result = runtime.raw()?.alloc(values::LV_POINT_PRECISE_T_SIZE)?;
     for (name, value) in [("x", 2.25f32), ("y", 7.5)] {
-        api.write_memory(
+        runtime.raw()?.write_memory(
             UnsafePointer(point.0 + offset(values::LV_POINT_PRECISE_T_FIELDS, name)),
             &value.to_le_bytes(),
         )?;
     }
-    api.lv_matrix_transform_precise_point(result, matrix, point)?;
+    runtime.call_raw::<_, ()>(
+        export_name("lv_matrix_transform_precise_point"),
+        (result.0, matrix.0, point.0),
+    )?;
     // The native precise-point aggregate API rounds coordinates with roundf.
     for (name, expected) in [("x", 5.0f32), ("y", 1.0)] {
         let mut bytes = [0; 4];
-        api.read_memory(
+        runtime.raw()?.read_memory(
             UnsafePointer(result.0 + offset(values::LV_POINT_PRECISE_T_FIELDS, name)),
             &mut bytes,
         )?;
         assert_eq!(f32::from_le_bytes(bytes), expected);
     }
-    api.free(result)?;
-    api.free(point)?;
-    let point = api.alloc(values::LV_FPOINT_T_SIZE)?;
+    runtime.raw()?.free(result)?;
+    runtime.raw()?.free(point)?;
+    let point = runtime.raw()?.alloc(values::LV_FPOINT_T_SIZE)?;
     for (name, value) in [("x", 2.25f32), ("y", 7.5)] {
-        api.write_memory(
+        runtime.raw()?.write_memory(
             UnsafePointer(point.0 + offset(values::LV_FPOINT_T_FIELDS, name)),
             &value.to_le_bytes(),
         )?;
     }
-    api.lv_matrix_transform_point(matrix, point)?;
+    runtime.call_raw::<_, ()>("lv_matrix_transform_point", (matrix.0, point.0))?;
     for (name, expected) in [("x", 4.625f32), ("y", 1.25)] {
         let mut bytes = [0; 4];
-        api.read_memory(
+        runtime.raw()?.read_memory(
             UnsafePointer(point.0 + offset(values::LV_FPOINT_T_FIELDS, name)),
             &mut bytes,
         )?;
         assert_eq!(f32::from_le_bytes(bytes), expected);
     }
-    api.free(point)?;
-    api.free(matrix)?;
-    api.lv_obj_delete(arc)?;
+    runtime.raw()?.free(point)?;
+    runtime.raw()?.free(matrix)?;
+    runtime.raw()?.lv_obj_delete(arc)?;
     runtime.shutdown()
 }

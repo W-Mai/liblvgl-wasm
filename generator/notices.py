@@ -133,12 +133,19 @@ def collect(source, materials, report, output):
         thorvg_source = source / "src/libs/thorvg"
         if not thorvg_source.is_dir():
             raise ValueError("selected ThorVG source requires matching supplemental materials")
-        source_identity = tree_digest(inventory(thorvg_source))
-        if source_identity != thorvg["source_tree_sha256"]:
+        thorvg_files = inventory(thorvg_source)
+        source_identity = tree_digest(thorvg_files)
+        embedded = pinned.get("thorvg_embedded", {}).get(source_identity)
+        if embedded is not None:
+            # These pinned trees carry their complete notices in native source files.
+            shutil.copytree(thorvg_source, output / "thorvg")
+            thorvg = {**embedded, "source_tree_sha256": source_identity, "files": thorvg_files}
+        elif source_identity == thorvg["source_tree_sha256"]:
+            if inventory(materials / "thorvg") != thorvg["files"]:
+                raise ValueError("pinned ThorVG supplemental materials changed")
+            shutil.copytree(materials / "thorvg", output / "thorvg")
+        else:
             raise ValueError("selected ThorVG source requires matching supplemental materials")
-        if inventory(materials / "thorvg") != thorvg["files"]:
-            raise ValueError("pinned ThorVG supplemental materials changed")
-        shutil.copytree(materials / "thorvg", output / "thorvg")
         if inventory(output / "thorvg") != thorvg["files"]:
             raise ValueError("ThorVG materials changed during collection")
         components["thorvg"] = thorvg
