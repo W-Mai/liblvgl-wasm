@@ -349,6 +349,51 @@ __attribute__((export_name("ndk_png_cleanup"))) int ndk_png_cleanup(void) {
 }
 #endif
 '''.replace("PNG_BYTES", ",".join(map(str, png)))
+        gif = (ROOT / "tests/fixtures/gif/single-pass.gif").read_bytes()
+        example += '''
+#if LV_USE_GIF && LVGL_VERSION_MINOR == 0
+static int gif_ready, gif_ticks;
+static lv_timer_t * gif_replacement_timer;
+static void gif_tick(lv_timer_t * timer) { (void)timer; gif_ticks++; }
+static void gif_finished(lv_event_t * event) {
+    gif_ready++;
+    lv_obj_delete((lv_obj_t *)lv_event_get_target(event));
+    gif_replacement_timer = lv_timer_create(gif_tick, 1, NULL);
+}
+__attribute__((export_name("ndk_gif_lifecycle"))) int ndk_gif_lifecycle(lv_obj_t * parent) {
+    static const uint8_t data[] = {GIF_BYTES};
+    lv_image_dsc_t source;
+    lv_memzero(&source, sizeof(source));
+    source.header.cf = LV_COLOR_FORMAT_RAW_ALPHA;
+    source.data = data;
+    source.data_size = sizeof(data);
+    lv_obj_t * object = lv_gif_create(parent);
+    lv_gif_t * gif = (lv_gif_t *)object;
+    lv_gif_set_src(object, &source);
+    if (!gif->gif || gif->imgdsc.header.w != 9 || gif->imgdsc.header.h != 7 ||
+        gif->imgdsc.header.stride != 36 || gif->timer->period != 80) return -1;
+    lv_gif_pause(object);
+    if (!gif->timer->paused) return -2;
+    lv_gif_resume(object);
+    if (gif->timer->paused) return -3;
+    lv_gif_set_src(object, NULL);
+    if (gif->gif || !gif->timer->paused || lv_image_get_src(object)) return -4;
+    lv_gif_set_src(object, &source);
+    gif_ready = gif_ticks = 0;
+    lv_obj_add_event_cb(object, gif_finished, LV_EVENT_READY, NULL);
+    lv_tick_inc(80); lv_timer_handler();
+    lv_tick_inc(120); lv_timer_handler();
+    if (gif_ready != 0) return -5;
+    lv_tick_inc(160); lv_timer_handler();
+    if (gif_ready != 1) return -6;
+    lv_tick_inc(1); lv_timer_handler();
+    lv_tick_inc(1); lv_timer_handler();
+    if (gif_ticks != 2) return -7;
+    lv_timer_delete(gif_replacement_timer);
+    return 0;
+}
+#endif
+'''.replace("GIF_BYTES", ",".join(map(str, gif)))
         (project / "main.c").write_text('#include "layout.h"\n' + example)
         (project / "main.cpp").write_text('#include "layout.h"\n' + example)
         (project / "eh.cpp").write_text('''#include "lvw.h"

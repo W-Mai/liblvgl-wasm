@@ -251,5 +251,17 @@
   "still": {
     "file": "still.gif",
     "sha256": "f39f7bf37c685f84482c53b5b3672bcb0081158a34cac78d3cf0446661ab04c8"
+  },
+  "single_pass": {
+    "file": "single-pass.gif",
+    "sha256": "8b16aed5eb6f4ffe55882fb4cf0e3403e65cacbd8a79af902fc2444fb71a3e18"
+  },
+  "repeat_once": {
+    "file": "repeat-once.gif",
+    "sha256": "02263619844629073bff3e6e7e2b4683f76c368889270b7011e6769c701da444"
+  },
+  "pixel": {
+    "file": "pixel.gif",
+    "sha256": "9359cdeeaa5431bb413abbe73324fc571f2355243779bb9e65501dd4f2cfa466"
   }
 }

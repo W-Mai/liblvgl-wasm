@@ -6,13 +6,16 @@ use liblvgl_wasm_host::{Result, Runtime, UnsafePointer, values};
 use serde_json::Value;
 
 fn expected() -> Value {
-    serde_json::from_str(include_str!("../../../tests/fixtures/gif/expected.json")).unwrap()
+    serde_json::from_slice(&fixture("expected.json").unwrap()).unwrap()
 }
 
 fn fixture(name: &str) -> Result<Vec<u8>> {
     Ok(std::fs::read(
-        Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../tests/fixtures/gif")
+        std::env::var_os("LVW_TEST_GIF_FIXTURES")
+            .map_or_else(
+                || Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/gif"),
+                std::path::PathBuf::from,
+            )
             .join(name),
     )?)
 }
@@ -27,9 +30,10 @@ fn background(expected: &Value) -> [u8; 4] {
 }
 
 fn load(expected: &Value) -> Result<(Runtime, u32, UnsafePointer)> {
-    let mut runtime = Runtime::from_file(
-        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/wasm/liblvgl.wasm"),
-    )?;
+    let mut runtime = Runtime::from_file(std::env::var_os("LVW_TEST_CORE").map_or_else(
+        || Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/wasm/liblvgl.wasm"),
+        std::path::PathBuf::from,
+    ))?;
     let display = runtime.call_raw("lvw_display_create", (48u32, 32u32, 1u32))?;
     let mut raw = runtime.raw()?;
     let screen = raw.lv_display_get_screen_active(UnsafePointer(display))?;
@@ -146,15 +150,16 @@ fn subscribe(runtime: &mut Runtime, object: UnsafePointer, id: u32) -> Result<()
 
 #[test]
 fn gif_frame_deadlines_queries_finite_loops_and_restart_preserve_pixels() -> Result<()> {
+    if values::LVGL_VERSION_MINOR == 0 {
+        return Ok(());
+    }
     let expected = expected();
     let (mut runtime, display, screen) = load(&expected)?;
     let name = expected["file"].as_str().unwrap();
     let source = upload(&mut runtime, name, &fixture(name)?)?;
     let size = UnsafePointer(runtime.alloc(4)?);
     assert_eq!(
-        runtime
-            .raw()?
-            .lv_gif_get_size(source, size, UnsafePointer(size.0 + 2))?,
+        runtime.call_raw::<_, u32>("lv_gif_get_size", (source.0, size.0, size.0 + 2))?,
         1
     );
     let mut bytes = [0; 4];
@@ -173,15 +178,27 @@ fn gif_frame_deadlines_queries_finite_loops_and_restart_preserve_pixels() -> Res
     let observed = Arc::clone(&ready);
     runtime.set_event_handler_with_context(move |context, event| {
         assert_eq!(event.object, object.0);
-        assert_eq!(context.raw()?.lv_gif_get_current_frame_index(object)?, 0);
+        assert_eq!(
+            context.call_raw::<_, i32>("lv_gif_get_current_frame_index", (object.0,))?,
+            0
+        );
         observed.fetch_add(1, Ordering::SeqCst);
         Ok(())
     })?;
     subscribe(&mut runtime, object, 1)?;
     runtime.raw()?.lv_gif_set_src(object, source)?;
-    assert_eq!(runtime.raw()?.lv_gif_is_loaded(object)?, 1);
-    assert_eq!(runtime.raw()?.lv_gif_get_loop_count(object)?, 0);
-    assert_eq!(runtime.raw()?.lv_gif_get_current_frame_index(object)?, 1);
+    assert_eq!(
+        runtime.call_raw::<_, i32>("lv_gif_is_loaded", (object.0,))?,
+        1
+    );
+    assert_eq!(
+        runtime.call_raw::<_, i32>("lv_gif_get_loop_count", (object.0,))?,
+        0
+    );
+    assert_eq!(
+        runtime.call_raw::<_, i32>("lv_gif_get_current_frame_index", (object.0,))?,
+        1
+    );
     assert_pixels(&mut runtime, display, &expected, Some(0), 5)?;
     // Absolute deadlines: 0, 79, 80, 199, 200, 359, 360 ms.
     for (elapsed, index, completed) in [
@@ -192,16 +209,19 @@ fn gif_frame_deadlines_queries_finite_loops_and_restart_preserve_pixels() -> Res
         (159, 2, 1),
         (1, 0, 1),
     ] {
-        assert_eq!(runtime.raw()?.lv_gif_get_frame_count(object)?, 3);
+        assert_eq!(
+            runtime.call_raw::<_, i32>("lv_gif_get_frame_count", (object.0,))?,
+            3
+        );
         step(&mut runtime, elapsed)?;
         assert_pixels(&mut runtime, display, &expected, Some(index), 5)?;
         assert_eq!(ready.load(Ordering::SeqCst), completed);
         assert_eq!(
-            runtime.raw()?.lv_gif_get_current_frame_index(object)?,
+            runtime.call_raw::<_, i32>("lv_gif_get_current_frame_index", (object.0,))?,
             [1, 2, 0][index]
         );
     }
-    runtime.raw()?.lv_gif_set_loop_count(object, 1)?;
+    runtime.call_raw::<_, ()>("lv_gif_set_loop_count", (object.0, 1))?;
     step(&mut runtime, 80)?;
     step(&mut runtime, 120)?;
     assert_eq!(ready.load(Ordering::SeqCst), 2);
@@ -209,9 +229,15 @@ fn gif_frame_deadlines_queries_finite_loops_and_restart_preserve_pixels() -> Res
     assert_pixels(&mut runtime, display, &expected, Some(2), 5)?;
     assert_eq!(ready.load(Ordering::SeqCst), 2);
     runtime.raw()?.lv_gif_restart(object)?;
-    assert_eq!(runtime.raw()?.lv_gif_get_loop_count(object)?, -1);
-    assert_eq!(runtime.raw()?.lv_gif_get_current_frame_index(object)?, 0);
-    runtime.raw()?.lv_gif_set_loop_count(object, 1)?;
+    assert_eq!(
+        runtime.call_raw::<_, i32>("lv_gif_get_loop_count", (object.0,))?,
+        -1
+    );
+    assert_eq!(
+        runtime.call_raw::<_, i32>("lv_gif_get_current_frame_index", (object.0,))?,
+        0
+    );
+    runtime.call_raw::<_, ()>("lv_gif_set_loop_count", (object.0, 1))?;
     step(&mut runtime, 159)?;
     assert_eq!(ready.load(Ordering::SeqCst), 2);
     step(&mut runtime, 1)?;
@@ -227,6 +253,9 @@ fn gif_frame_deadlines_queries_finite_loops_and_restart_preserve_pixels() -> Res
 
 #[test]
 fn gif_widgets_sharing_a_resource_keep_independent_clocks_and_controls() -> Result<()> {
+    if values::LVGL_VERSION_MINOR == 0 {
+        return Ok(());
+    }
     let expected = expected();
     let (mut runtime, display, screen) = load(&expected)?;
     let name = expected["file"].as_str().unwrap();
@@ -255,7 +284,7 @@ fn gif_widgets_sharing_a_resource_keep_independent_clocks_and_controls() -> Resu
     assert_pixels(&mut runtime, display, &expected, Some(1), 5)?;
     assert_pixels(&mut runtime, display, &expected, Some(1), 25)?;
     runtime.raw()?.lv_gif_restart(first)?;
-    runtime.raw()?.lv_gif_set_loop_count(first, 0)?;
+    runtime.call_raw::<_, ()>("lv_gif_set_loop_count", (first.0, 0))?;
     step(&mut runtime, 119)?;
     assert_pixels(&mut runtime, display, &expected, Some(1), 25)?;
     step(&mut runtime, 1)?;
@@ -272,6 +301,9 @@ fn gif_widgets_sharing_a_resource_keep_independent_clocks_and_controls() -> Resu
 
 #[test]
 fn gif_source_failures_and_synchronous_ready_mutations_leave_no_stale_work() -> Result<()> {
+    if values::LVGL_VERSION_MINOR == 0 {
+        return Ok(());
+    }
     let expected = expected();
     let (mut runtime, display, screen) = load(&expected)?;
     let name = expected["file"].as_str().unwrap();
@@ -284,7 +316,10 @@ fn gif_source_failures_and_synchronous_ready_mutations_leave_no_stale_work() -> 
     runtime.raw()?.lv_gif_set_src(object, source)?;
     for invalid in [UnsafePointer(0), missing, bad] {
         runtime.raw()?.lv_gif_set_src(object, invalid)?;
-        assert_eq!(runtime.raw()?.lv_gif_is_loaded(object)?, 0);
+        assert_eq!(
+            runtime.call_raw::<_, i32>("lv_gif_is_loaded", (object.0,))?,
+            0
+        );
         step(&mut runtime, 240)?;
         assert_pixels(&mut runtime, display, &expected, None, 5)?;
         runtime.raw()?.lv_gif_set_src(object, source)?;
@@ -311,12 +346,15 @@ fn gif_source_failures_and_synchronous_ready_mutations_leave_no_stale_work() -> 
             }
             2 if previous == 0 => {
                 context.raw()?.lv_gif_set_src(object, source)?;
-                context.raw()?.lv_gif_set_loop_count(object, 1)?;
+                context.call_raw::<_, ()>("lv_gif_set_loop_count", (object.0, 1))?;
             }
             3 if previous == 0 => {
-                assert_eq!(context.raw()?.lv_gif_get_loop_count(object)?, 1);
+                assert_eq!(
+                    context.call_raw::<_, i32>("lv_gif_get_loop_count", (object.0,))?,
+                    1
+                );
                 context.raw()?.lv_gif_restart(object)?;
-                context.raw()?.lv_gif_set_loop_count(object, 1)?;
+                context.call_raw::<_, ()>("lv_gif_set_loop_count", (object.0, 1))?;
             }
             _ => {}
         }
@@ -342,7 +380,7 @@ fn gif_source_failures_and_synchronous_ready_mutations_leave_no_stale_work() -> 
     let restarted = gif(&mut runtime, screen, 5)?;
     subscribe(&mut runtime, restarted, 3)?;
     runtime.raw()?.lv_gif_set_src(restarted, source)?;
-    runtime.raw()?.lv_gif_set_loop_count(restarted, 1)?;
+    runtime.call_raw::<_, ()>("lv_gif_set_loop_count", (restarted.0, 1))?;
     step(&mut runtime, 80)?;
     step(&mut runtime, 120)?;
     assert_eq!(ready[2].load(Ordering::SeqCst), 1);
@@ -360,5 +398,228 @@ fn gif_source_failures_and_synchronous_ready_mutations_leave_no_stale_work() -> 
     for pointer in [source, still, bad, missing] {
         runtime.free(pointer.0)?;
     }
+    runtime.shutdown()
+}
+
+#[test]
+fn legacy_gif_frames_loops_callbacks_and_sources_preserve_native_lifetimes() -> Result<()> {
+    if values::LVGL_VERSION_MINOR != 0 {
+        return Ok(());
+    }
+    let expected = expected();
+    let (mut runtime, display, screen) = load(&expected)?;
+    let bytes = fixture(expected["file"].as_str().unwrap())?;
+    let source = upload(&mut runtime, "playback.gif", &bytes)?;
+    let single = upload(
+        &mut runtime,
+        "single-pass.gif",
+        &fixture("single-pass.gif")?,
+    )?;
+    let twice = upload(
+        &mut runtime,
+        "repeat-once.gif",
+        &fixture("repeat-once.gif")?,
+    )?;
+    let pixel = upload(&mut runtime, "pixel.gif", &fixture("pixel.gif")?)?;
+    let object = gif(&mut runtime, screen, 5)?;
+    let ready = Arc::new(AtomicU32::new(0));
+    let observed = Arc::clone(&ready);
+    runtime.set_event_handler(move |_| {
+        observed.fetch_add(1, Ordering::SeqCst);
+        Ok(())
+    })?;
+    subscribe(&mut runtime, object, 1)?;
+    runtime.raw()?.lv_gif_set_src(object, source)?;
+    let mut previous = 0;
+    for (deadline, index) in [
+        (0, 0),
+        (37, 0),
+        (79, 0),
+        (80, 1),
+        (199, 1),
+        (200, 2),
+        (359, 2),
+        (360, 0),
+    ] {
+        step(&mut runtime, deadline - previous)?;
+        previous = deadline;
+        assert_pixels(&mut runtime, display, &expected, Some(index), 5)?;
+    }
+    assert_eq!(ready.load(Ordering::SeqCst), 0);
+    step(&mut runtime, 40)?;
+    let other = gif(&mut runtime, screen, 25)?;
+    runtime.raw()?.lv_gif_set_src(other, source)?;
+    step(&mut runtime, 40)?;
+    assert_pixels(&mut runtime, display, &expected, Some(1), 5)?;
+    assert_pixels(&mut runtime, display, &expected, Some(0), 25)?;
+    step(&mut runtime, 40)?;
+    assert_pixels(&mut runtime, display, &expected, Some(1), 25)?;
+    runtime.raw()?.lv_gif_pause(object)?;
+    step(&mut runtime, 200)?;
+    assert_pixels(&mut runtime, display, &expected, Some(1), 5)?;
+    assert_pixels(&mut runtime, display, &expected, Some(2), 25)?;
+    runtime.raw()?.lv_gif_resume(object)?;
+    step(&mut runtime, 0)?;
+    assert_pixels(&mut runtime, display, &expected, Some(2), 5)?;
+    runtime.raw()?.lv_obj_delete(other)?;
+    for (path, cycles) in [(single, 1), (twice, 2)] {
+        let before = ready.load(Ordering::SeqCst);
+        runtime.raw()?.lv_gif_set_src(object, path)?;
+        for _ in 0..cycles {
+            assert_pixels(&mut runtime, display, &expected, Some(0), 5)?;
+            step(&mut runtime, 80)?;
+            assert_pixels(&mut runtime, display, &expected, Some(1), 5)?;
+            step(&mut runtime, 120)?;
+            assert_pixels(&mut runtime, display, &expected, Some(2), 5)?;
+            step(&mut runtime, 159)?;
+            assert_pixels(&mut runtime, display, &expected, Some(2), 5)?;
+            assert_eq!(ready.load(Ordering::SeqCst), before);
+            step(&mut runtime, 1)?;
+        }
+        assert_eq!(ready.load(Ordering::SeqCst), before + 1);
+        step(&mut runtime, 500)?;
+        assert_pixels(&mut runtime, display, &expected, Some(2), 5)?;
+    }
+    runtime.raw()?.lv_gif_restart(object)?;
+    step(&mut runtime, 159)?;
+    assert_pixels(&mut runtime, display, &expected, Some(2), 5)?;
+    step(&mut runtime, 1)?;
+    assert_pixels(&mut runtime, display, &expected, Some(0), 5)?;
+    runtime.raw()?.lv_obj_delete(object)?;
+
+    let managed = match runtime.create_timer(1000, UnsafePointer(0), |_, _| Ok(())) {
+        Ok(timer) => {
+            runtime.cancel_timer(&timer)?;
+            true
+        }
+        Err(error) => {
+            assert!(error.to_string().contains("lvw_timer_create"));
+            false
+        }
+    };
+    let counts = Arc::new([AtomicU32::new(0), AtomicU32::new(0), AtomicU32::new(0)]);
+    let ticks = Arc::new(AtomicU32::new(0));
+    let observed = Arc::clone(&counts);
+    let timer_observed = Arc::clone(&ticks);
+    runtime.set_event_handler_with_context(move |context, event| {
+        let object = UnsafePointer(event.object);
+        if observed[(event.callback_id - 1) as usize].fetch_add(1, Ordering::SeqCst) != 0 {
+            return Ok(());
+        }
+        match event.callback_id {
+            1 => {
+                context.raw()?.lv_obj_delete(object)?;
+                if managed {
+                    let calls = Arc::clone(&timer_observed);
+                    context.create_timer(5, UnsafePointer(0), move |_, _| {
+                        calls.fetch_add(1, Ordering::SeqCst);
+                        Ok(())
+                    })?;
+                }
+            }
+            2 => context.raw()?.lv_gif_set_src(object, source)?,
+            3 => context.raw()?.lv_gif_restart(object)?,
+            _ => unreachable!(),
+        }
+        Ok(())
+    })?;
+    for id in 1..=3 {
+        let object = gif(&mut runtime, screen, 5)?;
+        subscribe(&mut runtime, object, id)?;
+        runtime.raw()?.lv_gif_set_src(object, single)?;
+        step(&mut runtime, 80)?;
+        step(&mut runtime, 120)?;
+        step(&mut runtime, 160)?;
+        assert_eq!(counts[(id - 1) as usize].load(Ordering::SeqCst), 1);
+        if id == 1 {
+            step(&mut runtime, 5)?;
+            step(&mut runtime, 5)?;
+            assert_eq!(ticks.load(Ordering::SeqCst), if managed { 2 } else { 0 });
+            assert_pixels(&mut runtime, display, &expected, None, 5)?;
+        } else {
+            let delay = if id == 2 { 80 } else { 160 };
+            let index = if id == 2 { 0 } else { 2 };
+            assert_pixels(&mut runtime, display, &expected, Some(index), 5)?;
+            step(&mut runtime, delay - 1)?;
+            assert_pixels(&mut runtime, display, &expected, Some(index), 5)?;
+            step(&mut runtime, 1)?;
+            assert_pixels(
+                &mut runtime,
+                display,
+                &expected,
+                Some(if id == 2 { 1 } else { 0 }),
+                5,
+            )?;
+            runtime.raw()?.lv_obj_delete(object)?;
+        }
+    }
+
+    let descriptor = runtime.alloc(values::LV_IMAGE_DSC_T_SIZE)?;
+    let data = runtime.alloc(bytes.len() as u32)?;
+    runtime.write_memory(data, &bytes)?;
+    runtime.write_memory(descriptor, &vec![0; values::LV_IMAGE_DSC_T_SIZE as usize])?;
+    for (name, value) in [("data", data), ("data_size", bytes.len() as u32)] {
+        let field = values::LV_IMAGE_DSC_T_FIELDS
+            .iter()
+            .find(|field| field.name == Some(name))
+            .unwrap();
+        assert_eq!(field.bit_offset % 8, 0);
+        runtime.write_memory(
+            descriptor + field.bit_offset as u32 / 8,
+            &value.to_le_bytes(),
+        )?;
+    }
+    let object = gif(&mut runtime, screen, 5)?;
+    runtime
+        .raw()?
+        .lv_gif_set_src(object, UnsafePointer(descriptor))?;
+    assert_pixels(&mut runtime, display, &expected, Some(0), 5)?;
+    step(&mut runtime, 80)?;
+    assert_pixels(&mut runtime, display, &expected, Some(1), 5)?;
+    runtime.raw()?.lv_gif_set_src(object, pixel)?;
+    runtime.raw()?.lv_obj_update_layout(object)?;
+    assert_eq!(runtime.raw()?.lv_obj_get_width(object)?, 1);
+    assert_eq!(runtime.raw()?.lv_obj_get_height(object)?, 1);
+    let mut small = expected.clone();
+    small["width"] = 1.into();
+    small["height"] = 1.into();
+    small["frames"][0]["indices"] = serde_json::json!([1]);
+    assert_pixels(&mut runtime, display, &small, Some(0), 5)?;
+    runtime.raw()?.lv_gif_set_src(object, source)?;
+    runtime.raw()?.lv_obj_update_layout(object)?;
+    assert_eq!(runtime.raw()?.lv_obj_get_width(object)?, 9);
+    assert_eq!(runtime.raw()?.lv_obj_get_height(object)?, 7);
+    assert_pixels(&mut runtime, display, &expected, Some(0), 5)?;
+    let mut zero_width = bytes.clone();
+    zero_width[6..8].fill(0);
+    let truncated = upload(&mut runtime, "truncated.gif", &bytes[..13])?;
+    let zero_width = upload(&mut runtime, "zero-width.gif", &zero_width)?;
+    let bad = upload(&mut runtime, "bad.gif", &[0; 32])?;
+    let missing = path(&mut runtime, "missing.gif")?;
+    for invalid in [UnsafePointer(0), truncated, zero_width, bad, missing] {
+        runtime.raw()?.lv_gif_set_src(object, invalid)?;
+        assert_eq!(runtime.raw()?.lv_image_get_src(object)?, UnsafePointer(0));
+        step(&mut runtime, 1000)?;
+        assert_pixels(&mut runtime, display, &expected, None, 5)?;
+        runtime.raw()?.lv_gif_set_src(object, source)?;
+        assert_pixels(&mut runtime, display, &expected, Some(0), 5)?;
+    }
+    runtime.raw()?.lv_obj_delete(object)?;
+    for pointer in [
+        source.0,
+        single.0,
+        twice.0,
+        pixel.0,
+        descriptor,
+        data,
+        truncated.0,
+        zero_width.0,
+        bad.0,
+        missing.0,
+    ] {
+        runtime.free(pointer)?;
+    }
+    step(&mut runtime, 1000)?;
+    assert_pixels(&mut runtime, display, &expected, None, 5)?;
     runtime.shutdown()
 }

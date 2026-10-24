@@ -6,10 +6,9 @@ if(NOT EXISTS "${LVW_PNG_DECODER}")
 endif()
 set(LVW_PNG_LIBRARY "${LVW_PNG_DIRECTORY}/lodepng.c")
 set(LVW_PNG_BINARY "${lvgl_SOURCE_DIR}/src/libs/bin_decoder/lv_bin_decoder.c")
-set(LVW_PNG_CACHE "${lvgl_SOURCE_DIR}/src/misc/cache/lv_image_cache.c")
 set(LVW_PNG_OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/lvgl-adapted")
 set(LVW_PNG_OUTPUTS "${LVW_PNG_OUTPUT}/lv_lodepng.c" "${LVW_PNG_OUTPUT}/lodepng.c"
-    "${LVW_PNG_OUTPUT}/lv_bin_decoder.c" "${LVW_PNG_OUTPUT}/lv_image_cache.c")
+    "${LVW_PNG_OUTPUT}/lv_bin_decoder.c")
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${LVW_PNG_DECODER}" "${LVW_PNG_LIBRARY}")
 file(SHA256 "${LVW_PNG_DECODER}" LVW_PNG_HASH)
 if(LVW_PNG_HASH STREQUAL "a0965af70ff9f00e319fec9c993fa8e44d263c746bb5dcd4e4c9af154de062bb")
@@ -31,8 +30,7 @@ if(NOT LVW_PNG_LEGACY)
     return()
 endif()
 set(LVW_PNG_BINARY_HASH "419298d6c8a397f18e3a79661be508fbfbdbbe3d8b99b90157463d7e6019bd4e")
-set(LVW_PNG_CACHE_HASH "11163cc5ac07aa7512ceff90c0c325f39262b9d484032e359ee43a13884a0fe7")
-foreach(kind BINARY CACHE)
+foreach(kind BINARY)
     set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${LVW_PNG_${kind}}")
     file(SHA256 "${LVW_PNG_${kind}}" LVW_PNG_HASH)
     if(NOT LVW_PNG_HASH STREQUAL LVW_PNG_${kind}_HASH)
@@ -121,21 +119,8 @@ lvw_png_replace("    /*For backward compatibility, all images are not premultipl
     "    if(header->cf == LV_COLOR_FORMAT_RAW || header->cf == LV_COLOR_FORMAT_RAW_ALPHA) return LV_RESULT_INVALID;\n\n    /*For backward compatibility, all images are not premultiplied for now.*/")
 set(LVW_PNG_BINARY_CODE "${LVW_PNG_CODE}")
 
-file(READ "${LVW_PNG_CACHE}" LVW_PNG_CODE)
-lvw_png_replace("void lv_image_cache_drop(const void * src)\n{"
-    [=[void lv_image_cache_drop(const void * src)
-{
-#if LV_IMAGE_HEADER_CACHE_DEF_CNT > 0
-    lv_cache_t * headers = LV_GLOBAL_DEFAULT()->img_header_cache;
-    if(src == NULL) lv_cache_drop_all(headers, NULL);
-    else {
-        lv_image_header_cache_data_t key = { .src_type = lv_image_src_get_type(src), .src = src };
-        lv_cache_drop(headers, &key, NULL);
-    }
-#endif]=])
-set(LVW_PNG_CACHE_CODE "${LVW_PNG_CODE}")
-
-foreach(kind DECODER LIBRARY BINARY CACHE)
+include("${CMAKE_CURRENT_LIST_DIR}/image-cache.cmake")
+foreach(kind DECODER LIBRARY BINARY)
     set(source "${LVW_PNG_${kind}}")
     get_filename_component(filename "${source}" NAME)
     set(adapted "${LVW_PNG_OUTPUT}/${filename}")
