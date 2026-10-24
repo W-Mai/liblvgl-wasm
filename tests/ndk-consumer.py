@@ -441,6 +441,79 @@ __attribute__((export_name("ndk_tinyttf_lifetimes"))) int ndk_tinyttf_lifetimes(
 }
 #endif
 '''.replace("TTF_BYTES", ",".join(map(str, font))).replace("FALLBACK_BYTES", ",".join(map(str, fallback_font)))
+        ft_fixture = json.loads((ROOT / "tests/fixtures/freetype/expected.json").read_text())
+        ft_font = (ROOT / "tests/fixtures/freetype" / ft_fixture["font"]["file"]).read_bytes()
+        ft_fallback = (ROOT / "tests/fixtures/freetype" / ft_fixture["fallback"]["file"]).read_bytes()
+        example += r'''
+#if LV_USE_FREETYPE
+static const void * ndk_ft_bitmap(lv_font_glyph_dsc_t * glyph, uint32_t letter) {
+#if LVGL_VERSION_MINOR == 0
+    return lv_font_get_glyph_bitmap(glyph, letter, NULL);
+#else
+    (void)letter;
+    return lv_font_get_glyph_bitmap(glyph, NULL);
+#endif
+}
+static void ndk_ft_release(lv_font_glyph_dsc_t * glyph) {
+#if LVGL_VERSION_MINOR == 0
+    glyph->resolved_font->release_glyph(glyph->resolved_font, glyph);
+#else
+    lv_font_glyph_release_draw_data(glyph);
+#endif
+}
+__attribute__((export_name("ndk_freetype_lifetimes"))) int ndk_freetype_lifetimes(lv_obj_t * parent) {
+    static const uint8_t bytes[] = {FT_BYTES}, fallback_bytes[] = {FT_FALLBACK};
+    static const char name[] = "ndk-ft.ttf", fallback_name[] = "ndk-ft-fallback.ttf";
+    if (lvw_resource_put((uint32_t)(uintptr_t)name, sizeof(name) - 1,
+                         (uint32_t)(uintptr_t)bytes, sizeof(bytes))) return -1;
+    if (lvw_resource_put((uint32_t)(uintptr_t)fallback_name, sizeof(fallback_name) - 1,
+                         (uint32_t)(uintptr_t)fallback_bytes, sizeof(fallback_bytes))) return -2;
+    char path[] = "W:ndk-ft.ttf";
+    lv_font_t * small = lv_freetype_font_create(path, LV_FREETYPE_FONT_RENDER_MODE_BITMAP, 16, LV_FREETYPE_FONT_STYLE_NORMAL);
+    lv_font_t * peer = lv_freetype_font_create(path, LV_FREETYPE_FONT_RENDER_MODE_BITMAP, 16, LV_FREETYPE_FONT_STYLE_NORMAL);
+    lv_font_t * large = lv_freetype_font_create(path, LV_FREETYPE_FONT_RENDER_MODE_BITMAP, 32, LV_FREETYPE_FONT_STYLE_NORMAL);
+    if (!small || !peer || !large) return -3;
+    lv_memset(path, 'X', sizeof(path) - 1);
+    lv_font_glyph_dsc_t first, second;
+    lv_memzero(&first, sizeof(first));
+    lv_memzero(&second, sizeof(second));
+    if (!lv_font_get_glyph_dsc(small, &first, 'A', 0) || !ndk_ft_bitmap(&first, 'A')) return -4;
+    if (!lv_font_get_glyph_dsc(large, &second, 'B', 0) || !ndk_ft_bitmap(&second, 'B')) return -5;
+    lv_freetype_font_delete(peer);
+#if LVGL_VERSION_MINOR == 0
+    if (lv_cache_entry_get_ref(first.entry) != 1 || lv_cache_entry_get_ref(second.entry) != 1) return -6;
+#endif
+    ndk_ft_release(&first);
+    if (first.entry != NULL) return -7;
+    lv_freetype_font_delete(small);
+#if LVGL_VERSION_MINOR == 0
+    if (lv_cache_entry_get_ref(second.entry) != 1) return -8;
+#endif
+    ndk_ft_release(&second);
+    if (second.entry != NULL) return -9;
+    lv_freetype_font_delete(large);
+    lv_font_t * fallback = lv_freetype_font_create("W:ndk-ft-fallback.ttf", LV_FREETYPE_FONT_RENDER_MODE_BITMAP,
+                                                  16, LV_FREETYPE_FONT_STYLE_NORMAL);
+    if (!fallback) return -10;
+    lv_font_t primary = *LV_FONT_DEFAULT;
+    primary.fallback = fallback;
+    lv_obj_t * label = lv_label_create(parent);
+    lv_obj_set_style_text_font(label, &primary, 0);
+    lv_label_set_text(label, "\xCE\xA9");
+    lv_obj_update_layout(parent);
+    lv_refr_now(NULL);
+    if (!lv_font_get_glyph_dsc(&primary, &first, 937, 0) || first.resolved_font != fallback ||
+        !ndk_ft_bitmap(&first, 937)) return -11;
+#if LVGL_VERSION_MINOR == 0
+    if (lv_cache_entry_get_ref(first.entry) != 1) return -12;
+#endif
+    ndk_ft_release(&first);
+    lv_obj_delete(label);
+    lv_freetype_font_delete(fallback);
+    return 0;
+}
+#endif
+'''.replace("FT_BYTES", ",".join(map(str, ft_font))).replace("FT_FALLBACK", ",".join(map(str, ft_fallback)))
         (project / "main.c").write_text('#include "layout.h"\n' + example)
         (project / "main.cpp").write_text('#include "layout.h"\n' + example)
         (project / "eh.cpp").write_text('''#include "lvw.h"

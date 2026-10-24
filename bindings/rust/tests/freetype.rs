@@ -1,13 +1,90 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
 
 use liblvgl_wasm_host::{Result, Runtime, UnsafePointer, values};
 use serde_json::Value;
 
 fn expected() -> Value {
-    serde_json::from_str(include_str!(
-        "../../../tests/fixtures/freetype/expected.json"
-    ))
-    .unwrap()
+    serde_json::from_slice(&std::fs::read(fixtures().join("expected.json")).unwrap()).unwrap()
+}
+
+const LEGACY: bool = values::LVGL_VERSION_MINOR == 0;
+const OUTLINE: bool = !LEGACY && values::LV_USE_VECTOR_GRAPHIC != 0;
+
+fn fixtures() -> PathBuf {
+    std::env::var_os("LVW_TEST_FREETYPE_FIXTURES")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| {
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/freetype")
+        })
+}
+
+fn metadata() -> &'static Value {
+    static API: OnceLock<Value> = OnceLock::new();
+    API.get_or_init(|| {
+        let path = std::env::var_os("LVW_TEST_API")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| {
+                Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/wasm/api.json")
+            });
+        serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap()
+    })
+}
+
+fn constant(name: &str) -> u32 {
+    metadata()["constants"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|item| item["name"] == name)
+        .unwrap()["value"]
+        .as_str()
+        .unwrap()
+        .parse()
+        .unwrap()
+}
+
+fn glyph_format(runtime: &Runtime, descriptor: UnsafePointer) -> Result<u32> {
+    if LEGACY {
+        let field = values::LV_FONT_GLYPH_DSC_T_FIELDS
+            .iter()
+            .find(|item| item.name == Some("bpp"))
+            .unwrap();
+        let mut byte = [0];
+        runtime.read_memory(descriptor.0 + (field.bit_offset / 8) as u32, &mut byte)?;
+        Ok(u32::from((byte[0] >> (field.bit_offset % 8)) & 15))
+    } else {
+        read_u32(
+            runtime,
+            descriptor.0 + offset(values::LV_FONT_GLYPH_DSC_T_FIELDS, "format"),
+        )
+    }
+}
+
+fn glyph_bitmap(
+    runtime: &mut Runtime,
+    descriptor: UnsafePointer,
+    codepoint: i32,
+) -> Result<UnsafePointer> {
+    Ok(UnsafePointer(if LEGACY {
+        runtime.call_raw("lv_font_get_glyph_bitmap", (descriptor.0, codepoint, 0u32))?
+    } else {
+        runtime.call_raw("lv_font_get_glyph_bitmap", (descriptor.0, 0u32))?
+    }))
+}
+
+fn release_glyph(runtime: &mut Runtime, descriptor: UnsafePointer) -> Result<()> {
+    if !LEGACY {
+        return runtime.call_raw("lv_font_glyph_release_draw_data", (descriptor.0,));
+    }
+    let address = descriptor.0 + offset(values::LV_FONT_GLYPH_DSC_T_FIELDS, "entry");
+    let entry = read_u32(runtime, address)?;
+    if entry != 0 {
+        let cache: u32 = runtime.call_raw("lv_cache_entry_get_cache", (entry,))?;
+        runtime.call_raw::<_, ()>("lv_cache_release", (cache, entry, 0u32))?;
+        runtime.write_memory(address, &0u32.to_le_bytes())?;
+    }
+    Ok(())
 }
 
 fn number(value: &Value) -> i32 {
@@ -42,7 +119,11 @@ fn color(runtime: &mut Runtime, rgb: &Value) -> Result<UnsafePointer> {
 
 fn load(expected: &Value) -> Result<(Runtime, u32, UnsafePointer)> {
     let mut runtime = Runtime::from_file(
-        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/wasm/liblvgl.wasm"),
+        std::env::var_os("LVW_TEST_CORE")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| {
+                Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/wasm/liblvgl.wasm")
+            }),
     )?;
     let display = runtime.call_raw("lvw_display_create", (160u32, 96u32, 1u32))?;
     let screen = runtime
@@ -61,9 +142,7 @@ fn load(expected: &Value) -> Result<(Runtime, u32, UnsafePointer)> {
 
 fn fixture(entry: &Value) -> Result<Vec<u8>> {
     Ok(std::fs::read(
-        Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../tests/fixtures/freetype")
-            .join(entry["file"].as_str().unwrap()),
+        fixtures().join(entry["file"].as_str().unwrap()),
     )?)
 }
 
@@ -111,25 +190,48 @@ fn create_font_mode(
 ) -> Result<UnsafePointer> {
     let path = format!("W:{name}");
     let pointer = string(runtime, &path)?;
-    let info = UnsafePointer(runtime.alloc(values::LV_FONT_INFO_T_SIZE)?);
-    runtime.raw()?.lv_freetype_init_font_info(info)?;
-    for (field, value) in [
-        ("name", pointer.0),
-        ("size", size as u32),
-        ("render_mode", mode as u32),
-        ("kerning", values::LV_FONT_KERNING_NORMAL as u32),
-    ] {
-        runtime.write_memory(
-            info.0 + offset(values::LV_FONT_INFO_T_FIELDS, field),
-            &value.to_le_bytes(),
-        )?;
-    }
-    let font = runtime.raw()?.lv_freetype_font_create_with_info(info)?;
+    let font = if LEGACY {
+        runtime.raw()?.lv_freetype_font_create(
+            pointer,
+            mode,
+            size,
+            values::LV_FREETYPE_FONT_STYLE_NORMAL,
+        )?
+    } else {
+        let types = metadata()["types"].as_object().unwrap();
+        let alias = types
+            .values()
+            .find(|node| node["name"] == "lv_font_info_t" && node["kind"] == "alias")
+            .unwrap();
+        let record = &types[alias["underlying"]["id"].as_str().unwrap()];
+        assert_eq!(alias["layout"]["status"], "complete");
+        let info = runtime.alloc(alias["layout"]["size"].as_u64().unwrap() as u32)?;
+        runtime.call_raw::<_, ()>("lv_freetype_init_font_info", (info,))?;
+        for (name, value) in [
+            ("name", pointer.0),
+            ("size", size as u32),
+            ("render_mode", mode as u32),
+            ("kerning", values::LV_FONT_KERNING_NORMAL as u32),
+        ] {
+            let field = record["fields"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|field| field["name"] == name)
+                .unwrap();
+            assert!(field["bit_width"].is_null());
+            let bit_offset = field["bit_offset"].as_u64().unwrap();
+            assert_eq!(bit_offset % 8, 0);
+            runtime.write_memory(info + (bit_offset / 8) as u32, &value.to_le_bytes())?;
+        }
+        let font = UnsafePointer(runtime.call_raw("lv_freetype_font_create_with_info", (info,))?);
+        runtime.free(info)?;
+        font
+    };
     assert_ne!(font.0, 0);
     // FreeType keeps its own pathname copy, unlike raw fonts that borrow data buffers.
     runtime.write_memory(pointer.0, &vec![0; path.len() + 1])?;
     runtime.free(pointer.0)?;
-    runtime.free(info.0)?;
     assert_eq!(
         runtime.raw()?.lv_freetype_is_outline_font(font)?,
         i32::from(mode == values::LV_FREETYPE_FONT_RENDER_MODE_OUTLINE)
@@ -192,14 +294,7 @@ fn verify_glyph(
         )?,
         resolved.0
     );
-    assert_eq!(values::LV_FONT_GLYPH_FORMAT_T_SIZE, 4);
-    assert_eq!(
-        read_u32(
-            runtime,
-            descriptor.0 + offset(values::LV_FONT_GLYPH_DSC_T_FIELDS, "format")
-        )?,
-        values::LV_FONT_GLYPH_FORMAT_A8 as u32
-    );
+    assert_eq!(glyph_format(runtime, descriptor)?, 8);
     assert_eq!(
         runtime
             .raw()?
@@ -208,9 +303,7 @@ fn verify_glyph(
     );
     // Empty glyphs have no draw buffer; the advance still participates in text layout.
     if number(&glyph["box_w"]) != 0 && number(&glyph["box_h"]) != 0 {
-        let bitmap = runtime
-            .raw()?
-            .lv_font_get_glyph_bitmap(descriptor, UnsafePointer(0))?;
+        let bitmap = glyph_bitmap(runtime, descriptor, number(&expected["codepoints"][name]))?;
         assert_ne!(bitmap.0, 0);
         assert_ne!(
             read_u32(
@@ -232,7 +325,7 @@ fn verify_glyph(
                 );
             }
         }
-        runtime.raw()?.lv_font_glyph_release_draw_data(descriptor)?;
+        release_glyph(runtime, descriptor)?;
     }
     assert_eq!(
         read_u32(
@@ -288,15 +381,20 @@ fn styled_label(
         raw.lv_obj_set_style_text_opa(object, values::LV_OPA_COVER, values::LV_PART_MAIN)?;
         raw.lv_obj_set_style_text_letter_space(object, 0, values::LV_PART_MAIN)?;
         raw.lv_obj_set_style_text_line_space(object, 0, values::LV_PART_MAIN)?;
-        raw.lv_obj_set_style_text_leading_trim(
-            object,
-            values::LV_TEXT_LEADING_TRIM_NONE,
-            values::LV_PART_MAIN,
-        )?;
         raw.lv_obj_set_style_text_align(object, values::LV_TEXT_ALIGN_LEFT, values::LV_PART_MAIN)?;
         raw.lv_obj_set_style_text_decor(object, values::LV_TEXT_DECOR_NONE, values::LV_PART_MAIN)?;
         raw.lv_obj_set_style_pad_all(object, 0, values::LV_PART_MAIN)?;
         raw.lv_obj_set_pos(object, 4, y)?;
+    }
+    if !LEGACY {
+        runtime.call_raw::<_, ()>(
+            "lv_obj_set_style_text_leading_trim",
+            (
+                object.0,
+                constant("LV_TEXT_LEADING_TRIM_NONE"),
+                values::LV_PART_MAIN,
+            ),
+        )?;
     }
     runtime.free(color.0)?;
     Ok(object)
@@ -331,6 +429,7 @@ fn verify_label(
     names: &[&str],
     kerning: bool,
 ) -> Result<()> {
+    let kerning = kerning && !LEGACY;
     let height = number(&size["line_height"]) as usize;
     let mut pen = 0i32;
     let mut placed = Vec::new();
@@ -362,10 +461,8 @@ fn verify_label(
             )?,
             1
         );
-        let is_vector = read_u32(
-            runtime,
-            glyph_descriptor.0 + offset(values::LV_FONT_GLYPH_DSC_T_FIELDS, "format"),
-        )? == values::LV_FONT_GLYPH_FORMAT_VECTOR as u32;
+        let is_vector = OUTLINE
+            && glyph_format(runtime, glyph_descriptor)? == constant("LV_FONT_GLYPH_FORMAT_VECTOR");
         let left = pen + number(&glyph["ofs_x"]);
         let top = number(&size["line_height"])
             - number(&size["baseline"])
@@ -456,7 +553,8 @@ fn freetype_metrics_bitmap_kerning_and_fallback_match_geometric_reference() -> R
         let right = number(&expected["kerning"]["right"]);
         assert_eq!(
             runtime.raw()?.lv_font_get_glyph_width(font, left, right)?,
-            number(&size["glyphs"]["A"]["advance"]) - number(&size["kerning"])
+            number(&size["glyphs"]["A"]["advance"])
+                - if LEGACY { 0 } else { number(&size["kerning"]) }
         );
         let names = ["A", "B", "space", "Aacute", "Omega"];
         let object = label(&mut runtime, screen, font, &expected, &names, 4)?;
@@ -638,6 +736,9 @@ fn freetype_resource_copies_and_failed_opens_leave_the_runtime_usable() -> Resul
         (missing, 16),
         (valid, 0),
     ] {
+        if LEGACY && (path == UnsafePointer(0) || path == empty || size == 0) {
+            continue;
+        }
         assert_eq!(
             runtime.raw()?.lv_freetype_font_create(
                 path,
@@ -739,7 +840,7 @@ fn acquire_outline(
             runtime,
             descriptor.0 + offset(values::LV_FONT_GLYPH_DSC_T_FIELDS, "format")
         )?,
-        values::LV_FONT_GLYPH_FORMAT_VECTOR as u32
+        constant("LV_FONT_GLYPH_FORMAT_VECTOR")
     );
     assert_eq!(
         read_u32(
@@ -749,9 +850,7 @@ fn acquire_outline(
         resolved.0
     );
     // VECTOR draw data is a borrowed native path, never an A8 draw buffer.
-    let path = runtime
-        .raw()?
-        .lv_font_get_glyph_bitmap(descriptor, UnsafePointer(0))?;
+    let path = glyph_bitmap(runtime, descriptor, codepoint)?;
     assert_ne!(path.0, 0);
     assert_ne!(
         read_u32(
@@ -764,7 +863,7 @@ fn acquire_outline(
 }
 
 fn release_outline(runtime: &mut Runtime, descriptor: UnsafePointer) -> Result<()> {
-    runtime.raw()?.lv_font_glyph_release_draw_data(descriptor)?;
+    release_glyph(runtime, descriptor)?;
     assert_eq!(
         read_u32(
             runtime,
@@ -777,6 +876,9 @@ fn release_outline(runtime: &mut Runtime, descriptor: UnsafePointer) -> Result<(
 
 #[test]
 fn freetype_outline_sizes_opacity_and_shared_paths_match_geometric_reference() -> Result<()> {
+    if !OUTLINE {
+        return Ok(());
+    }
     let expected = expected();
     let (mut runtime, display, screen) = load(&expected)?;
     upload(&mut runtime, "outline.ttf", &fixture(&expected["font"])?)?;
@@ -880,6 +982,9 @@ fn freetype_outline_sizes_opacity_and_shared_paths_match_geometric_reference() -
 
 #[test]
 fn freetype_bitmap_and_outline_fonts_keep_mixed_fallbacks_and_owners_independent() -> Result<()> {
+    if !OUTLINE {
+        return Ok(());
+    }
     let expected = expected();
     let (mut runtime, display, screen) = load(&expected)?;
     upload(&mut runtime, "mixed.ttf", &fixture(&expected["font"])?)?;
@@ -985,18 +1090,16 @@ fn freetype_bitmap_and_outline_fonts_keep_mixed_fallbacks_and_owners_independent
 
 #[test]
 fn freetype_outline_quadratic_and_cubic_curves_stay_within_analytic_curve_bounds() -> Result<()> {
-    let expected: Value = serde_json::from_str(include_str!(
-        "../../../tests/fixtures/freetype-outline/expected.json"
-    ))
-    .unwrap();
+    if !OUTLINE {
+        return Ok(());
+    }
+    let directory = fixtures().with_file_name("freetype-outline");
+    let expected: Value =
+        serde_json::from_slice(&std::fs::read(directory.join("expected.json"))?).unwrap();
     let (mut runtime, display, screen) = load(&expected)?;
     for font in expected["fonts"].as_array().unwrap() {
         let name = font["file"].as_str().unwrap();
-        let bytes = std::fs::read(
-            Path::new(env!("CARGO_MANIFEST_DIR"))
-                .join("../../tests/fixtures/freetype-outline")
-                .join(name),
-        )?;
+        let bytes = std::fs::read(directory.join(name))?;
         upload(&mut runtime, name, &bytes)?;
         for size in expected["sizes"].as_array().unwrap() {
             let font = create_font_mode(

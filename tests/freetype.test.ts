@@ -1,13 +1,37 @@
 import { expect, test } from "bun:test";
-import {
+import type { Frame, UnsafeLvgl } from "../bindings/typescript/src/index.ts";
+const sdk: typeof import("../bindings/typescript/src/index.ts") = await import(
+  Bun.env.LVW_TEST_TS_RUNTIME ?? "../bindings/typescript/src/index.ts");
+const {
   LV_COLOR_T_SIZE, LV_DRAW_BUF_T_FIELDS, LV_FONT_GLYPH_DSC_T_FIELDS, LV_FONT_GLYPH_DSC_T_SIZE,
   LV_FONT_GLYPH_FORMAT_A8, LV_FONT_GLYPH_FORMAT_VECTOR, LV_FONT_INFO_T_FIELDS, LV_FONT_INFO_T_SIZE, LV_FONT_KERNING_NONE,
   LV_FONT_KERNING_NORMAL, LV_FONT_T_FIELDS, LV_FREETYPE_FONT_RENDER_MODE_BITMAP,
   LV_FREETYPE_FONT_RENDER_MODE_OUTLINE, LV_FREETYPE_FONT_STYLE_NORMAL, LV_IMAGE_HEADER_T_FIELDS, LV_OPA_COVER, LV_PART_MAIN,
-  LV_TEXT_LEADING_TRIM_NONE, LvglRuntime, type Frame, type UnsafeLvgl,
-} from "../bindings/typescript/src/index.ts";
+  LV_TEXT_LEADING_TRIM_NONE, LvglRuntime,
+} = sdk;
 import fixture from "./fixtures/freetype/expected.json";
 import curves from "./fixtures/freetype-outline/expected.json";
+const legacy = sdk.LVGL_VERSION_MINOR === 0;
+const outline = !legacy && sdk.LV_USE_VECTOR_GRAPHIC !== 0;
+const fixtures = Bun.env.LVW_TEST_FREETYPE_FIXTURES ?? "tests/fixtures/freetype";
+
+interface LegacyFontApi {
+  lv_font_get_glyph_bitmap(descriptor: number, letter: number, buffer: number): number;
+  lv_cache_entry_get_cache(entry: number): number;
+  lv_cache_entry_get_ref(entry: number): number;
+  lv_cache_release(cache: number, entry: number, data: number): void;
+}
+
+function releaseGlyph(raw: UnsafeLvgl, descriptor: number): void {
+  if (!legacy) { raw.lv_font_glyph_release_draw_data(descriptor); return; }
+  const address = descriptor + offset(LV_FONT_GLYPH_DSC_T_FIELDS, "entry");
+  const entry = new DataView(raw.memory.buffer).getUint32(address, true);
+  if (entry) {
+    const api = raw as unknown as LegacyFontApi;
+    api.lv_cache_release(api.lv_cache_entry_get_cache(entry), entry, 0);
+    new DataView(raw.memory.buffer).setUint32(address, 0, true);
+  }
+}
 
 type Size = typeof fixture.sizes[number];
 type Glyph = keyof Size["glyphs"];
@@ -20,7 +44,7 @@ function offset(fields: Fields, name: string): number {
 }
 
 async function load() {
-  const runtime = await LvglRuntime.load(await Bun.file("target/wasm/liblvgl.wasm").arrayBuffer());
+  const runtime = await LvglRuntime.load(await Bun.file(Bun.env.LVW_TEST_CORE ?? "target/wasm/liblvgl.wasm").arrayBuffer());
   const raw = runtime.unsafe;
   const display = runtime.createDisplay(240, 112);
   const screen = runtime.screen(display);
@@ -38,7 +62,7 @@ async function load() {
     raw.lv_obj_set_style_text_font(object.handle, font, LV_PART_MAIN);
     raw.lv_obj_set_style_text_letter_space(object.handle, 0, LV_PART_MAIN);
     raw.lv_obj_set_style_text_line_space(object.handle, 0, LV_PART_MAIN);
-    raw.lv_obj_set_style_text_leading_trim(object.handle, LV_TEXT_LEADING_TRIM_NONE, LV_PART_MAIN);
+    if (!legacy) raw.lv_obj_set_style_text_leading_trim(object.handle, LV_TEXT_LEADING_TRIM_NONE, LV_PART_MAIN);
     runtime.setText(object, names.map((name) => String.fromCodePoint(fixture.codepoints[name])).join(""));
     object.setPosition(x, y);
     return object;
@@ -52,7 +76,7 @@ async function load() {
 }
 
 async function upload(runtime: LvglRuntime, sample = fixture.font, name = "geometry.ttf") {
-  const bytes = await Bun.file(`tests/fixtures/freetype/${sample.file}`).bytes();
+  const bytes = await Bun.file(`${fixtures}/${sample.file}`).bytes();
   expect(new Bun.CryptoHasher("sha256").update(bytes).digest("hex")).toBe(sample.sha256);
   runtime.putResource(name, bytes);
   // The resource owns its copy; later glyph loads must not use these staging bytes.
@@ -64,9 +88,9 @@ function font(raw: UnsafeLvgl, path: string, size: number, kerning: number | nul
   const bytes = new TextEncoder().encode(`${path}\0`);
   const pointer = raw.lvw_alloc(bytes.length);
   new Uint8Array(raw.memory.buffer, pointer, bytes.length).set(bytes);
-  const info = raw.lvw_alloc(LV_FONT_INFO_T_SIZE);
+  const info = legacy ? 0 : raw.lvw_alloc(LV_FONT_INFO_T_SIZE);
   try {
-    if (kerning === null) {
+    if (legacy || kerning === null) {
       return raw.lv_freetype_font_create(pointer, renderMode, size, LV_FREETYPE_FONT_STYLE_NORMAL);
     }
     raw.lv_freetype_init_font_info(info);
@@ -78,8 +102,10 @@ function font(raw: UnsafeLvgl, path: string, size: number, kerning: number | nul
   } finally {
     // Font creation copies the path and configuration, unlike a borrowed TTF data pointer.
     new Uint8Array(raw.memory.buffer, pointer, bytes.length).fill(0x58);
-    new Uint8Array(raw.memory.buffer, info, LV_FONT_INFO_T_SIZE).fill(0x5a);
-    raw.lvw_free(info);
+    if (info) {
+      new Uint8Array(raw.memory.buffer, info, LV_FONT_INFO_T_SIZE).fill(0x5a);
+      raw.lvw_free(info);
+    }
     raw.lvw_free(pointer);
   }
 }
@@ -91,7 +117,10 @@ function glyph(raw: UnsafeLvgl, font: number, name: Glyph, size: Size, resolvedF
     expect(raw.lv_font_get_glyph_dsc(font, descriptor, fixture.codepoints[name], 0)).toBe(1);
     let view = new DataView(raw.memory.buffer);
     expect(view.getUint32(descriptor + offset(LV_FONT_GLYPH_DSC_T_FIELDS, "resolved_font"), true)).toBe(resolvedFont);
-    expect(view.getUint32(descriptor + offset(LV_FONT_GLYPH_DSC_T_FIELDS, "format"), true)).toBe(LV_FONT_GLYPH_FORMAT_A8);
+    if (legacy) {
+      const bit = LV_FONT_GLYPH_DSC_T_FIELDS.find((field) => field.name === "bpp")!;
+      expect((view.getUint8(descriptor + Math.floor(bit.bit_offset / 8)) >> (bit.bit_offset % 8)) & 15).toBe(8);
+    } else expect(view.getUint32(descriptor + offset(LV_FONT_GLYPH_DSC_T_FIELDS, "format"), true)).toBe(LV_FONT_GLYPH_FORMAT_A8);
     for (const [field, value] of [["adv_w", expected.advance], ["box_w", expected.box_w], ["box_h", expected.box_h]] as const) {
       expect(view.getUint16(descriptor + offset(LV_FONT_GLYPH_DSC_T_FIELDS, field), true)).toBe(value);
     }
@@ -99,7 +128,8 @@ function glyph(raw: UnsafeLvgl, font: number, name: Glyph, size: Size, resolvedF
       expect(view.getInt16(descriptor + offset(LV_FONT_GLYPH_DSC_T_FIELDS, field), true)).toBe(expected[field]);
     }
     if (!expected.box_w || !expected.box_h) return;
-    const buffer = raw.lv_font_get_glyph_bitmap(descriptor, 0);
+    const buffer = legacy ? (raw as unknown as LegacyFontApi).lv_font_get_glyph_bitmap(descriptor, fixture.codepoints[name], 0)
+      : raw.lv_font_get_glyph_bitmap(descriptor, 0);
     expect(buffer).not.toBe(0);
     view = new DataView(raw.memory.buffer);
     const data = view.getUint32(buffer + offset(LV_DRAW_BUF_T_FIELDS, "data"), true);
@@ -116,17 +146,17 @@ function glyph(raw: UnsafeLvgl, font: number, name: Glyph, size: Size, resolvedF
       }
     }
   } finally {
-    raw.lv_font_glyph_release_draw_data(descriptor);
+    releaseGlyph(raw, descriptor);
     raw.lvw_free(descriptor);
   }
 }
 
-function textWidth(size: Size, names: Glyph[], kerning = true): number {
+function textWidth(size: Size, names: Glyph[], kerning = !legacy): number {
   return names.reduce((width, name, index) => width + size.glyphs[name].advance
     - (kerning && name === "A" && names[index + 1] === "B" ? size.kerning : 0), 0);
 }
 
-function textPixels(frame: Frame, size: Size, names: Glyph[], x: number, y: number, kerning = true,
+function textPixels(frame: Frame, size: Size, names: Glyph[], x: number, y: number, kerning = !legacy,
                     outlineNames: readonly Glyph[] = [], outlineOpacity = LV_OPA_COVER): void {
   const width = textWidth(size, names, kerning);
   const mask = Array.from({ length: size.line_height }, () => new Float64Array(width));
@@ -161,7 +191,7 @@ function textPixels(frame: Frame, size: Size, names: Glyph[], x: number, y: numb
   }
 }
 
-test("FreeType renders geometric glyphs and fallback with explicitly configured pixel kerning", async () => {
+test("FreeType renders geometric glyphs and fallback with the selected version's kerning semantics", async () => {
   const { runtime, raw, label, frame } = await load();
   await upload(runtime);
   await upload(runtime, fixture.fallback, "fallback.ttf");
@@ -178,7 +208,7 @@ test("FreeType renders geometric glyphs and fallback with explicitly configured 
     for (const name of ["A", "B", "Aacute", "space"] as const) glyph(raw, primary, name, size);
     glyph(raw, primary, "Omega", size, fallback);
     expect(raw.lv_font_get_glyph_width(defaultKerning, fixture.codepoints.A, fixture.codepoints.B)).toBe(size.glyphs.A.advance);
-    expect(raw.lv_font_get_glyph_width(primary, fixture.codepoints.A, fixture.codepoints.B)).toBe(size.glyphs.A.advance - size.kerning);
+    expect(raw.lv_font_get_glyph_width(primary, fixture.codepoints.A, fixture.codepoints.B)).toBe(size.glyphs.A.advance - (legacy ? 0 : size.kerning));
     raw.lv_font_set_kerning(primary, LV_FONT_KERNING_NONE);
     expect(raw.lv_font_get_glyph_width(primary, fixture.codepoints.A, fixture.codepoints.B)).toBe(size.glyphs.A.advance);
     raw.lv_font_set_kerning(primary, LV_FONT_KERNING_NORMAL);
@@ -210,7 +240,7 @@ test("shared FreeType faces keep font sizes and users independent until their la
   textPixels(before, small, ["B"], 8, 64);
   for (const [pointer, size] of [[largeFont, large], [smallFont, small], [largeFont, large]] as const) {
     glyph(raw, pointer, "Aacute", size);
-    expect(raw.lv_font_get_glyph_width(pointer, fixture.codepoints.A, fixture.codepoints.B)).toBe(size.glyphs.A.advance - size.kerning);
+    expect(raw.lv_font_get_glyph_width(pointer, fixture.codepoints.A, fixture.codepoints.B)).toBe(size.glyphs.A.advance - (legacy ? 0 : size.kerning));
   }
   first.delete();
   textPixels(frame(), small, ["B"], 8, 64);
@@ -234,7 +264,7 @@ test("shared FreeType faces keep font sizes and users independent until their la
 
 test("FreeType contains font parsing failures and remains usable after cmap recovery", async () => {
   const { runtime, raw, label, frame } = await load();
-  const bytes = await Bun.file(`tests/fixtures/freetype/${fixture.font.file}`).bytes();
+  const bytes = await Bun.file(`${fixtures}/${fixture.font.file}`).bytes();
   for (const sample of fixture.rejected) {
     runtime.putResource(sample.name, "bytes" in sample ? new Uint8Array(sample.bytes!) : bytes.slice(0, sample.length));
   }
@@ -255,9 +285,11 @@ test("FreeType contains font parsing failures and remains usable after cmap reco
   expect(original).not.toBe(0);
   glyph(raw, original, "Aacute", size);
   raw.lv_freetype_font_delete(original);
-  expect(raw.lv_freetype_font_create(0, LV_FREETYPE_FONT_RENDER_MODE_BITMAP, size.size, LV_FREETYPE_FONT_STYLE_NORMAL)).toBe(0);
-  expect(font(raw, "W:geometry.ttf", 0)).toBe(0);
-  for (const path of ["", "W:missing.ttf", ...fixture.rejected.map((sample) => `W:${sample.name}`)]) {
+  if (!legacy) {
+    expect(raw.lv_freetype_font_create(0, LV_FREETYPE_FONT_RENDER_MODE_BITMAP, size.size, LV_FREETYPE_FONT_STYLE_NORMAL)).toBe(0);
+    expect(font(raw, "W:geometry.ttf", 0)).toBe(0);
+  }
+  for (const path of [...(legacy ? [] : [""]), "W:missing.ttf", ...fixture.rejected.map((sample) => `W:${sample.name}`)]) {
     expect(font(raw, path, size.size)).toBe(0);
     runtime.step(1);
     const recovered = font(raw, "W:geometry.ttf", size.size);
@@ -268,7 +300,7 @@ test("FreeType contains font parsing failures and remains usable after cmap reco
     object.delete();
     raw.lv_freetype_font_delete(recovered);
   }
-  raw.lv_freetype_font_delete(0);
+  if (!legacy) raw.lv_freetype_font_delete(0);
   runtime.shutdown();
 });
 
@@ -300,7 +332,7 @@ function releaseOutline(raw: UnsafeLvgl, descriptor: number): void {
   raw.lvw_free(descriptor);
 }
 
-test("FreeType outlines render geometric coverage, metrics and text opacity through the native vector backend", async () => {
+test.skipIf(!outline)("FreeType outlines render geometric coverage, metrics and text opacity through the native vector backend", async () => {
   const { runtime, raw, label, frame } = await load();
   await upload(runtime);
   await upload(runtime, fixture.fallback, "fallback.ttf");
@@ -338,7 +370,7 @@ test("FreeType outlines render geometric coverage, metrics and text opacity thro
   runtime.shutdown();
 });
 
-test("FreeType outline paths survive shared-font redraws until manual glyph borrows and font users are released", async () => {
+test.skipIf(!outline)("FreeType outline paths survive shared-font redraws until manual glyph borrows and font users are released", async () => {
   const { runtime, raw, label, frame } = await load();
   await upload(runtime);
   const small = fixture.sizes[0]!;
@@ -379,7 +411,7 @@ test("FreeType outline paths survive shared-font redraws until manual glyph borr
   runtime.shutdown();
 });
 
-test("FreeType fallback resolves bitmap and outline glyphs with their own draw-data ownership", async () => {
+test.skipIf(!outline)("FreeType fallback resolves bitmap and outline glyphs with their own draw-data ownership", async () => {
   const { runtime, raw, label, frame } = await load();
   await upload(runtime);
   await upload(runtime, fixture.fallback, "fallback.ttf");
@@ -415,7 +447,7 @@ test("FreeType fallback resolves bitmap and outline glyphs with their own draw-d
   runtime.shutdown();
 });
 
-test("FreeType quadratic and cubic outlines stay within analytic curve bounds at even and odd font sizes", async () => {
+test.skipIf(!outline)("FreeType quadratic and cubic outlines stay within analytic curve bounds at even and odd font sizes", async () => {
   const { runtime, raw, label, frame } = await load();
   expect(curves.background).toEqual(fixture.background);
   expect(curves.foreground).toEqual(fixture.foreground);

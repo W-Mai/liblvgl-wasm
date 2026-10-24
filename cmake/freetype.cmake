@@ -1,4 +1,8 @@
 # Build the font engine with the same target toolchain as LVGL.
+lvw_config_flag(LV_FREETYPE_USE_LVGL_PORT)
+if(NOT LV_FREETYPE_USE_LVGL_PORT)
+    message(FATAL_ERROR "FreeType requires LV_FREETYPE_USE_LVGL_PORT for LVGL filesystem access")
+endif()
 set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
 set(SKIP_INSTALL_ALL ON CACHE BOOL "" FORCE)
 foreach(dependency ZLIB BZIP2 PNG HARFBUZZ BROTLI)
@@ -30,6 +34,10 @@ target_link_libraries(freetype PUBLIC lvw_wasm_sjlj)
 target_link_libraries(lvgl PRIVATE freetype)
 
 # LVGL's port still uses the internal include aliases removed by FreeType.
-set_source_files_properties("${lvgl_SOURCE_DIR}/src/font/freetype/lv_ftsystem.c"
+set(LVW_FREETYPE_PORT "${lvgl_SOURCE_DIR}/src/font/freetype/lv_ftsystem.c")
+if(NOT EXISTS "${LVW_FREETYPE_PORT}")
+    set(LVW_FREETYPE_PORT "${lvgl_SOURCE_DIR}/src/libs/freetype/lv_ftsystem.c")
+endif()
+set_source_files_properties("${LVW_FREETYPE_PORT}"
     TARGET_DIRECTORY lvgl PROPERTIES COMPILE_DEFINITIONS
     "FT2_BUILD_LIBRARY;FT_INTERNAL_DEBUG_H=<freetype/internal/ftdebug.h>;FT_INTERNAL_STREAM_H=<freetype/internal/ftstream.h>")

@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+- LVGL 9.0.0 FreeType bitmap fonts with copied resource paths, shared font caches, resolved-font glyph release, and relocated native/host SDK checks.
 - Source inspection includes component configuration macros outside `LV_USE_*`, preserving file-support and filesystem-port checks.
 - LVGL 9.0.0 TinyTTF fonts with cache invalidation scoped to each font, glyph release through the resolved font, original API signatures, and relocated native/host SDK checks.
 - LVGL 9.0.0 GIF playback with native loop semantics, transparent frames, exact frame deadlines, callback-safe cleanup, and both LZW decoder configurations.

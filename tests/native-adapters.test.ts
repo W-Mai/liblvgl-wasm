@@ -11,6 +11,7 @@ test.each([
   ["image-cache", "src/misc/cache", "lv_image_cache.c"],
   ["gif", "src/widgets/gif", "lv_gif.c"], ["gif", "src/libs/gif", "lv_gif.c"],
   ["tinyttf", "src/font/tiny_ttf", "lv_tiny_ttf.c"], ["tinyttf", "src/libs/tiny_ttf", "lv_tiny_ttf.c"],
+  ["font", "src/draw", "lv_draw_label.c"], ["outline", "src/draw/sw", "lv_draw_sw_letter.c"],
 ])(
   "%s adaptation in %s rejects unknown source bytes and removes stale generated code",
   async (adapter, directory, filename) => {
@@ -136,16 +137,13 @@ if (gifSource) test("legacy GIF adaptation rejects changed gifdec bytes and clea
 });
 
 const tinyttfSource = Bun.env.LVW_TEST_TINYTTF_SOURCE;
-if (tinyttfSource) test.each(["changed drawing", "file streams"])("legacy TinyTTF rejects %s and clears both adapted units", async (mode) => {
+if (tinyttfSource) test("legacy TinyTTF rejects file streams and clears its adapted unit", async () => {
   const root = await mkdtemp(join(tmpdir(), "lvw tinyttf source "));
   try {
     await mkdir(join(root, "src/libs/tiny_ttf"), { recursive: true });
-    await mkdir(join(root, "src/draw"), { recursive: true });
     await mkdir(join(root, "lvgl-adapted"));
     await copyFile(join(tinyttfSource, "src/libs/tiny_ttf/lv_tiny_ttf.c"), join(root, "src/libs/tiny_ttf/lv_tiny_ttf.c"));
-    if (mode === "changed drawing") await Bun.write(join(root, "src/draw/lv_draw_label.c"), "/* changed drawing */\n");
-    else await copyFile(join(tinyttfSource, "src/draw/lv_draw_label.c"), join(root, "src/draw/lv_draw_label.c"));
-    for (const name of ["lv_tiny_ttf.c", "lv_draw_label.c"]) await Bun.write(join(root, "lvgl-adapted", name), "stale\n");
+    await Bun.write(join(root, "lvgl-adapted/lv_tiny_ttf.c"), "stale\n");
     await Bun.write(join(root, "check.cmake"),
       `cmake_minimum_required(VERSION 3.25)\nfunction(lvw_config_flag name)\nset(LV_TINY_TTF_FILE_SUPPORT 1 PARENT_SCOPE)\nendfunction()\ninclude("${resolve("cmake/tinyttf.cmake")}")\n`);
     const child = Bun.spawn(["cmake", `-Dlvgl_SOURCE_DIR=${root}`, "-P", "check.cmake"], {
@@ -155,10 +153,8 @@ if (tinyttfSource) test.each(["changed drawing", "file streams"])("legacy TinyTT
       child.exited, new Response(child.stdout).text(), new Response(child.stderr).text(),
     ]);
     expect(status, stdout + stderr).not.toBe(0);
-    expect(stderr.replace(/\s+/g, " ")).toContain(mode === "changed drawing"
-      ? `Unsupported LVGL tinyttf source: ${join(root, "src/draw/lv_draw_label.c")}`
-      : "Legacy TinyTTF file streams require independent adaptation");
-    for (const name of ["lv_tiny_ttf.c", "lv_draw_label.c"]) expect(await Bun.file(join(root, "lvgl-adapted", name)).exists()).toBe(false);
+    expect(stderr.replace(/\s+/g, " ")).toContain("Legacy TinyTTF file streams require independent adaptation");
+    expect(await Bun.file(join(root, "lvgl-adapted/lv_tiny_ttf.c")).exists()).toBe(false);
   } finally {
     await rm(root, { recursive: true, force: true });
   }
