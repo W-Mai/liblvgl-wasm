@@ -123,7 +123,7 @@ def inspect_source(source: Path, config: Path, sdk: Path, contained=False):
             probes[name]["diagnostic"] = result.stderr.strip()
     configuration_values = {}
     for name, entry in constants.items():
-        if name.startswith("LV_USE_"):
+        if name.startswith("LV_") and entry.get("origin") == "macro":
             configuration_values[name] = {key: entry[key] for key in
                                          ("category", "value", "expression", "reason_code")
                                          if key in entry}

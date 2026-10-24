@@ -65,7 +65,7 @@ python3 -B toolchains/lvw.py inspect-lvgl \
     --source /path/to/lvgl --config /path/to/lv_conf.h --json
 ```
 
-The command shares header discovery and target constant evaluation with the API generator. It reports the actual version, target, effective `LV_USE_*` values, configuration file hash, and selected declaration probes. Macro expressions are evaluated by the target compiler. Missing declarations are reported separately from a failed inspection. Inspection does not build a reactor or verify runtime compatibility; both verification fields remain `not-run`.
+The command shares header discovery and target constant evaluation with the API generator. It reports the actual version, target, effective `LV_*` macros, configuration file hash, and selected declaration probes. This includes component options such as `LV_TINY_TTF_FILE_SUPPORT` and `LV_FREETYPE_USE_LVGL_PORT`. Macro expressions are evaluated by the target compiler; unsupported expressions retain diagnostics instead of an assumed value. Missing declarations are reported separately from a failed inspection. Inspection does not build a reactor or verify runtime compatibility; both verification fields remain `not-run`.
 
 The command is read-only and does not download tools or create a cache. `--project`, `--cache`, and `--sdk` use the preparation command's path rules; only wasi-sdk is required. Keep the source package's `generator/` directory with `toolchains/` when moving this command. The configuration can be an `lv_conf.h` file or its parent directory. Its reported hash covers that file, not its transitive includes or a complete build identity.
 
