@@ -80,7 +80,7 @@ if (splitSource) test.each(["arc", "slider", "roller", "dropdown"])(
 );
 
 const pngSource = Bun.env.LVW_TEST_PNG_SOURCE;
-if (pngSource) test.each(["src/libs/lodepng/lodepng.c", "src/libs/bin_decoder/lv_bin_decoder.c"])(
+if (pngSource) test.each(["src/libs/lodepng/lv_lodepng.c", "src/libs/lodepng/lodepng.c", "src/libs/bin_decoder/lv_bin_decoder.c"])(
   "PNG adaptation rejects changed %s and removes all generated units",
   async (changed) => {
     const root = await mkdtemp(join(tmpdir(), "lvw png source "));

@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- LVGL 9.1.0 PNG decoding with bounded headers, native path borrowing, cache-key ownership, failure cleanup, and relocated native/host SDK checks.
+
 - LVGL 9.0.0 vector drawing with original API signatures, resource-backed ThorVG loading, object clipping, layer offsets, and source-matched NDK/host SDK packages.
 - Correct straight-alpha vector composition in LVGL 9.0.0 and 9.6.0 transparent layers while preserving existing target pixels.
 

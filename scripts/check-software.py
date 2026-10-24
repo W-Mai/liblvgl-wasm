@@ -40,6 +40,8 @@ def check(component_filter=None, version_filter=None):
     assert default["version"] == {"major": 9, "minor": 6, "patch": 0, "info": ""}
     sources = [("v9.0.0", compatibility.source_tree(output, compatibility.LEGACY[0])),
                ("v9.6.0", Path(default["source"]))]
+    if component_filter in {None, "png"} and version_filter in {None, "v9.1.0"}:
+        sources.insert(1, ("v9.1.0", compatibility.source_tree(output, compatibility.LEGACY[1])))
     build = output / "software-build"
     preset = (ROOT / "config/base/lv_conf.h").read_text()
     results = []
@@ -62,6 +64,8 @@ def check(component_filter=None, version_filter=None):
         for version, source in sources:
             if version_filter and version != version_filter:
                 continue
+            if version == "v9.1.0" and component != "png":
+                continue
             if component == "png-gif" and version != "v9.0.0":
                 continue
             cases = [("uncached", 0, 0, 1, component == "gif" and version == "v9.6.0"), ("cached", 16384, 4, 8, True)]
@@ -69,7 +73,7 @@ def check(component_filter=None, version_filter=None):
                 cases = cases[1:]
             if component in {"tinyttf", "freetype", "vector"}:
                 cases = [("packed", 0, 0, 1, False), ("aligned", 0, 0, 8, True)]
-            if component == "png" and version == "v9.0.0":
+            if component == "png" and version in {"v9.0.0", "v9.1.0"}:
                 cases.insert(1, ("headers", 0, 4, 8, False))
             for label, cache_bytes, header_entries, stride, managed in cases:
                 name = f"{version}-{component}-{label}"
@@ -152,6 +156,10 @@ def check(component_filter=None, version_filter=None):
                             "LVW_TEST_TINYTTF_SOURCE": str(sources[0][1]),
                             "LVW_TEST_THORVG_SOURCE": str(sources[0][1])},
                        stdout=log, stderr=subprocess.STDOUT, check=True)
+        if any(result["component"] == "png" and result["version"]["minor"] == 1 for result in results):
+            subprocess.run(["bun", "test", "./tests/native-adapters.test.ts"], cwd=ROOT,
+                           env={**os.environ, "LVW_TEST_PNG_SOURCE": str(sources[1][1])},
+                           stdout=log, stderr=subprocess.STDOUT, check=True)
     report.write_text(json.dumps(results, indent=2) + "\n")
 
 
@@ -159,6 +167,6 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--offline", action="store_true", help="use the cached source archive")
     parser.add_argument("--component", choices=("png", "gif", "png-gif", "tinyttf", "freetype", "vector"), help="check one component group and write a scoped report")
-    parser.add_argument("--version", choices=("v9.0.0", "v9.6.0"), help="check one version and write a scoped report")
+    parser.add_argument("--version", choices=("v9.0.0", "v9.1.0", "v9.6.0"), help="check one version and write a scoped report")
     args = parser.parse_args()
     check(args.component, args.version)
