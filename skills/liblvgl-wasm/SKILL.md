@@ -133,6 +133,14 @@ python3 -B toolchains/lvw.py verify-package --package target/package --json
 
 Verification checks nested manifests, package identities, source cleanliness, symlink absence, and every recorded file hash without rebuilding the package. Use `--allow-dirty` only for a development snapshot.
 
+Run the relocated-package acceptance against a published directory to exercise both host SDKs from a read-only copy with spaces in its path:
+
+```sh
+LVW_TEST_PACKAGE=target/package bun test ./tests/package-consumer.test.ts
+```
+
+The check compiles TypeScript in Bundler and NodeNext modes, runs the browser host against the packaged core, builds an external Rust consumer from the packaged crate, and exercises rendering, input, resources, and shutdown.
+
 ## Verify before reporting success
 
 Run `wasm-tools validate` for each produced module and compare its proof and values identity with the bindings used by the host. Run `env RUSTUP_TOOLCHAIN=1.92.0 bun run quality` for the repository gate. Do not claim a custom core matches the default SDK because its bridge ABI is compatible; compare the exact core SHA-256, API SHA-256, values identity, and configuration.

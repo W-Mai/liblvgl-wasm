@@ -4,6 +4,7 @@
 
 - Studio artifact preflight reports, standalone firmware execution, and explicit compatibility registry lookup for custom cores and applications.
 - Relocatable package verification for nested manifests, exact identities, clean source state, symlink rejection, and complete file inventories.
+- Relocated complete-package acceptance for TypeScript and Rust hosts using a read-only package copy.
 
 - LVGL 9.2.2 PNG decoding with bounded headers, native session and cache lifetimes, failed-decode cleanup, and relocated NDK/host SDK checks.
 

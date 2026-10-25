@@ -242,6 +242,14 @@ python3 -B toolchains/lvw.py verify-package --package target/package --json
 
 Verification checks nested manifests, package identities, source cleanliness, symlink absence, and every recorded file hash without rebuilding the package. Use `--allow-dirty` only for a development snapshot.
 
+Run the relocated-package acceptance against a published directory to exercise both host SDKs from a read-only copy with spaces in its path:
+
+```sh
+LVW_TEST_PACKAGE=target/package bun test ./tests/package-consumer.test.ts
+```
+
+The check compiles TypeScript in Bundler and NodeNext modes, runs the browser host against the packaged core, builds an external Rust consumer from the packaged crate, and exercises rendering, input, resources, and shutdown.
+
 CMake compiles adapted copies of the pinned `lv_observer.c` and `lv_image_decoder.c` with bridge notifications at native deletion points. Decoder deinitialization deletes individual decoders to deliver those notifications. The original source tree stays unchanged; different source hashes are rejected. The adapted `liblvgl.a` requires the bridge's `lvw_observer_release_native` and `lvw_decoder_release_native` implementations.
 
 The pinned `lv_gif.c` also compiles from an adapted copy that preserves playback during frame-count queries, applies each frame's delay, stops timers before closing sources, and delivers completion events after frame processing.
