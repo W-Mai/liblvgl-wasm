@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { FIRMWARE_REQUIRED_EXPORTS } from "../studio/src/artifacts.ts";
+import { FIRMWARE_REQUIRED_EXPORTS, inspectArtifact } from "../studio/src/artifacts.ts";
 import { copyFirmwareFrame, FirmwareRuntime } from "../studio/src/firmware.ts";
 
 function u32(value: number): number[] {
@@ -55,5 +55,22 @@ test("firmware frame copies are bounded and use packed RGBA8888", () => {
   expect([...new Uint8Array(copyFirmwareFrame(memory, 8, 16, 2, 2))]).toEqual(new Array(16).fill(0x7a));
   expect(() => copyFirmwareFrame(memory, 8, 15, 2, 2)).toThrow("must be 16 bytes");
   expect(() => copyFirmwareFrame(memory, 65_528, 16, 2, 2)).toThrow("within exported memory");
+});
+
+test("the portable firmware sample runs through the standalone ABI", async () => {
+  const bytes = await Bun.file("target/apps/firmware/app.wasm").arrayBuffer();
+  const report = await inspectArtifact(bytes, "application");
+  expect(report.kind).toBe("firmware");
+  expect(report.mode).toBe("firmware");
+  const runtime = await FirmwareRuntime.load(bytes, 8, 4);
+  expect(runtime.step(16)).toBe(true);
+  const frame = new Uint8Array(runtime.frame());
+  expect(frame).toHaveLength(8 * 4 * 4);
+  expect(frame.some((value) => value !== 0)).toBe(true);
+  runtime.pointer(2, 1, true);
+  expect(runtime.step(16)).toBe(true);
+  const pressedFrame = new Uint8Array(runtime.frame());
+  expect(pressedFrame[(1 * 8 + 2) * 4 + 2]).toBe(255);
+  runtime.shutdown();
 });
 

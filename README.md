@@ -325,9 +325,12 @@ The toolchain panel shows sample source files with syntax highlighting in a side
 | TypeScript Lottie | `bun run build:ts-samples` | `target/apps/ts/samples/lottie.js` |
 | C | `./toolchains/c/build.sh` | `target/apps/c/app.wasm` |
 | C++ | `./toolchains/cpp/build.sh` | `target/apps/cpp/app.wasm` |
+| Firmware ABI | `./toolchains/firmware/build.sh` | `target/apps/firmware/app.wasm` |
 | Rust | `./toolchains/rust/build.sh` | `target/apps/rust/app.wasm` |
 
 JavaScript applications define `main(api)` and may use the runtime, display, screen, resources, and log function passed in `api`; see `toolchains/js/app.js`. TypeScript applications bundle to a single JavaScript file with the same entry point; see `toolchains/ts/app.ts`. C, C++, and Rust applications use application ABI 1 through `toolchains/include/lvw_app.h` or equivalent imports. They export `memory`, `app_abi_version()`, `app_init()`, and `app_event(id, code)`. The sample source files show the required imports and event handling. Application Wasm modules use their own memory; Studio copies text and resources through the bridge.
+
+The firmware sample uses `toolchains/include/lvw_firmware.h`. It exports firmware ABI 1, accepts the selected frame size during initialization, exposes a packed RGBA8888 frame, and receives pointer coordinates through the firmware boundary. The sample is a standalone Wasm module and does not import the LVGL application bridge.
 
 The TypeScript sample and Studio worker share `AppApi` in `toolchains/ts/api.ts`. The sample calls `lv_obj_set_size`, `lv_obj_center`, `lv_palette_main`, and `lv_obj_set_style_bg_color` through `runtime.unsafe`, using generated constants and `LV_COLOR_T_SIZE` for the color result. Its managed click callback changes the color and count. Before accessing the guest, it checks its bundled `valuesIdentity` against the loaded core and host SDK; rebuild the application when those identities differ. Constants are imported from `target/typescript/values.ts` so the application does not bundle another host runtime. `bun run build:ts-app` verifies and regenerates the SDK inputs before bundling. In Studio, select **TypeScript** and run the sample; both `app.ts` and `api.ts` open in the source panel.
 
