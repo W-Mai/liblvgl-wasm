@@ -234,6 +234,14 @@ python3 -B toolchains/lvw.py export-package --output target/package --json
 
 The package has `source/`, `ndk/`, and `host-sdk/` directories. `manifest.json` is a semantic compatibility record plus a SHA-256 inventory for every file below those directories. The NDK and host SDK keep their own manifests and runtime notice trees. `--allow-dirty` is available for local development checks and marks the source entry as dirty; release automation leaves it disabled. The output is a directory suitable for archiving and remains usable after relocation.
 
+Verify an existing package after copying or unpacking it:
+
+```sh
+python3 -B toolchains/lvw.py verify-package --package target/package --json
+```
+
+Verification checks nested manifests, package identities, source cleanliness, symlink absence, and every recorded file hash without rebuilding the package. Use `--allow-dirty` only for a development snapshot.
+
 CMake compiles adapted copies of the pinned `lv_observer.c` and `lv_image_decoder.c` with bridge notifications at native deletion points. Decoder deinitialization deletes individual decoders to deliver those notifications. The original source tree stays unchanged; different source hashes are rejected. The adapted `liblvgl.a` requires the bridge's `lvw_observer_release_native` and `lvw_decoder_release_native` implementations.
 
 The pinned `lv_gif.c` also compiles from an adapted copy that preserves playback during frame-count queries, applies each frame's delay, stops timers before closing sources, and delivers completion events after frame processing.

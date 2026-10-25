@@ -346,6 +346,100 @@ def file_inventory(root):
     return files
 
 
+def package_member(root, value):
+    if not isinstance(value, str) or not value:
+        raise ValueError("package manifest path must be a non-empty string")
+    relative = PurePosixPath(value)
+    if relative.is_absolute() or ".." in relative.parts or "\\" in value:
+        raise ValueError(f"package manifest path escapes its root: {value}")
+    path = (root / Path(*relative.parts)).resolve()
+    if not path.is_relative_to(root.resolve()):
+        raise ValueError(f"package manifest path escapes its root: {value}")
+    return path
+
+
+def verify_nested_package(root, entry, expected_kind):
+    if not isinstance(entry, dict):
+        raise ValueError(f"invalid {expected_kind} package entry")
+    package = package_member(root, entry.get("path"))
+    manifest_path = package_member(root, entry.get("manifest"))
+    if not package.is_dir() or not manifest_path.is_file():
+        raise ValueError(f"missing {expected_kind} package: {package}")
+    if not manifest_path.is_relative_to(package):
+        raise ValueError(f"{expected_kind} manifest is outside its package: {manifest_path}")
+    inventory = file_inventory(package)
+    manifest_name = manifest_path.relative_to(package).as_posix()
+    manifest_digest = inventory.pop(manifest_name, None)
+    if manifest_digest is None:
+        raise ValueError(f"missing {expected_kind} manifest: {manifest_path}")
+    if entry.get("sha256") is not None and entry["sha256"] != manifest_digest:
+        raise ValueError(f"{expected_kind} manifest hash mismatch: {manifest_path}")
+    try:
+        manifest = json.loads(manifest_path.read_text())
+    except (OSError, ValueError) as error:
+        raise ValueError(f"invalid {expected_kind} manifest: {manifest_path}") from error
+    if (not isinstance(manifest, dict) or manifest.get("schema_version") != 1
+            or manifest.get("kind") != expected_kind or manifest.get("files") != inventory):
+        raise ValueError(f"{expected_kind} manifest or file inventory mismatch: {package}")
+    return manifest
+
+
+def verify_package(package, allow_dirty=False):
+    """Verify a complete relocatable source/NDK/host SDK package."""
+    package = Path(package).expanduser().resolve(strict=True)
+    if not package.is_dir():
+        raise ValueError(f"package must be an existing directory: {package}")
+    inventory = file_inventory(package)
+    inventory.pop("manifest.json", None)
+    manifest_path = package / "manifest.json"
+    if not manifest_path.is_file():
+        raise ValueError(f"missing package manifest: {manifest_path}")
+    manifest = json.loads(manifest_path.read_text())
+    if (not isinstance(manifest, dict) or manifest.get("schema_version") != 1
+            or manifest.get("kind") != "liblvgl-wasm-development-package"
+            or manifest.get("files") != inventory):
+        raise ValueError(f"package manifest or file inventory mismatch: {package}")
+    packages = manifest.get("packages")
+    if not isinstance(packages, dict) or set(packages) != {"source", "ndk", "host_sdk"}:
+        raise ValueError("package manifest must contain source, ndk, and host_sdk packages")
+    source_entry = packages["source"]
+    ndk_entry = packages["ndk"]
+    sdk_entry = packages["host_sdk"]
+    source = verify_nested_package(package, source_entry, "liblvgl-wasm-source")
+    ndk = verify_nested_package(package, ndk_entry, "wasip1-native-sdk")
+    sdk = verify_nested_package(package, sdk_entry, "wasip1-host-sdk")
+    source_path = package_member(package, source_entry.get("path"))
+    executables = sorted(name for name in source["files"]
+                         if (source_path / name).stat().st_mode & 0o111)
+    if source.get("executables") != executables:
+        raise ValueError("source executable inventory mismatch")
+    source_package = json.loads((source_path / "package.json").read_text())
+    if (not isinstance(source_package, dict)
+            or source_package.get("name") != "liblvgl-wasm"
+            or source_package.get("version") != source.get("version")):
+        raise ValueError("source package identity does not agree")
+    if (manifest.get("version") != source.get("version")
+            or manifest.get("target") != ndk.get("target")
+            or ndk.get("target") != sdk.get("target")
+            or manifest.get("core") != ndk.get("reference")
+            or manifest.get("core") != sdk.get("identity")):
+        raise ValueError("package identity fields do not agree")
+    source_state = manifest.get("source")
+    source_origin = source.get("source")
+    if (not isinstance(source_state, dict) or not isinstance(source_origin, dict)
+            or source_state.get("path") != source_entry.get("path")
+            or source_state.get("manifest") != source_entry.get("manifest")
+            or source_state.get("revision") != source_origin.get("revision")
+            or source_state.get("dirty") != source_origin.get("dirty")):
+        raise ValueError("source identity fields do not agree")
+    if source_state.get("dirty") and not allow_dirty:
+        raise ValueError("release package must contain a clean source snapshot")
+    if (ndk_entry.get("manifest") != "ndk/ndk.json"
+            or sdk_entry.get("manifest") != "host-sdk/sdk.json"):
+        raise ValueError("package manifest paths are inconsistent")
+    return {"output": str(package), "identity": manifest["core"], "files": len(inventory)}
+
+
 def publish_package(staged, output, name, manifest):
     if (staged / name).exists():
         raise ValueError(f"package manifest already exists: {name}")
@@ -555,10 +649,10 @@ def main():
     outputs = {"export-ndk": "target/ndk", "export-sdk": "target/host-sdk",
                "export-source": "target/source", "init": "target/project",
                "export-package": "target/package"}
-    for name in ("doctor", "prepare", "inspect-lvgl", *outputs):
+    for name in ("doctor", "prepare", "inspect-lvgl", "verify-package", *outputs):
         command = commands.add_parser(name)
         command.add_argument("--project", default=".", help="project directory (default: cwd)")
-        if name not in ("export-source", "init"):
+        if name not in ("export-source", "init", "verify-package"):
             command.add_argument("--cache", help="tool cache, relative to project or absolute")
         if name in ("doctor", "prepare", "inspect-lvgl", "export-ndk", "export-package"):
             command.add_argument("--sdk", help="existing wasi-sdk; overrides WASI_SDK_PATH")
@@ -567,6 +661,11 @@ def main():
         elif name in outputs:
             command.add_argument("--output", default=outputs[name],
                                  help="new output directory, relative to project or absolute")
+        if name == "verify-package":
+            command.add_argument("--package", default="target/package",
+                                 help="package directory to verify, relative to project or absolute")
+            command.add_argument("--allow-dirty", action="store_true",
+                                 help="accept a package whose source snapshot is marked dirty")
         if name == "init":
             command.add_argument("--source", required=True, help="verified source package directory")
         if name == "inspect-lvgl":
@@ -616,6 +715,8 @@ def main():
                 result["lvgl"] = inspect_source(resolve_path(args.source, project),
                                                 resolve_path(args.config, project),
                                                 Path(selected["path"]))
+        elif args.command == "verify-package":
+            result.update(verify_package(resolve_path(args.package, project), args.allow_dirty))
         elif args.command == "export-ndk":
             result.update(export_ndk(args, lock, host, project, cache, sdk))
         elif args.command == "export-package":
@@ -658,8 +759,9 @@ def main():
             print("Header inspection only; build and runtime verification have not run.")
         if "output" in result:
             label = {"export-ndk": "NDK", "export-sdk": "SDK", "export-source": "Source",
-                     "init": "Project", "export-package": "Package"}
-            print(f"{label[args.command]}: {result['output']}")
+                     "init": "Project", "export-package": "Package", "verify-package": "Package"}
+            if "output" in result:
+                print(f"{label[args.command]}: {result['output']}")
         for section in ("tools", "prerequisites"):
             for name, report in result.get(section, {}).items():
                 detail = (f"{report['version']}  {report['path']}" if report["ok"] else report["error"])
