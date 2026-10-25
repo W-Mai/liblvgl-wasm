@@ -125,6 +125,7 @@ button:focus-visible, a:focus-visible, select:focus-visible, label[tabindex]:foc
 .file-state > span:last-child { color: var(--muted); font-size: 9px; letter-spacing: .05em; }
 .file-dot { width: 7px; height: 7px; flex: none; background: var(--status); transform: rotate(45deg); }
 .file-dot.app-dot { background: var(--mark); }
+.artifact-status { margin: 10px 0 0; color: var(--muted); font: 10px/1.45 var(--mono); overflow-wrap: anywhere; }
 .card-note { margin: 12px 0 0; color: var(--muted); font-size: 11px; line-height: 1.5; }
 .card-note code { color: var(--mark); font: 11px var(--mono); }
 .core-details { display: flex; justify-content: space-between; gap: 8px; width: 100%; margin-top: 12px; padding: 8px 0; border: 0; border-top: 1px solid var(--line); background: transparent; color: var(--ink); font: 11px var(--mono); text-align: left; }

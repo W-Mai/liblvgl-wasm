@@ -305,6 +305,8 @@ Open `http://127.0.0.1:8765/studio/`. The page starts with the default core and 
 
 Custom cores must implement bridge ABI 1 and the exports used by Studio. An arbitrary LVGL Wasm build without this bridge cannot be loaded. Application uploads are executable artifacts: Studio does not compile C, C++, Rust, or TypeScript source in the browser. Uploaded code runs in a sandboxed iframe worker; stopping the app removes its runner. Files are read by the browser and are not sent to a compilation service.
 
+Wasm uploads are inspected before execution. A module with the `lvw_app` imports and exports enters LVGL app mode; a module with the standalone `lvw_firmware_*` exports enters firmware mode and supplies its own RGBA8888 frame. Unsupported modules remain blocked with their missing imports and exports shown in the preflight report.
+
 The library status opens **Library details** in the same side panel used for source files. It shows the loaded core's SHA-256, bridge ABI, host SDK match, and import/export counts. A matching core also shows its generated LVGL version and software configuration. A different bridge-compatible core shows **Bridge only**, with unknown build configuration; the default file location does not bypass this check. Enabled configuration entries do not imply complete format support; the [software rendering sections](#software-rendering) document the verified behavior and limits. Stopping, restarting, or failing an application clears its active library details. Cancelling a pending load keeps it stopped.
 
 ### Application toolchains

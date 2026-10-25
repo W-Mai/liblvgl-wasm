@@ -1,6 +1,7 @@
 import { StudioController } from "./controller.ts";
 import { startCDemo, type CDemo } from "./c-demo.ts";
 import { inspectCore, type CoreReport } from "./core.ts";
+import { inspectArtifact, type ArtifactReport } from "./artifacts.ts";
 import { renderHighlighted } from "./highlight.ts";
 import { loadResources, readResources, type ResourceFile } from "./resources.ts";
 import type { AppSource, RunnerOutput } from "./protocol.ts";
@@ -130,8 +131,11 @@ const status = element<HTMLElement>("#run-status");
 const consoleOutput = element<HTMLElement>("#console-output");
 const coreName = element<HTMLElement>("#core-name");
 const coreOrigin = element<HTMLElement>("#core-origin");
+const corePreflight = element<HTMLElement>("#core-preflight");
 const appName = element<HTMLElement>("#app-name");
 const appOrigin = element<HTMLElement>("#app-origin");
+const appPreflight = element<HTMLElement>("#app-preflight");
+const appDetails = element<HTMLButtonElement>("#app-details");
 const coreDrop = element<HTMLLabelElement>("#core-drop");
 const coreFile = element<HTMLInputElement>("#core-file");
 const appFile = element<HTMLInputElement>("#app-file");
@@ -161,10 +165,12 @@ for (const button of document.querySelectorAll<HTMLButtonElement>("[data-theme-c
 setTheme(document.documentElement.dataset.theme === "dark" ? "dark" : "light");
 
 let selectedCore: File | undefined;
+let selectedCoreReport: ArtifactReport | undefined;
 let selectedApp: Source = {
   name: "JS sample application", origin: "SAMPLE",
   load: () => fetchApp(toolchains.js.sample, "js"),
 };
+let selectedAppReport: ArtifactReport | undefined;
 let selectedLanguage: Language = "js";
 let resources: File[] = [];
 let width = 320;
@@ -213,6 +219,14 @@ function appendLog(message: string, kind: "normal" | "success" | "error" = "norm
 function setStatus(value: "starting" | "running" | "stopped" | "error", label: string): void {
   status.dataset.state = value;
   status.textContent = label;
+}
+
+function artifactSummary(report: ArtifactReport): string {
+  if (report.mode === "unavailable") return `Blocked · ${report.reasons[0] ?? "Unsupported artifact"}`;
+  if (report.kind === "firmware") return "Firmware ABI · standalone framebuffer";
+  if (report.kind === "lvw-app") return "LVW app ABI · LVGL app mode";
+  if (report.kind === "lvgl-core") return "LVGL core · bridge ready";
+  return "Unknown artifact";
 }
 
 function onOutput(message: RunnerOutput): void {
@@ -273,14 +287,17 @@ async function run(): Promise<"started" | "failed" | "cancelled"> {
   const uploads = [...resources];
   const library = selectedCore;
   setStatus("starting", "Loading application");
-  appendLog(`Starting ${source.name} with ${library?.name || "default liblvgl.wasm"}…`);
+  appendLog(`Starting ${source.name} with ${selectedAppReport?.mode === "firmware" ? "firmware mode" : library?.name || "default liblvgl.wasm"}…`);
   try {
-    const [core, app, assets] = await Promise.all([
-      library ? library.arrayBuffer() : fetchBuffer("/target/wasm/liblvgl.wasm"),
-      source.load(), loadResources(source.resources ?? [], uploads),
-    ]);
+    const [app, assets] = await Promise.all([source.load(), loadResources(source.resources ?? [], uploads)]);
     if (runId !== generation) return "cancelled";
-    await controller.start({ mode: "lvgl-app", core, app, resources: assets, width, height });
+    if (selectedAppReport?.mode === "firmware") {
+      if (app.kind !== "wasm") throw new Error("Firmware mode requires a Wasm application artifact.");
+      await controller.start({ mode: "firmware", firmware: app.bytes, width, height });
+    } else {
+      const core = await (library ? library.arrayBuffer() : fetchBuffer("/target/wasm/liblvgl.wasm"));
+      await controller.start({ mode: "lvgl-app", core, app, resources: assets, width, height });
+    }
     return runId === generation ? "started" : "cancelled";
   } catch (error) {
     if (runId !== generation) return "cancelled";
@@ -301,6 +318,7 @@ function showCoreSource(): void {
   coreDrop.classList.toggle("is-hidden", !custom);
   coreName.textContent = selectedCore?.name || "liblvgl.wasm";
   coreOrigin.textContent = custom ? "LOCAL FILE" : "BUILT-IN";
+  corePreflight.textContent = selectedCoreReport ? artifactSummary(selectedCoreReport) : "Default bridge core";
 }
 
 async function chooseCore(file: File): Promise<void> {
@@ -310,8 +328,12 @@ async function chooseCore(file: File): Promise<void> {
     appendLog("Choose a .wasm library between 1 byte and 32 MiB", "error");
     return;
   }
+  let report: ArtifactReport;
   try {
-    await inspectCore(await file.arrayBuffer());
+    const bytes = await file.arrayBuffer();
+    report = await inspectArtifact(bytes, "core");
+    if (report.mode === "unavailable") throw new Error(report.reasons.join(" "));
+    await inspectCore(bytes);
   } catch (error) {
     if (choice !== coreChoice || runId !== generation) return;
     appendLog(`Library rejected: ${error instanceof Error ? error.message : String(error)}`, "error");
@@ -319,10 +341,13 @@ async function chooseCore(file: File): Promise<void> {
   }
   if (choice !== coreChoice || runId !== generation) return;
   const previous = selectedCore;
+  const previousReport = selectedCoreReport;
   selectedCore = file;
+  selectedCoreReport = report;
   showCoreSource();
   if (await run() === "failed" && selectedCore === file) {
     selectedCore = previous;
+    selectedCoreReport = previousReport;
     showCoreSource();
     await run();
   }
@@ -335,16 +360,31 @@ async function chooseApp(file: File): Promise<void> {
     appendLog("Choose a built .js or .wasm application up to 8 MiB", "error");
     return;
   }
+  let report: ArtifactReport | undefined;
+  let wasmBytes: ArrayBuffer | undefined;
+  if (kind === "wasm") {
+    try {
+      wasmBytes = await file.arrayBuffer();
+      report = await inspectArtifact(wasmBytes, "application");
+      if (report.mode === "unavailable") throw new Error(report.reasons.join(" "));
+    } catch (error) {
+      appendLog(`Application rejected: ${error instanceof Error ? error.message : String(error)}`, "error");
+      return;
+    }
+  }
   const candidate: Source = {
     name: file.name, origin: "LOCAL FILE",
     load: async () => kind === "js" ? { kind, source: await file.text() }
-      : { kind, bytes: await file.arrayBuffer() },
+      : { kind, bytes: wasmBytes!.slice(0) },
   };
   const previous = selectedApp;
+  const previousReport = selectedAppReport;
   selectedApp = candidate;
+  selectedAppReport = report;
   showAppSource();
   if (await run() === "failed" && selectedApp === candidate) {
     selectedApp = previous;
+    selectedAppReport = previousReport;
     showAppSource();
     await run();
   }
@@ -373,6 +413,8 @@ function fileDrop(target: HTMLElement, onFile: (file: File) => void): void {
 function showAppSource(): void {
   appName.textContent = selectedApp.name;
   appOrigin.textContent = selectedApp.origin;
+  appPreflight.textContent = selectedAppReport ? artifactSummary(selectedAppReport) : "JavaScript · LVGL app mode";
+  appDetails.disabled = !selectedAppReport;
   renderResources();
 }
 
@@ -472,12 +514,14 @@ async function chooseSample(language: Language): Promise<void> {
     resources: tool.resources,
     load: () => fetchApp(tool.sample, tool.kind),
   };
+  selectedAppReport = undefined;
   showAppSource();
   await run();
 }
 
 element<HTMLButtonElement>("#core-default").addEventListener("click", () => {
   selectedCore = undefined;
+  selectedCoreReport = undefined;
   showCoreSource();
   void run();
 });
@@ -534,7 +578,10 @@ viewportSelect.addEventListener("change", () => {
   fitDevice();
   canvas.width = width;
   canvas.height = height;
-  if (running) controller.resize(width, height);
+  if (running) {
+    if (selectedAppReport?.mode === "firmware") void run();
+    else controller.resize(width, height);
+  }
 });
 window.addEventListener("resize", fitDevice);
 for (const button of document.querySelectorAll<HTMLButtonElement>("[data-language]")) {
@@ -571,7 +618,7 @@ function renderDemoIdentity(info?: CDemo["identity"]): void {
   element<HTMLElement>("#c-demo-hash").textContent = info?.coreSha256 ?? "";
 }
 function renderCore(info?: CoreReport): void {
-  coreDetails.disabled = !info;
+  coreDetails.disabled = !info && !selectedCoreReport;
   const sdkStatus = info?.identity.sdk.status;
   element<HTMLElement>("#core-sdk-status").textContent = !info ? "No active library"
     : sdkStatus === "matched" ? "Host SDK matched"
@@ -618,7 +665,50 @@ function renderCore(info?: CoreReport): void {
   hashes.push(["SDK API · SHA-256", info.identity.sdk.apiSha256]);
   rows(hashes, "library-hashes");
 }
+
+function renderArtifactReport(report: ArtifactReport, title: string): void {
+  stopPanelContent();
+  showPanel();
+  panelTitle.textContent = title;
+  panelDemo.hidden = true;
+  panelDemoFooter.hidden = true;
+  panelSource.hidden = true;
+  panelLibrary.hidden = false;
+  panelLibrary.replaceChildren();
+  const paragraph = (text: string): void => {
+    const node = document.createElement("p");
+    node.textContent = text;
+    panelLibrary.append(node);
+  };
+  const rows = (items: [string, string][]): void => {
+    const list = document.createElement("dl");
+    for (const [name, value] of items) {
+      const term = document.createElement("dt");
+      term.textContent = name;
+      const description = document.createElement("dd");
+      description.textContent = value;
+      list.append(term, description);
+    }
+    panelLibrary.append(list);
+  };
+  rows([
+    ["Detected", report.kind],
+    ["Run mode", report.mode],
+    ["Size", `${report.bytes} bytes`],
+    ["SHA-256", report.sha256],
+    ["Imports / exports", `${report.imports.length} / ${report.exports.length}`],
+  ]);
+  for (const capability of report.capabilities) {
+    paragraph(`${capability.state.toUpperCase()} · ${capability.id} · ${capability.detail}`);
+  }
+  for (const reason of report.reasons) paragraph(`Blocked · ${reason}`);
+}
+
 function openCoreDetails(): void {
+  if (selectedCoreReport && !running) {
+    renderArtifactReport(selectedCoreReport, "Library preflight");
+    return;
+  }
   stopPanelContent();
   showPanel();
   panelTitle.textContent = "Library details";
@@ -628,6 +718,10 @@ function openCoreDetails(): void {
   panelLibrary.hidden = false;
 }
 coreDetails.addEventListener("click", openCoreDetails);
+function openAppDetails(): void {
+  if (selectedAppReport) renderArtifactReport(selectedAppReport, "Application preflight");
+}
+appDetails.addEventListener("click", openAppDetails);
 function showPanel(): void {
   if (document.body.classList.contains("panel-open")) return;
   if (closeTimer) clearTimeout(closeTimer);

@@ -53,6 +53,7 @@
             </label>
             <input id="core-file" class="sr-only" type="file" accept=".wasm,application/wasm" aria-label="Choose custom LVGL Wasm library">
             <div class="file-state"><span class="file-dot"></span><span id="core-name">liblvgl.wasm</span><span id="core-origin">BUILT-IN</span></div>
+            <p id="core-preflight" class="artifact-status">Default bridge core</p>
             <button id="core-details" class="core-details" type="button" aria-label="Library details" disabled><span id="core-sdk-status">No active library</span><span aria-hidden="true">→</span></button>
           </section>
 
@@ -65,6 +66,8 @@
             </label>
             <input id="app-file" class="sr-only" type="file" accept=".js,.wasm,text/javascript,application/wasm" aria-label="Choose an application artifact">
             <div class="file-state"><span class="file-dot app-dot"></span><span id="app-name">JS sample application</span><span id="app-origin">SAMPLE</span></div>
+            <p id="app-preflight" class="artifact-status">JavaScript · LVGL app mode</p>
+            <button id="app-details" class="core-details" type="button" aria-label="Application preflight details" disabled><span>Preflight report</span><span aria-hidden="true">→</span></button>
             <button id="app-reset" class="text-action" type="button">↺ &nbsp;Restore sample app</button>
           </section>
 
