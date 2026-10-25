@@ -1,12 +1,6 @@
-import type { AppSource, ResourceSource, RunnerInput, RunnerOutput } from "./protocol.ts";
+import type { LvglAppRun, RunnerInput, RunnerOutput, FirmwareRun } from "./protocol.ts";
 
-export interface RunConfig {
-  core: ArrayBuffer;
-  app: AppSource;
-  resources: ResourceSource[];
-  width: number;
-  height: number;
-}
+export type RunConfig = LvglAppRun | FirmwareRun;
 
 type FrameMessage =
   | { token: string; type: "frame-ready" }

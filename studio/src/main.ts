@@ -218,9 +218,15 @@ function setStatus(value: "starting" | "running" | "stopped" | "error", label: s
 function onOutput(message: RunnerOutput): void {
   if (message.type === "ready") {
     running = true;
-    renderCore(message.core);
-    setStatus("running", "Application running");
-    appendLog(`Core ABI ${message.core.identity.bridgeAbi} ready · ${message.core.exports} exports · ${message.width} × ${message.height}`, "success");
+    if (message.mode === "firmware") {
+      renderCore();
+      setStatus("running", "Firmware running");
+      appendLog(`Firmware ABI ${message.firmware.abi} ready · ${message.width} × ${message.height}`, "success");
+    } else {
+      renderCore(message.core);
+      setStatus("running", "Application running");
+      appendLog(`Core ABI ${message.core.identity.bridgeAbi} ready · ${message.core.exports} exports · ${message.width} × ${message.height}`, "success");
+    }
   } else if (message.type === "frame") {
     if (canvas.width !== message.width || canvas.height !== message.height) {
       canvas.width = message.width;
@@ -274,7 +280,7 @@ async function run(): Promise<"started" | "failed" | "cancelled"> {
       source.load(), loadResources(source.resources ?? [], uploads),
     ]);
     if (runId !== generation) return "cancelled";
-    await controller.start({ core, app, resources: assets, width, height });
+    await controller.start({ mode: "lvgl-app", core, app, resources: assets, width, height });
     return runId === generation ? "started" : "cancelled";
   } catch (error) {
     if (runId !== generation) return "cancelled";

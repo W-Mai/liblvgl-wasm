@@ -1,14 +1,17 @@
 import { LvglRuntime, type Display, type ObjectRef, type PointerInput } from "../../bindings/typescript/src/index.ts";
 import type { AppApi } from "../../toolchains/ts/api.ts";
 import { describeCore, inspectCore } from "./core.ts";
+import { FirmwareRuntime } from "./firmware.ts";
 import type { AppSource, RunnerInput, RunnerOutput } from "./protocol.ts";
 
 const worker = self as DedicatedWorkerGlobalScope;
 let runtime: LvglRuntime | undefined;
 let display: Display | undefined;
 let pointer: PointerInput | undefined;
+let firmware: FirmwareRuntime | undefined;
 let timer: ReturnType<typeof setTimeout> | undefined;
 let last = 0;
+let firmwareFrameId = 0;
 
 function send(message: RunnerOutput, transfer: Transferable[] = []): void {
   worker.postMessage(message, transfer);
@@ -28,15 +31,28 @@ function frame(): void {
     frameId: result.frameId, pixels }, [pixels]);
 }
 
+function firmwareFrame(): void {
+  if (!firmware) return;
+  const pixels = firmware.frame();
+  send({ type: "frame", width: firmware.width, height: firmware.height,
+    frameId: ++firmwareFrameId, pixels }, [pixels]);
+}
+
 function tick(): void {
-  if (!runtime) return;
+  if (!runtime && !firmware) return;
   try {
     const now = performance.now();
     const elapsed = Math.min(100, Math.max(0, Math.round(now - last)));
     last = now;
-    const result = runtime.step(elapsed);
-    if (result.framesChanged) frame();
-    timer = setTimeout(tick, Math.max(8, Math.min(result.nextMs || 16, 50)));
+    let nextMs = 16;
+    if (firmware) {
+      if (firmware.step(elapsed)) firmwareFrame();
+    } else {
+      const result = runtime!.step(elapsed);
+      if (result.framesChanged) frame();
+      nextMs = result.nextMs;
+    }
+    timer = setTimeout(tick, Math.max(8, Math.min(nextMs || 16, 50)));
   } catch (error) {
     fail(error);
   }
@@ -126,6 +142,15 @@ async function runApplication(app: AppSource, api: AppApi): Promise<void> {
 async function start(input: Extract<RunnerInput, { type: "start" }>): Promise<void> {
   let info;
   try {
+    if (input.mode === "firmware") {
+      firmware = await FirmwareRuntime.load(input.firmware, input.width, input.height);
+      firmwareFrameId = 0;
+      send({ type: "ready", mode: "firmware", width: input.width, height: input.height, firmware: firmware.report });
+      last = performance.now();
+      firmwareFrame();
+      tick();
+      return;
+    }
     const preflight = await inspectCore(input.core);
     runtime = await LvglRuntime.load(input.core);
     info = describeCore(runtime.identity, preflight);
@@ -148,7 +173,7 @@ async function start(input: Extract<RunnerInput, { type: "start" }>): Promise<vo
   } catch (error) {
     throw new Error(`Application failed to start: ${error instanceof Error ? error.message : String(error)}`);
   }
-  send({ type: "ready", width: input.width, height: input.height, core: info });
+  send({ type: "ready", mode: "lvgl-app", width: input.width, height: input.height, core: info });
   last = performance.now();
   tick();
 }
@@ -158,11 +183,18 @@ worker.onmessage = (event: MessageEvent<RunnerInput>) => {
   if (message.type === "start") {
     start(message).catch(fail);
   } else if (message.type === "pointer") {
-    try { pointer?.push(message.x, message.y, message.pressed); } catch (error) { fail(error); }
+    try {
+      if (firmware) firmware.pointer(message.x, message.y, message.pressed);
+      else pointer?.push(message.x, message.y, message.pressed);
+    } catch (error) { fail(error); }
   } else if (message.type === "resize") {
-    try { display?.resize(message.width, message.height); } catch (error) { fail(error); }
+    try {
+      if (firmware) throw new Error("Firmware resolution is fixed at initialization; restart to resize");
+      display?.resize(message.width, message.height);
+    } catch (error) { fail(error); }
   } else if (message.type === "stop") {
     if (timer) clearTimeout(timer);
+    try { firmware?.shutdown(); } catch { /* Worker termination remains the hard stop. */ }
     worker.close();
   }
 };
