@@ -24,6 +24,7 @@ For an existing NDK or host SDK, inspect its manifests and exact core/API identi
 
 - **Host SDK**: load `target/wasm/liblvgl.wasm` from TypeScript or Rust and use generated host bindings.
 - **`lvw_app` application**: build a browser or Studio application that imports the host bridge and runs beside the selected core.
+- **Standalone firmware**: build a Wasm module exporting `lvw_firmware_*` from `toolchains/include/lvw_firmware.h`; Studio initializes it with the selected frame size, copies its RGBA8888 frame, and forwards pointer input.
 - **Native reactor**: link the application and LVGL into one Wasm module with the NDK; call the original `lv_*` C API directly.
 
 Do not treat a native reactor as a Studio `lvw_app` upload. They have different ABIs and different core identities.
@@ -61,7 +62,7 @@ python3 -B toolchains/lvw.py export-ndk \
   --build-dir target/custom-core --output target/custom-ndk --json
 ```
 
-The default managed adapter list is `timer;animation;observer;decoder`. Select `--bridge-features ''` only when a base bridge satisfies the requested capabilities. `config/base/lv_conf.h` is an explicit software-rendering/BMP preset, not a replacement for the user's configuration. Old sources with unavailable requested adapters fail before building. The exporter installs the selected `lv_conf.h` and rejects config dependencies outside the NDK/SDK. Local config helper headers are not packaged automatically.
+The default managed bridge feature list is `timer;animation;observer;decoder`. Select `--bridge-features ''` only when a base bridge satisfies the requested capabilities. `config/base/lv_conf.h` is an explicit software-rendering/BMP preset, not a replacement for the user's configuration. Old sources with unavailable requested adapters fail before building. The exporter installs the selected `lv_conf.h` and rejects config dependencies outside the NDK/SDK. Local config helper headers are not packaged automatically. Studio custom-core preflight does not select these adapters; legacy adapter lookup requires an explicit exact-identity registry entry.
 
 `--bridge-features 'timer;animation;observer;decoder'` supports the verified v9.0.0, v9.1.0, v9.2.2, v9.3.0, v9.4.0, v9.5.0, and v9.6.0 sources without external data. The adapters check source SHA-256 and add native binding/release hooks to build-directory copies, preserving `user_data`, native variables, automatic deletion, and host-handler release. Link the exported bridge with the adapted LVGL archive. Use the shared TS/Rust lifecycle checks through `bun run check:compatibility`; a successful base-core check alone does not verify callbacks. LVGL 9.0.0, 9.1.0, and 9.2.2 early animation execution uses the starting value, starts notify once, reverse controls use `playback` names, and per-animation pause is unavailable. LVGL 9.3.0 queries the path during early apply and exposes reverse and pause APIs, but its start notification still runs once. LVGL 9.4.0 and 9.5.0 repeat the start notification for playback segments. Use the generated APIs and the selected source's native behavior. Software adaptations still require their independently verified source revisions.
 

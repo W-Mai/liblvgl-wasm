@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Studio artifact preflight reports, standalone firmware execution, and explicit compatibility registry lookup for custom cores and applications.
+
 - LVGL 9.2.2 PNG decoding with bounded headers, native session and cache lifetimes, failed-decode cleanup, and relocated NDK/host SDK checks.
 
 - LVGL 9.1.0 vector drawing with native API signatures, resource loading, clipping, transparent layers, and source-matched NDK/host SDK packages.

@@ -309,6 +309,8 @@ Wasm uploads are inspected before execution. A module with the `lvw_app` imports
 
 The library status opens **Library details** in the same side panel used for source files. It shows the loaded core's SHA-256, bridge ABI, host SDK match, and import/export counts. A matching core also shows its generated LVGL version and software configuration. A different bridge-compatible core shows **Bridge only**, with unknown build configuration; the default file location does not bypass this check. Enabled configuration entries do not imply complete format support; the [software rendering sections](#software-rendering) document the verified behavior and limits. Stopping, restarting, or failing an application clears its active library details. Cancelling a pending load keeps it stopped.
 
+Studio preflight is capability-only. It does not search the compatibility matrix or silently adapt a custom core. Compatibility adapter names can be resolved only by an explicit registry entry matching the supplied source and core identities.
+
 ### Application toolchains
 
 The toolchain panel shows sample source files with syntax highlighting in a side panel and provides build commands. On localhost, an open source panel refreshes when its file changes. Build from the repository root, then upload the output shown below. `scripts/build.sh` builds all included samples; individual commands rebuild one sample.

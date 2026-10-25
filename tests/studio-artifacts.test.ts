@@ -3,6 +3,7 @@ import {
   APP_REQUIRED_EXPORTS, CORE_REQUIRED_EXPORTS, FIRMWARE_REQUIRED_EXPORTS,
   inspectArtifact,
 } from "../studio/src/artifacts.ts";
+import { resolveCompatibilityAdapter } from "../studio/src/compatibility.ts";
 
 function u32(value: number): number[] {
   const bytes: number[] = [];
@@ -98,5 +99,18 @@ test("reports malformed and unknown modules without instantiation", async () => 
   expect(unknown.kind).toBe("unknown");
   expect(unknown.reasons.length).toBeGreaterThan(0);
   expect(unknown.sha256).toHaveLength(64);
+});
+
+test("compatibility adapters require an exact caller-supplied registry entry", () => {
+  const entry = {
+    id: "lvgl-9.1-observer",
+    sourceSha256: "source-91",
+    coreSha256: "core-91",
+    capabilities: ["observer"],
+  } as const;
+  expect(resolveCompatibilityAdapter({ sourceSha256: entry.sourceSha256, coreSha256: entry.coreSha256 }, [])).toBeUndefined();
+  expect(resolveCompatibilityAdapter({ sourceSha256: entry.sourceSha256, coreSha256: entry.coreSha256 }, [entry])).toEqual(entry);
+  expect(resolveCompatibilityAdapter({ sourceSha256: "source-90", coreSha256: entry.coreSha256 }, [entry])).toBeUndefined();
+  expect(resolveCompatibilityAdapter({ sourceSha256: entry.sourceSha256, coreSha256: "core-90" }, [entry])).toBeUndefined();
 });
 
