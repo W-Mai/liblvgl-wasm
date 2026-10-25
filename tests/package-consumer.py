@@ -23,7 +23,8 @@ def readonly(root, enabled):
         if path.is_dir():
             path.chmod(0o555 if enabled else 0o755)
         elif path.is_file():
-            path.chmod(0o444 if enabled else 0o644)
+            executable = path.stat().st_mode & 0o111
+            path.chmod((0o444 | executable) if enabled else (0o644 | executable))
 
 
 def run_typescript(package, work):
@@ -89,9 +90,9 @@ def run_rust(package, work):
         '[dependencies]\nliblvgl-wasm-host = { path = '
         + json.dumps(str(host)) + ' }\n'
     )
-    run("cargo", "generate-lockfile", "--manifest-path", project / "Cargo.toml")
     environment = {**os.environ, "CARGO_TARGET_DIR": str(work / "cargo-target")}
-    run("cargo", "run", "--locked", "--manifest-path", project / "Cargo.toml", "--",
+    run("cargo", "generate-lockfile", "--offline", "--manifest-path", project / "Cargo.toml")
+    run("cargo", "run", "--offline", "--manifest-path", project / "Cargo.toml", "--",
         package / "host-sdk/runtime/liblvgl.wasm", env=environment)
 
 
