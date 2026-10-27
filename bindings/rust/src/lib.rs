@@ -188,6 +188,7 @@ impl Runtime {
                     "fd_close"
                         | "fd_write"
                         | "fd_seek"
+                        | "clock_time_get"
                         | "environ_get"
                         | "environ_sizes_get"
                         | "proc_exit"

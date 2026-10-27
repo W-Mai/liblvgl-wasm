@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+- WASI realtime and monotonic clock imports for TypeScript and Rust hosts.
 - Studio artifact preflight reports, standalone firmware execution, and explicit compatibility registry lookup for custom cores and applications.
 - Relocatable package verification for nested manifests, exact identities, clean source state, symlink rejection, and complete file inventories.
 - Relocated complete-package acceptance for TypeScript and Rust hosts using a read-only package copy.

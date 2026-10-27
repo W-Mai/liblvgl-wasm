@@ -1,11 +1,24 @@
 export const WASI_IMPORT_NAMES = [
-  "fd_close", "fd_seek", "fd_write", "environ_get", "environ_sizes_get", "proc_exit",
+  "fd_close", "fd_seek", "fd_write", "environ_get", "environ_sizes_get", "proc_exit", "clock_time_get",
 ] as const;
 
 /** Minimal WASIp1 services for the core; no host environment or filesystem. */
 export function createWasiImports(getMemory: () => WebAssembly.Memory | undefined) {
   const decoder = new TextDecoder();
   return {
+    clock_time_get(clock: number, _precision: bigint, pointer: number) {
+      clock >>>= 0;
+      pointer >>>= 0;
+      if (clock > 3) return 28;
+      if (clock > 1) return 58;
+      const memory = getMemory();
+      if (!memory || pointer > memory.buffer.byteLength - 8) return 21;
+      const time = clock === 0
+        ? BigInt(Date.now()) * 1_000_000n
+        : BigInt(Math.trunc(performance.now() * 1_000_000));
+      new DataView(memory.buffer).setBigUint64(pointer, time, true);
+      return 0;
+    },
     fd_close() { return 0; },
     fd_seek(fd: number, _offset: bigint, _whence: number, _result: number) {
       return fd >= 0 && fd <= 2 ? 70 : 8;

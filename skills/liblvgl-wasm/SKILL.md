@@ -29,6 +29,8 @@ For an existing NDK or host SDK, inspect its manifests and exact core/API identi
 
 Do not treat a native reactor as a Studio `lvw_app` upload. They have different ABIs and different core identities.
 
+WASI realtime and monotonic clocks use host time. LVGL timers advance through the explicit `step` interval.
+
 ## Prepare a portable checkout
 
 Run from the checkout or an initialized source project:
