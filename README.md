@@ -54,7 +54,7 @@ python3 -B toolchains/lvw.py prepare --offline
 
 Preparation verifies archive size and SHA-256, rejects escaping archive paths and links, and publishes installations only after validation. Reuse checks the complete installed tree, including file bytes, executable bits, and link targets. A cache lock prevents concurrent preparation from publishing partial tools. Invalid existing archives or installations produce an error; remove the named archive or move the named installation aside before retrying. `--offline` reuses verified installations or cached archives and never downloads. This option covers compiler preparation; source archives and Bun/Cargo dependencies have their own build requirements.
 
-macOS arm64 preparation, relocation, offline reuse, and a C++ standard-exception/SJLJ reactor have been checked locally. Linux x86_64 archives are configured; this preparation path requires validation in Linux CI. Other build hosts are rejected.
+macOS arm64 preparation, relocation, offline reuse, and a C++ standard-exception/SJLJ reactor have been checked locally. Linux x86_64 preparation and offline reuse have been checked on Manjaro; Ubuntu 24.04 CI remains to be verified. Other build hosts are rejected.
 
 ### LVGL source inspection
 

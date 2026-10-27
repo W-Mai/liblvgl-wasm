@@ -74,6 +74,21 @@ console.log(JSON.stringify(result, (_, value) =>
         package / "source/examples/browser/red.bmp", cwd=project)
 
 
+def external_packages(lock):
+    packages = set()
+    for block in lock.read_text().split("[[package]]")[1:]:
+        fields = {}
+        for line in block.splitlines():
+            if line.startswith("["):
+                break
+            key, separator, value = line.partition(" = ")
+            if separator and key in ("name", "version", "source", "checksum"):
+                fields[key] = json.loads(value)
+        if "source" in fields:
+            packages.add((fields["name"], fields["version"], fields["source"], fields.get("checksum")))
+    return packages
+
+
 def run_rust(package, work):
     project = work / "rust consumer"
     (project / "src").mkdir(parents=True)
@@ -91,8 +106,16 @@ def run_rust(package, work):
         + json.dumps(str(host)) + ' }\n'
     )
     environment = {**os.environ, "CARGO_TARGET_DIR": str(work / "cargo-target")}
-    run("cargo", "generate-lockfile", "--offline", "--manifest-path", project / "Cargo.toml")
-    run("cargo", "run", "--offline", "--manifest-path", project / "Cargo.toml", "--",
+    environment.pop("LVW_RUST_BINDINGS", None)
+    original_lock = host / "Cargo.lock"
+    consumer_lock = project / "Cargo.lock"
+    shutil.copyfile(original_lock, consumer_lock)
+    subprocess.run(["cargo", "metadata", "--offline", "--format-version", "1",
+                    "--manifest-path", str(project / "Cargo.toml")],
+                   env=environment, stdout=subprocess.DEVNULL, check=True)
+    if not external_packages(consumer_lock) <= external_packages(original_lock):
+        raise ValueError("consumer dependency identities differ from the packaged lock")
+    run("cargo", "run", "--locked", "--offline", "--manifest-path", project / "Cargo.toml", "--",
         package / "host-sdk/runtime/liblvgl.wasm", env=environment)
 
 
