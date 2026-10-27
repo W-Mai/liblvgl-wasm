@@ -160,13 +160,21 @@ if (tinyttfSource) test("legacy TinyTTF rejects file streams and clears its adap
   }
 });
 
-const thorvgSources = [resolve("target/sources/lvgl"), Bun.env.LVW_TEST_THORVG_SOURCE].filter(Boolean) as string[];
-for (const sourceRoot of thorvgSources) {
-  const pointTransforms = sourceRoot === Bun.env.LVW_TEST_THORVG_SOURCE &&
+const sourceReportPath = resolve(Bun.env.LVW_TEST_BUILD ?? "target/wasm", "lvgl-source.json");
+const sourceReport = await Bun.file(sourceReportPath).json();
+if (typeof sourceReport.source !== "string" || !sourceReport.source) {
+  throw new Error(`LVGL source is missing from ${sourceReportPath}`);
+}
+const thorvgSources = [{ root: sourceReport.source as string, extra: false }];
+if (Bun.env.LVW_TEST_THORVG_SOURCE) {
+  thorvgSources.push({ root: Bun.env.LVW_TEST_THORVG_SOURCE, extra: true });
+}
+for (const { root: sourceRoot, extra } of thorvgSources) {
+  const pointTransforms = extra &&
     (await Bun.file(join(sourceRoot, "src/draw/lv_draw_vector.c")).text()).includes("void lv_matrix_transform_point(");
   test.each([
     "src/libs/thorvg/config.h", "src/libs/thorvg/tvgSwRenderer.cpp", "src/draw/sw/lv_draw_sw_vector.c",
-    ...(sourceRoot === Bun.env.LVW_TEST_THORVG_SOURCE ? ["src/libs/thorvg/tvgSvgLoader.cpp"] : []),
+    ...(extra ? ["src/libs/thorvg/tvgSvgLoader.cpp"] : []),
     ...(pointTransforms ? ["src/draw/lv_draw_vector.c"] : []),
   ])("ThorVG adaptation rejects changed %s and removes all stale units", async (changed) => {
     const root = await mkdtemp(join(tmpdir(), "lvw thorvg source "));
