@@ -5,6 +5,7 @@ import argparse
 import ctypes
 import hashlib
 import http.client
+import importlib.util
 import json
 import os
 import platform
@@ -384,6 +385,246 @@ def verify_nested_package(root, entry, expected_kind):
     return manifest
 
 
+CAPABILITY_SPECS = {
+    "core": {"config": None, "imports": (), "exports": ()},
+    "timer": {"config": None, "imports": ("timer", "timer_release"),
+               "exports": ("lvw_timer_create", "lvw_timer_delete")},
+    "animation": {"config": None, "imports": ("anim_exec", "anim_query", "anim_notify", "anim_release"),
+                   "exports": ("lvw_anim_start", "lvw_anim_delete", "lvw_anim_exec")},
+    "observer": {"config": None, "imports": ("observer", "observer_release"),
+                 "exports": ("lvw_observer_create", "lvw_observer_delete")},
+    "decoder": {"config": None, "imports": ("decoder_info", "decoder_open", "decoder_area", "decoder_close", "decoder_release"),
+                "exports": ("lvw_decoder_create", "lvw_decoder_delete", "lvw_decoder_read", "lvw_decoder_write")},
+    "png": {"config": "LV_USE_LODEPNG", "imports": (), "exports": ()},
+    "bmp": {"config": "LV_USE_BMP", "imports": (), "exports": ()},
+    "gif": {"config": "LV_USE_GIF", "imports": (), "exports": ()},
+    "tinyttf": {"config": "LV_USE_TINY_TTF", "imports": (), "exports": ()},
+    "freetype": {"config": "LV_USE_FREETYPE", "imports": (), "exports": ()},
+    "vector": {"config": "LV_USE_VECTOR_GRAPHIC", "imports": (), "exports": ()},
+    "thorvg": {"config": "LV_USE_THORVG", "imports": (), "exports": ()},
+    "svg": {"config": "LV_USE_SVG", "imports": (), "exports": ()},
+    "lottie": {"config": "LV_USE_LOTTIE", "imports": (), "exports": ()},
+}
+
+ADAPTER_SOURCES = {
+    "timer": ("bridge/lvw.c", "cmake/timer.cmake"),
+    "animation": ("bridge/lvw.c", "cmake/animation.cmake"),
+    "observer": ("bridge/lvw.c", "cmake/observer.cmake"),
+    "decoder": ("bridge/lvw.c", "cmake/decoder.cmake"),
+}
+
+
+def load_wasm_reader(path):
+    """Load the source-matched Wasm reader without relying on the caller's cwd."""
+    module_path = Path(path).resolve(strict=True)
+    spec = importlib.util.spec_from_file_location("lvw_manifest_wasm", module_path)
+    if spec is None or spec.loader is None:
+        raise ValueError(f"cannot load Wasm reader: {module_path}")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module.read_module
+
+
+def capability_config(api):
+    values = {}
+    for entry in api.get("constants", []):
+        name = entry.get("name")
+        if not isinstance(name, str) or not name.startswith("LV_USE_"):
+            continue
+        category = entry.get("category")
+        if category == "integer" and isinstance(entry.get("value"), str):
+            try:
+                value = int(entry["value"], 10)
+            except ValueError:
+                value = None
+            values[name] = {"category": category, "value": value,
+                            "status": ("enabled" if value is not None and value > 0
+                                       else "disabled" if value == 0 else "unknown")}
+        else:
+            values[name] = {"category": category, "value": None, "status": "unknown"}
+    return values
+
+
+def capability_version(api):
+    constants = {entry.get("name"): entry for entry in api.get("constants", [])}
+    parts = {}
+    for part in ("MAJOR", "MINOR", "PATCH"):
+        entry = constants.get(f"LVGL_VERSION_{part}")
+        value = entry.get("value") if isinstance(entry, dict) else None
+        try:
+            parts[part.lower()] = int(value, 10)
+        except (TypeError, ValueError):
+            parts[part.lower()] = None
+    info = constants.get("LVGL_VERSION_INFO", {})
+    parts["info"] = info.get("text") if isinstance(info, dict) and info.get("category") == "string" else None
+    return parts
+
+
+def capability_wasm(module):
+    def item(entry):
+        return {key: entry[key] for key in ("module", "name", "kind", "index", "signature")
+                if key in entry}
+
+    imports = [item(entry) for entry in module["imports"]]
+    exports = {name: item(entry) for name, entry in sorted(module["exports"].items())}
+    return {"imports": imports, "exports": exports, "memories": module["memories"]}
+
+
+def capability_adapters(source_path):
+    adapters = {}
+    for name, paths in ADAPTER_SOURCES.items():
+        sources = [{"path": path, "sha256": file_sha256(source_path / path)}
+                   for path in paths if (source_path / path).is_file()]
+        adapters[name] = {"id": f"lvw.{name}", "sources": sources}
+    return adapters
+
+
+def capability_statuses(api, module):
+    config = capability_config(api)
+    imports = {entry["name"] for entry in module["imports"] if entry["kind"] == "function"
+               and entry["module"] == "lvw"}
+    exports = set(module["exports"])
+    result = {}
+    for name, spec in CAPABILITY_SPECS.items():
+        config_name = spec["config"]
+        config_entry = config.get(config_name) if config_name else None
+        declared = "yes" if name == "core" or not config_name or config_name in config else "unknown"
+        required_imports = set(spec["imports"])
+        required_exports = set(spec["exports"])
+        found_imports = required_imports & imports
+        found_exports = required_exports & exports
+        required = len(required_imports) + len(required_exports)
+        found = len(found_imports) + len(found_exports)
+        adapted = "not-applicable" if not required else ("enabled" if found == required
+                                                          else "unknown" if found else "disabled")
+        enabled = ("enabled" if name == "core" else
+                   config_entry["status"] if config_entry else
+                   "enabled" if adapted == "enabled" else "unknown")
+        result[name] = {
+            "declared": declared,
+            "enabled": enabled,
+            "adapted": adapted,
+            "runtime_verification": "not-run",
+        }
+    return result
+
+
+def build_capability_manifest(package, wasm_reader):
+    """Build a capability report entirely from the staged package bytes."""
+    package = Path(package).resolve(strict=True)
+    source_path = package / "source"
+    ndk_path = package / "ndk"
+    sdk_path = package / "host-sdk"
+    source_manifest_path = source_path / "source.json"
+    ndk_manifest_path = ndk_path / "ndk.json"
+    sdk_manifest_path = sdk_path / "sdk.json"
+    api_path = sdk_path / "metadata/api.json"
+    ndk_api_path = ndk_path / "share/liblvgl-wasm/metadata/api.json"
+    proof_path = sdk_path / "metadata/verification.json"
+    core_path = sdk_path / "runtime/liblvgl.wasm"
+    config_path = ndk_path / "share/liblvgl-wasm/config/lv_conf.h"
+    required = (source_manifest_path, ndk_manifest_path, sdk_manifest_path,
+                api_path, ndk_api_path, proof_path, core_path, config_path)
+    for path in required:
+        if not path.is_file():
+            raise ValueError(f"capability manifest input is missing: {path}")
+    source = json.loads(source_manifest_path.read_text())
+    ndk = json.loads(ndk_manifest_path.read_text())
+    sdk = json.loads(sdk_manifest_path.read_text())
+    api_bytes = api_path.read_bytes()
+    if ndk_api_path.read_bytes() != api_bytes:
+        raise ValueError("NDK and host SDK API metadata differ")
+    core_bytes = core_path.read_bytes()
+    proof = json.loads(proof_path.read_text())
+    api = json.loads(api_bytes)
+    revision = source.get("source", {}).get("revision")
+    if not isinstance(revision, str) or not revision:
+        raise ValueError("capability source identity is missing")
+    if not isinstance(api.get("constants"), list) or not isinstance(api.get("declarations"), list):
+        raise ValueError("capability API metadata is incomplete")
+    module = wasm_reader(core_bytes)
+    api_sha256 = hashlib.sha256(api_bytes).hexdigest()
+    wasm_sha256 = hashlib.sha256(core_bytes).hexdigest()
+    if proof.get("api_sha256") != api_sha256 or proof.get("wasm_sha256") != wasm_sha256:
+        raise ValueError("capability inputs disagree with the SDK verification proof")
+    reference = ndk.get("reference")
+    identity = sdk.get("identity")
+    if not isinstance(reference, dict) or not isinstance(identity, dict) or reference != identity:
+        raise ValueError("capability inputs disagree on core identity")
+    if reference.get("api_sha256") != api_sha256 or reference.get("wasm_sha256") != wasm_sha256:
+        raise ValueError("capability inputs disagree on API or core hash")
+    declarations = api.get("declarations", [])
+    expected = {entry.get("export_name"): entry for entry in declarations
+                if entry.get("category") in ("direct_export", "abi_shim")}
+    if (proof.get("expected_functions") != len(expected)
+            or proof.get("verified_functions") != len(expected)
+            or reference.get("expected_functions") != len(expected)
+            or reference.get("verified_functions") != len(expected)):
+        raise ValueError("capability API verification count does not match declarations")
+    for name, entry in expected.items():
+        actual = module["exports"].get(name)
+        if (not name or not actual or actual.get("kind") != "function"
+                or actual.get("signature") != entry.get("wasm_signature")):
+            raise ValueError(f"capability API export mismatch: {name}")
+    wasm = capability_wasm(module)
+    config_values = capability_config(api)
+    config_sha256 = hashlib.sha256(config_path.read_bytes()).hexdigest()
+    return {
+        "schema_version": 1,
+        "kind": "liblvgl-wasm-capabilities",
+        "identity": {
+            "target": sdk.get("target"),
+            "source_revision": revision,
+            "source_manifest_sha256": file_sha256(source_manifest_path),
+            "ndk_manifest_sha256": file_sha256(ndk_manifest_path),
+            "sdk_manifest_sha256": file_sha256(sdk_manifest_path),
+            "config_sha256": config_sha256,
+            "api_sha256": api_sha256,
+            "wasm_sha256": wasm_sha256,
+        },
+        "lvgl": {"version": capability_version(api), "api_functions": len(expected)},
+        "toolchain": {"target": sdk.get("target"), "ndk": ndk.get("toolchain"),
+                       "host": sdk.get("tools")},
+        "api": {"path": "host-sdk/metadata/api.json", "sha256": api_sha256,
+                "declarations": len(api.get("declarations", [])),
+                "supported_functions": len(expected)},
+        "core": {"path": "host-sdk/runtime/liblvgl.wasm", "sha256": wasm_sha256,
+                 "imports": len(wasm["imports"]), "exports": len(wasm["exports"]),
+                 "memories": len(wasm["memories"])},
+        "abi": {"version_export": wasm["exports"].get("lvw_abi_version"),
+                "runtime_verification": "not-run"},
+        "configuration": {"path": "ndk/share/liblvgl-wasm/config/lv_conf.h",
+                           "sha256": config_sha256, "values": config_values},
+        "adapters": capability_adapters(source_path),
+        "wasm": {"path": "host-sdk/runtime/liblvgl.wasm", **wasm},
+        "capabilities": capability_statuses(api, module),
+        "verification": {"build": "not-run", "runtime": "not-run"},
+        "limitations": [
+            "The capability report binds package bytes and metadata; it does not prove source authenticity.",
+            "Runtime verification remains not-run until a host executes this exact core identity.",
+            "Unknown configuration values remain unknown instead of being treated as disabled.",
+        ],
+    }
+
+
+def verify_capability_manifest(package, manifest, source, ndk, sdk):
+    entry = manifest.get("capabilities")
+    if not isinstance(entry, dict) or entry.get("path") != "liblvgl.manifest.json":
+        raise ValueError("package manifest must reference liblvgl.manifest.json")
+    path = package_member(package, entry["path"])
+    if not path.is_file() or file_sha256(path) != entry.get("sha256"):
+        raise ValueError("capability manifest hash mismatch")
+    source_reader = package_member(package, source.get("path")) / "generator/wasm.py"
+    expected = build_capability_manifest(package, load_wasm_reader(source_reader))
+    try:
+        actual = json.loads(path.read_text())
+    except (OSError, ValueError) as error:
+        raise ValueError("invalid capability manifest") from error
+    if actual != expected:
+        raise ValueError("capability manifest does not match packaged inputs")
+    return actual
+
+
 def verify_package(package, allow_dirty=False):
     """Verify a complete relocatable source/NDK/host SDK package."""
     package = Path(package).expanduser().resolve(strict=True)
@@ -437,7 +678,9 @@ def verify_package(package, allow_dirty=False):
     if (ndk_entry.get("manifest") != "ndk/ndk.json"
             or sdk_entry.get("manifest") != "host-sdk/sdk.json"):
         raise ValueError("package manifest paths are inconsistent")
-    return {"output": str(package), "identity": manifest["core"], "files": len(inventory)}
+    capability = verify_capability_manifest(package, manifest, source_entry, ndk, sdk)
+    return {"output": str(package), "identity": manifest["core"],
+            "capabilities": len(capability["capabilities"]), "files": len(inventory)}
 
 
 def publish_package(staged, output, name, manifest):
@@ -577,10 +820,14 @@ def export_package(args, lock, host, project, cache, sdk):
         staged.mkdir()
         for name, package in (("source", source), ("ndk", ndk), ("host-sdk", sdk_package)):
             shutil.copytree(package, staged / name)
-        files = file_inventory(staged)
         source_data = json.loads((staged / "source/source.json").read_text())
         ndk_data = json.loads((staged / "ndk/ndk.json").read_text())
         sdk_data = json.loads((staged / "host-sdk/sdk.json").read_text())
+        reader_path = project / "generator/wasm.py"
+        capability = build_capability_manifest(staged, load_wasm_reader(reader_path))
+        capability_path = staged / "liblvgl.manifest.json"
+        capability_path.write_text(json.dumps(capability, indent=2) + "\n")
+        files = file_inventory(staged)
         toolchain = {
             name: {key: report[key] for key in ("source", "version", "archive_sha256") if key in report}
             for name, report in reports.items()
@@ -604,6 +851,8 @@ def export_package(args, lock, host, project, cache, sdk):
                 "manifest": "source/source.json",
             },
             "core": sdk_data["identity"],
+            "capabilities": {"path": "liblvgl.manifest.json",
+                             "sha256": file_sha256(capability_path)},
             "packages": {
                 "source": {"path": "source", "manifest": "source/source.json"},
                 "ndk": {"path": "ndk", "manifest": "ndk/ndk.json",
@@ -615,7 +864,8 @@ def export_package(args, lock, host, project, cache, sdk):
             "files": files,
         }
         publish_package(staged, output, "manifest.json", manifest)
-    return {"output": str(output), "identity": manifest["core"], "files": len(files)}
+    return {"output": str(output), "identity": manifest["core"],
+            "capabilities": len(capability["capabilities"]), "files": len(files)}
 
 
 def source_project(args, project):

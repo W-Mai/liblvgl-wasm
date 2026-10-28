@@ -232,7 +232,7 @@ The exported manifest enables `bundled-bindings` by default. A missing bundled f
 python3 -B toolchains/lvw.py export-package --output target/package --json
 ```
 
-The package has `source/`, `ndk/`, and `host-sdk/` directories. `manifest.json` is a semantic compatibility record plus a SHA-256 inventory for every file below those directories. The NDK and host SDK keep their own manifests and runtime notice trees. `--allow-dirty` is available for local development checks and marks the source entry as dirty; release automation leaves it disabled. The output is a directory suitable for archiving and remains usable after relocation.
+The package has `source/`, `ndk/`, and `host-sdk/` directories. `manifest.json` is a semantic compatibility record plus a SHA-256 inventory for every file below those directories. `liblvgl.manifest.json` is generated from the packaged bytes and records the exact source/config/API/core identities, target and toolchain, adapter source summaries, LVGL configuration values, Wasm import/export kinds and signatures, memory limits, and capability states. Capability states distinguish declared, enabled, adapted, and runtime-verified; unknown values stay unknown. The NDK and host SDK keep their own manifests and runtime notice trees. `--allow-dirty` is available for local development checks and marks the source entry as dirty; release automation leaves it disabled. The output is a directory suitable for archiving and remains usable after relocation.
 
 Verify an existing package after copying or unpacking it:
 
@@ -240,7 +240,7 @@ Verify an existing package after copying or unpacking it:
 python3 -B toolchains/lvw.py verify-package --package target/package --json
 ```
 
-Verification checks nested manifests, package identities, source cleanliness, symlink absence, and every recorded file hash without rebuilding the package. Use `--allow-dirty` only for a development snapshot.
+Verification checks nested manifests, package identities, source cleanliness, symlink absence, every recorded file hash, and regenerates `liblvgl.manifest.json` from the packaged inputs without rebuilding the package. A changed core, API report, configuration, source manifest, Wasm shape, or capability state is rejected. Use `--allow-dirty` only for a development snapshot.
 
 Run the relocated-package acceptance against a published directory to exercise both host SDKs from a read-only copy with spaces in its path:
 
@@ -288,6 +288,8 @@ Generated files stay under `target/`:
 | `target/package/` | Complete source, NDK, and host SDK package from `export-package` |
 | `target/source/` | Verified build-source snapshot from `export-source` |
 | `target/project/` | Writable source project from `init` |
+
+The generator's Wasm reader records every imported and defined memory with its index, minimum and maximum page limits, shared flag, and export mapping. These structural facts feed capability reports; they do not replace `wasm-tools validate` or host runtime checks.
 
 ## Quality checks
 
