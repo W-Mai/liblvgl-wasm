@@ -1,5 +1,6 @@
 """Run TypeScript and Rust consumers against a relocated read-only host SDK."""
 
+import argparse
 import json
 import os
 import shutil
@@ -11,6 +12,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "toolchains"))
 from lvw import verify_package
+from package_browser import run_browser
 
 
 def run(*command, cwd=None, env=None):
@@ -35,7 +37,7 @@ def run_typescript(package, work):
     (project / "node_modules/liblvgl-wasm").symlink_to(
         package / "host-sdk/typescript", target_is_directory=True
     )
-    shutil.copyfile(ROOT / "tests/fixtures/host-sdk/consumer.ts", project / "consumer.ts")
+    shutil.copyfile(package / "source/tests/fixtures/host-sdk/consumer.ts", project / "consumer.ts")
     for mode in ("Bundler", "NodeNext"):
         config = {
             "compilerOptions": {
@@ -72,6 +74,7 @@ console.log(JSON.stringify(result, (_, value) =>
     )
     run("bun", "runner.ts", package / "host-sdk/runtime/liblvgl.wasm",
         package / "source/examples/browser/red.bmp", cwd=project)
+    return project
 
 
 def external_packages(lock):
@@ -119,23 +122,30 @@ def run_rust(package, work):
         package / "host-sdk/runtime/liblvgl.wasm", env=environment)
 
 
-def check(package):
+def check(package, chromium=None, allow_dirty=False):
     package = Path(package).expanduser().resolve(strict=True)
+    verify_package(package, allow_dirty=allow_dirty)
     with tempfile.TemporaryDirectory(prefix="lvw relocated package ") as directory:
         work = Path(directory)
         moved = work / "moved package"
-        shutil.copytree(package, moved)
-        readonly(moved, True)
         try:
-            verify_package(moved)
-            run_typescript(moved, work)
+            shutil.copytree(package, moved)
+            readonly(moved, True)
+            identity = verify_package(moved, allow_dirty=allow_dirty)["identity"]
+            project = run_typescript(moved, work)
+            browser = run_browser(moved, work, project, identity, chromium) if chromium else None
             run_rust(moved, work)
-            print(json.dumps({"package": str(moved), "typescript": True, "rust": True}))
+            print(json.dumps({"package": str(moved), "typescript": True, "rust": True,
+                              "browser": browser}))
         finally:
-            readonly(moved, False)
+            if moved.exists():
+                readonly(moved, False)
 
 
 if __name__ == "__main__":
-    if len(sys.argv) != 2:
-        raise SystemExit("usage: package-consumer.py PACKAGE")
-    check(sys.argv[1])
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("package")
+    parser.add_argument("--chromium", help="Chromium or Chrome executable for browser acceptance")
+    parser.add_argument("--allow-dirty", action="store_true", help="accept a development package with a dirty source snapshot")
+    args = parser.parse_args()
+    check(args.package, args.chromium, args.allow_dirty)

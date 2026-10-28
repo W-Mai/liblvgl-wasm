@@ -6,6 +6,7 @@
 - Wasm metadata inspection records imported and defined memory limits, shared flags, and export indices for capability reports.
 - Complete packages include `liblvgl.manifest.json`, binding exact source/config/API/core hashes, target/toolchain, adapter inputs, and Wasm shapes to declared, enabled, adapted, and runtime-verification states.
 - Studio artifact preflight validates required Wasm export kinds, including linear memory.
+- Release package acceptance runs the relocated TypeScript SDK in headless Chrome before archive upload.
 - WASI realtime and monotonic clock imports for TypeScript and Rust hosts.
 - Studio artifact preflight reports, standalone firmware execution, and explicit compatibility registry lookup for custom cores and applications.
 - Relocatable package verification for nested manifests, exact identities, clean source state, symlink rejection, and complete file inventories.

@@ -47,6 +47,9 @@ test("package publication requires the same-commit default quality workflow", ()
   expect(uploaded).toBeGreaterThan(archived);
   expect(steps[archived].run).toContain("${GITHUB_SHA}");
   expect(steps[uploaded].with.name).toBe("liblvgl-wasm-package-${{ github.sha }}");
+  expect(steps[exercised].name).toBe("Run relocated browser and Rust acceptance");
+  expect(steps[exercised].env.LVW_TEST_BROWSER).toBe("/usr/bin/google-chrome-stable");
+  expect(steps[exercised].run).toContain('test -x "$LVW_TEST_BROWSER"');
   expect(steps[exported].run).not.toContain("--allow-dirty");
   for (const index of [exported, verified, exercised, archived, uploaded]) {
     expect(steps[index].if).toBeUndefined();

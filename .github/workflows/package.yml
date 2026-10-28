@@ -59,10 +59,13 @@ jobs:
         run: python3 -B toolchains/lvw.py verify-package --package target/package --json
       - name: Fetch packaged Rust host dependencies
         run: cargo fetch --locked --manifest-path target/package/host-sdk/rust/Cargo.toml
-      - name: Run relocated dual-host acceptance
+      - name: Run relocated browser and Rust acceptance
         env:
           LVW_TEST_PACKAGE: ${{ github.workspace }}/target/package
-        run: bun test ./tests/package-consumer.test.ts
+          LVW_TEST_BROWSER: /usr/bin/google-chrome-stable
+        run: |
+          test -x "$LVW_TEST_BROWSER"
+          bun test ./tests/package-consumer.test.ts
       - name: Archive package
         run: |
           archive="liblvgl-wasm-${GITHUB_SHA}.tar.gz"

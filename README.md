@@ -248,7 +248,9 @@ Run the relocated-package acceptance against a published directory to exercise b
 LVW_TEST_PACKAGE=target/package bun test ./tests/package-consumer.test.ts
 ```
 
-The check compiles TypeScript in Bundler and NodeNext modes, runs the browser host against the packaged core, builds an external Rust consumer from the packaged crate, and exercises rendering, input, resources, and shutdown.
+The check compiles TypeScript in Bundler and NodeNext modes, runs the browser host against the packaged core, builds an external Rust consumer from the packaged crate, and exercises rendering, input, resources, and shutdown. Set `LVW_TEST_BROWSER` to an installed Chromium or Chrome executable to run the same relocated package in a real headless browser; the release workflow uses `/usr/bin/google-chrome-stable`.
+
+Development snapshots marked dirty require `LVW_ALLOW_DIRTY=1`; release CI leaves this unset.
 
 CMake compiles adapted copies of the pinned `lv_observer.c` and `lv_image_decoder.c` with bridge notifications at native deletion points. Decoder deinitialization deletes individual decoders to deliver those notifications. The original source tree stays unchanged; different source hashes are rejected. The adapted `liblvgl.a` requires the bridge's `lvw_observer_release_native` and `lvw_decoder_release_native` implementations.
 
