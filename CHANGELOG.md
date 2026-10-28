@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+- Package publication requires same-commit default quality, verifies the checked-out revision, and names archives by commit SHA; compatibility and software matrices are opt-in workflow checks.
 - WASI realtime and monotonic clock imports for TypeScript and Rust hosts.
 - Studio artifact preflight reports, standalone firmware execution, and explicit compatibility registry lookup for custom cores and applications.
 - Relocatable package verification for nested manifests, exact identities, clean source state, symlink rejection, and complete file inventories.
