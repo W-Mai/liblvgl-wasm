@@ -1,6 +1,6 @@
 """Read numeric and reference function signatures from core Wasm modules and object files.
 
-This checks signature sections and export indices, not instructions or complete module validity. Table, memory, and global definitions supply only their counts; their payloads must be checked separately with a full Wasm validator.
+This checks signature sections, memory limits and export indices, not instructions or complete module validity. Table and global definitions supply only their counts; their payloads must be checked separately with a full Wasm validator.
 """
 
 
@@ -73,6 +73,8 @@ class Reader:
             raise ValueError(f"{self.context}: {kind} maximum is smaller than minimum")
         if kind == "memory" and (minimum > 65536 or maximum is not None and maximum > 65536):
             raise ValueError(f"{self.context}: memory limits exceed the wasm32 address space")
+        if kind == "memory":
+            return {"minimum_pages": minimum, "maximum_pages": maximum, "shared": bool(flags & 2)}
 
     def finish(self):
         if self.position != len(self.data):
@@ -86,7 +88,7 @@ def indexed(items, index, label):
 
 
 def read_module(data: bytes) -> dict:
-    """Return imports and exports, including their function and exception tag signatures."""
+    """Return imports, exports, and memory limits; memory indices address the memories list."""
     module = Reader(data, "module")
     if bytes(module.take(8)) != b"\x00asm\x01\x00\x00\x00":
         raise ValueError("expected a core Wasm module with version 1")
@@ -116,7 +118,8 @@ def read_module(data: bytes) -> dict:
     imports = []
     functions = []
     tags = []
-    counts = {"table": 0, "memory": 0, "global": 0}
+    memories = []
+    counts = {"table": 0, "global": 0}
     section = sections.get(2)
     if section is not None:
         for _ in range(section.u32()):
@@ -139,14 +142,15 @@ def read_module(data: bytes) -> dict:
                     raise ValueError(f"section 2: unsupported table reference type 0x{reference:02x}")
                 section.limits(kind)
             elif kind == "memory":
-                section.limits(kind)
+                item["index"] = len(memories)
+                memories.append({**section.limits(kind), "imported": True})
             else:
                 value = section.byte()
                 if value not in SCALARS and value not in REFERENCES and value != 0x7B:
                     raise ValueError(f"section 2: unsupported global value type 0x{value:02x}")
                 if section.byte() not in (0, 1):
                     raise ValueError("section 2: invalid global mutability")
-            if kind not in ("function", "tag"):
+            if kind in counts:
                 counts[kind] += 1
             imports.append(item)
         section.finish()
@@ -157,10 +161,16 @@ def read_module(data: bytes) -> dict:
             functions.append(indexed(types, section.u32(), "defined function type"))
         section.finish()
 
-    for section_id, kind in ((4, "table"), (5, "memory"), (6, "global")):
+    for section_id, kind in ((4, "table"), (6, "global")):
         section = sections.get(section_id)
         if section is not None:
             counts[kind] += section.u32()
+
+    section = sections.get(5)
+    if section is not None:
+        for _ in range(section.u32()):
+            memories.append({**section.limits("memory"), "imported": False})
+        section.finish()
 
     section = sections.get(13)
     if section is not None:
@@ -183,8 +193,11 @@ def read_module(data: bytes) -> dict:
                 item["signature"] = indexed(functions, index, f"export {name!r} function")
             elif kind == "tag":
                 item["signature"] = indexed(tags, index, f"export {name!r} tag")
+            elif kind == "memory":
+                indexed(memories, index, f"export {name!r} memory")
+                item["index"] = index
             elif index >= counts[kind]:
                 raise ValueError(f"export {name!r} {kind} index {index} is out of bounds ({counts[kind]})")
             exports[name] = item
         section.finish()
-    return {"imports": imports, "exports": exports}
+    return {"imports": imports, "exports": exports, "memories": memories}
