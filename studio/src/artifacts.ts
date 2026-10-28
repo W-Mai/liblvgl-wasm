@@ -69,6 +69,15 @@ function missing(required: readonly string[], actual: Set<string>): string[] {
   return required.filter((name) => !actual.has(name));
 }
 
+function wrongKinds(required: readonly string[], actual: Map<string, string>): string[] {
+  return required.flatMap((name) => {
+    const kind = actual.get(name);
+    if (kind === undefined) return [];
+    const expected = name === "memory" ? "memory" : "function";
+    return kind === expected ? [] : [`${name} (${kind}; expected ${expected})`];
+  });
+}
+
 function capability(id: string, state: CapabilityState, detail: string): ArtifactCapability {
   return { id, state, detail };
 }
@@ -97,19 +106,24 @@ export async function inspectArtifact(input: BufferSource, hint: ArtifactHint = 
   }
 
   const imports = WebAssembly.Module.imports(module).map((item) => `${item.module}.${item.name}`);
-  const exports = WebAssembly.Module.exports(module).map((item) => item.name);
+  const exportEntries = WebAssembly.Module.exports(module);
+  const exports = exportEntries.map((item) => item.name);
+  const exportKinds = new Map(exportEntries.map((item) => [item.name, item.kind]));
   const importSet = new Set(imports);
   const exportSet = new Set(exports);
   const coreMissingExports = missing(CORE_REQUIRED_EXPORTS, exportSet);
+  const coreWrongExportKinds = wrongKinds(CORE_REQUIRED_EXPORTS, exportKinds);
   const coreUnsupportedImports = imports.filter((item) => !coreImports.has(item));
-  const coreMatches = coreMissingExports.length === 0 && coreUnsupportedImports.length === 0;
+  const coreMatches = coreMissingExports.length === 0 && coreWrongExportKinds.length === 0 && coreUnsupportedImports.length === 0;
   const appMissingExports = missing(APP_REQUIRED_EXPORTS, exportSet);
+  const appWrongExportKinds = wrongKinds(APP_REQUIRED_EXPORTS, exportKinds);
   const appUnsupportedImports = imports.filter((item) => !appImports.has(item));
-  const appMatches = appMissingExports.length === 0 && appUnsupportedImports.length === 0
+  const appMatches = appMissingExports.length === 0 && appWrongExportKinds.length === 0 && appUnsupportedImports.length === 0
     && imports.some((item) => item.startsWith("lvw_app."));
   const firmwareMissingExports = missing(FIRMWARE_REQUIRED_EXPORTS, exportSet);
+  const firmwareWrongExportKinds = wrongKinds(FIRMWARE_REQUIRED_EXPORTS, exportKinds);
   const firmwareUnsupportedImports = imports.filter((item) => !wasiImports.has(item));
-  const firmwareMatches = firmwareMissingExports.length === 0 && firmwareUnsupportedImports.length === 0;
+  const firmwareMatches = firmwareMissingExports.length === 0 && firmwareWrongExportKinds.length === 0 && firmwareUnsupportedImports.length === 0;
 
   let kind: ArtifactKind = "unknown";
   if (firmwareMatches) kind = "firmware";
@@ -119,8 +133,8 @@ export async function inspectArtifact(input: BufferSource, hint: ArtifactHint = 
   const reasons: string[] = [];
   const capabilities: ArtifactCapability[] = [
     capability("wasm.module", "available", "Valid WebAssembly module."),
-    capability("wasm.memory", exportSet.has("memory") ? "available" : "missing",
-      exportSet.has("memory") ? "Exports linear memory." : "Exports no linear memory."),
+    capability("wasm.memory", exportKinds.get("memory") === "memory" ? "available" : "missing",
+      exportKinds.get("memory") === "memory" ? "Exports linear memory." : "Exports no linear memory."),
   ];
 
   if (kind === "lvgl-core") {
@@ -139,10 +153,13 @@ export async function inspectArtifact(input: BufferSource, hint: ArtifactHint = 
   } else {
     capabilities.push(capability("artifact.kind", "blocked", "No supported LVGL core, application, or firmware ABI was found."));
     if (coreMissingExports.length) reasons.push(`LVGL core is missing exports: ${coreMissingExports.join(", ")}`);
+    if (coreWrongExportKinds.length) reasons.push(`LVGL core has wrong export kinds: ${coreWrongExportKinds.join(", ")}`);
     if (coreUnsupportedImports.length) reasons.push(`LVGL core has unsupported imports: ${coreUnsupportedImports.join(", ")}`);
     if (appMissingExports.length) reasons.push(`Application is missing exports: ${appMissingExports.join(", ")}`);
+    if (appWrongExportKinds.length) reasons.push(`Application has wrong export kinds: ${appWrongExportKinds.join(", ")}`);
     if (appUnsupportedImports.length) reasons.push(`Application has unsupported imports: ${appUnsupportedImports.join(", ")}`);
     if (firmwareMissingExports.length) reasons.push(`Firmware is missing exports: ${firmwareMissingExports.join(", ")}`);
+    if (firmwareWrongExportKinds.length) reasons.push(`Firmware has wrong export kinds: ${firmwareWrongExportKinds.join(", ")}`);
     if (firmwareUnsupportedImports.length) reasons.push(`Firmware has unsupported imports: ${firmwareUnsupportedImports.join(", ")}`);
   }
 

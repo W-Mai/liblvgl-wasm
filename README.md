@@ -325,6 +325,8 @@ Custom cores must implement bridge ABI 1 and the exports used by Studio. An arbi
 
 Wasm uploads are inspected before execution. A module with the `lvw_app` imports and exports enters LVGL app mode; a module with the standalone `lvw_firmware_*` exports enters firmware mode and supplies its own RGBA8888 frame. Unsupported modules remain blocked with their missing imports and exports shown in the preflight report.
 
+Studio preflight checks the export kind for every required entry, including the linear memory export. A function named `memory` does not satisfy the memory capability.
+
 The library status opens **Library details** in the same side panel used for source files. It shows the loaded core's SHA-256, bridge ABI, host SDK match, and import/export counts. A matching core also shows its generated LVGL version and software configuration. A different bridge-compatible core shows **Bridge only**, with unknown build configuration; the default file location does not bypass this check. Enabled configuration entries do not imply complete format support; the [software rendering sections](#software-rendering) document the verified behavior and limits. Stopping, restarting, or failing an application clears its active library details. Cancelling a pending load keeps it stopped.
 
 Studio preflight is capability-only. It does not search the compatibility matrix or silently adapt a custom core. Compatibility adapter names can be resolved only by an explicit registry entry matching the supplied source and core identities.

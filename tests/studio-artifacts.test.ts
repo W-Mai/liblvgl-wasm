@@ -24,8 +24,8 @@ function section(id: number, payload: number[]): number[] {
   return [id, ...u32(payload.length), ...payload];
 }
 
-function moduleBytes(exports: string[], imports: string[] = []): Uint8Array {
-  const functions = exports.filter((name) => name !== "memory");
+function moduleBytes(exports: string[], imports: string[] = [], memoryKind: "memory" | "function" = "memory"): Uint8Array {
+  const functions = exports.filter((name) => name !== "memory" || memoryKind === "function");
   const types = [0x01, 0x60, 0x00, 0x01, 0x7f];
   const importPayload = [
     ...u32(imports.length),
@@ -38,7 +38,7 @@ function moduleBytes(exports: string[], imports: string[] = []): Uint8Array {
   const memoryPayload = [0x01, 0x00, 0x01];
   const exportPayload = [
     ...u32(exports.length),
-    ...exports.flatMap((name) => name === "memory"
+    ...exports.flatMap((name) => name === "memory" && memoryKind === "memory"
       ? [...text(name), 0x02, 0x00]
       : [...text(name), 0x00, ...u32(imports.length + functions.indexOf(name))]),
   ];
@@ -99,6 +99,14 @@ test("reports malformed and unknown modules without instantiation", async () => 
   expect(unknown.kind).toBe("unknown");
   expect(unknown.reasons.length).toBeGreaterThan(0);
   expect(unknown.sha256).toHaveLength(64);
+});
+
+test("requires the memory export to have the memory kind", async () => {
+  const bytes = moduleBytes([...CORE_REQUIRED_EXPORTS], ["lvw.event", "wasi_snapshot_preview1.fd_write"], "function");
+  const report = await inspectArtifact(bytes, "core");
+  expect(report.kind).toBe("unknown");
+  expect(report.capabilities.find((item) => item.id === "wasm.memory")?.state).toBe("missing");
+  expect(report.reasons.some((reason) => reason.includes("memory (function; expected memory)"))).toBe(true);
 });
 
 test("compatibility adapters require an exact caller-supplied registry entry", () => {
