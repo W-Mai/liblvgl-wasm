@@ -26,6 +26,12 @@ export interface ArtifactReport {
     bridgeAbi?: number;
     sdk: "matched" | "core-mismatch" | "unknown";
   };
+  manifest?: {
+    sourceRevision: string;
+    apiSha256: string;
+    configSha256: string;
+    version: string;
+  };
 }
 
 export const CORE_REQUIRED_IMPORTS = [

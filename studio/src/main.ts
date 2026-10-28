@@ -2,6 +2,7 @@ import { StudioController } from "./controller.ts";
 import { startCDemo, type CDemo } from "./c-demo.ts";
 import { inspectCore, type CoreReport } from "./core.ts";
 import { inspectArtifact, type ArtifactReport } from "./artifacts.ts";
+import { attachCapabilityManifest, parseCapabilityManifest, type CapabilityManifest } from "./capabilities.ts";
 import { renderHighlighted } from "./highlight.ts";
 import { loadResources, readResources, type ResourceFile } from "./resources.ts";
 import type { AppSource, RunnerOutput } from "./protocol.ts";
@@ -138,6 +139,9 @@ const appPreflight = element<HTMLElement>("#app-preflight");
 const appDetails = element<HTMLButtonElement>("#app-details");
 const coreDrop = element<HTMLLabelElement>("#core-drop");
 const coreFile = element<HTMLInputElement>("#core-file");
+const coreManifestFile = element<HTMLInputElement>("#core-manifest-file");
+const coreManifestButton = element<HTMLButtonElement>("#core-manifest-button");
+const coreManifestState = element<HTMLElement>("#core-manifest-state");
 const appFile = element<HTMLInputElement>("#app-file");
 const resourceFiles = element<HTMLInputElement>("#resource-files");
 const resourceList = element<HTMLUListElement>("#resource-list");
@@ -166,6 +170,7 @@ setTheme(document.documentElement.dataset.theme === "dark" ? "dark" : "light");
 
 let selectedCore: File | undefined;
 let selectedCoreReport: ArtifactReport | undefined;
+let selectedCoreManifest: CapabilityManifest | undefined;
 let selectedApp: Source = {
   name: "JS sample application", origin: "SAMPLE",
   load: () => fetchApp(toolchains.js.sample, "js"),
@@ -319,6 +324,11 @@ function showCoreSource(): void {
   coreName.textContent = selectedCore?.name || "liblvgl.wasm";
   coreOrigin.textContent = custom ? "LOCAL FILE" : "BUILT-IN";
   corePreflight.textContent = selectedCoreReport ? artifactSummary(selectedCoreReport) : "Default bridge core";
+  coreManifestButton.disabled = !selectedCore;
+  const version = selectedCoreManifest?.lvgl.version;
+  coreManifestState.textContent = selectedCoreManifest
+    ? `MATCHED · LVGL ${version?.major ?? "?"}.${version?.minor ?? "?"}.${version?.patch ?? "?"}`
+    : "No manifest loaded";
 }
 
 async function chooseCore(file: File): Promise<void> {
@@ -342,14 +352,33 @@ async function chooseCore(file: File): Promise<void> {
   if (choice !== coreChoice || runId !== generation) return;
   const previous = selectedCore;
   const previousReport = selectedCoreReport;
+  const previousManifest = selectedCoreManifest;
   selectedCore = file;
   selectedCoreReport = report;
+  selectedCoreManifest = undefined;
   showCoreSource();
   if (await run() === "failed" && selectedCore === file) {
     selectedCore = previous;
     selectedCoreReport = previousReport;
+    selectedCoreManifest = previousManifest;
     showCoreSource();
     await run();
+  }
+}
+
+async function chooseCoreManifest(file: File): Promise<void> {
+  if (!selectedCore || !selectedCoreReport) {
+    appendLog("Load a custom liblvgl.wasm before its capability manifest", "error");
+    return;
+  }
+  try {
+    const manifest = parseCapabilityManifest(JSON.parse(await file.text()));
+    selectedCoreReport = attachCapabilityManifest(selectedCoreReport, manifest);
+    selectedCoreManifest = manifest;
+    showCoreSource();
+    appendLog(`Capability manifest matched ${manifest.identity.wasm_sha256.slice(0, 12)}…`, "success");
+  } catch (error) {
+    appendLog(`Manifest rejected: ${error instanceof Error ? error.message : String(error)}`, "error");
   }
 }
 
@@ -522,6 +551,7 @@ async function chooseSample(language: Language): Promise<void> {
 element<HTMLButtonElement>("#core-default").addEventListener("click", () => {
   selectedCore = undefined;
   selectedCoreReport = undefined;
+  selectedCoreManifest = undefined;
   showCoreSource();
   void run();
 });
@@ -533,6 +563,12 @@ coreFile.addEventListener("change", () => {
   const file = coreFile.files?.[0];
   coreFile.value = "";
   if (file) void chooseCore(file);
+});
+coreManifestButton.addEventListener("click", () => coreManifestFile.click());
+coreManifestFile.addEventListener("change", () => {
+  const file = coreManifestFile.files?.[0];
+  coreManifestFile.value = "";
+  if (file) void chooseCoreManifest(file);
 });
 appFile.addEventListener("change", () => {
   const file = appFile.files?.[0];
@@ -652,6 +688,10 @@ function renderCore(info?: CoreReport): void {
     ["Host SDK", sdkStatus === "matched" ? "Matched" : "Mismatch"],
     ["Imports / exports", `${info.imports} / ${info.exports}`],
   ]);
+  if (selectedCoreReport?.manifest) rows([["Manifest LVGL", selectedCoreReport.manifest.version],
+    ["Manifest source", selectedCoreReport.manifest.sourceRevision],
+    ["Manifest config · SHA-256", selectedCoreReport.manifest.configSha256],
+    ["Manifest API · SHA-256", selectedCoreReport.manifest.apiSha256]]);
   if (sdkStatus !== "matched") paragraph("Generated APIs need a matching SDK. Bridge applications remain available.");
   heading("Build configuration");
   if (info.build) {
@@ -698,6 +738,10 @@ function renderArtifactReport(report: ArtifactReport, title: string): void {
     ["SHA-256", report.sha256],
     ["Imports / exports", `${report.imports.length} / ${report.exports.length}`],
   ]);
+  if (report.manifest) rows([["Manifest LVGL", report.manifest.version],
+    ["Manifest source", report.manifest.sourceRevision],
+    ["Manifest config · SHA-256", report.manifest.configSha256],
+    ["Manifest API · SHA-256", report.manifest.apiSha256]]);
   for (const capability of report.capabilities) {
     paragraph(`${capability.state.toUpperCase()} · ${capability.id} · ${capability.detail}`);
   }

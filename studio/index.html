@@ -54,6 +54,9 @@
             <input id="core-file" class="sr-only" type="file" accept=".wasm,application/wasm" aria-label="Choose custom LVGL Wasm library">
             <div class="file-state"><span class="file-dot"></span><span id="core-name">liblvgl.wasm</span><span id="core-origin">BUILT-IN</span></div>
             <p id="core-preflight" class="artifact-status">Default bridge core</p>
+            <button id="core-manifest-button" class="text-action" type="button">Load capability manifest</button>
+            <input id="core-manifest-file" class="sr-only" type="file" accept=".json,application/json" aria-label="Choose LVGL capability manifest">
+            <p id="core-manifest-state" class="artifact-status">No manifest loaded</p>
             <button id="core-details" class="core-details" type="button" aria-label="Library details" disabled><span id="core-sdk-status">No active library</span><span aria-hidden="true">→</span></button>
           </section>
 
