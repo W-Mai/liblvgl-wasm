@@ -4,9 +4,20 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="theme-color" content="#efeeeb">
-    <meta name="description" content="Run your LVGL WebAssembly library and applications in a local browser workspace.">
-    <link rel="icon" href="/studio/favicon.svg" type="image/svg+xml">
-    <link rel="stylesheet" href="/studio/style.css">
+    <meta name="description" content="Run LVGL WebAssembly libraries and applications in a browser studio with TypeScript, C, C++, Rust, and resource file support.">
+    <meta name="application-name" content="LVGL Studio">
+    <meta name="robots" content="index,follow">
+    <meta property="og:type" content="website">
+    <meta property="og:title" content="LVGL Studio — run LVGL WebAssembly apps">
+    <meta property="og:description" content="Load LVGL WebAssembly libraries, run sample applications, and inspect rendered output in your browser.">
+    <meta property="og:url" content="https://w-mai.github.io/liblvgl-wasm/studio/">
+    <meta property="og:site_name" content="liblvgl-wasm">
+    <meta name="twitter:card" content="summary">
+    <meta name="twitter:title" content="LVGL Studio — run LVGL WebAssembly apps">
+    <meta name="twitter:description" content="A browser workspace for LVGL WebAssembly libraries and applications.">
+    <link rel="canonical" href="https://w-mai.github.io/liblvgl-wasm/studio/">
+    <link rel="icon" href="./favicon.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="./style.css">
     <title>LVGL Studio — run your interface</title>
     <script>
       try {
@@ -20,7 +31,7 @@
   <body>
     <div class="app-shell">
       <header class="topbar">
-        <a class="brand" href="/studio/" aria-label="LVGL Studio home">
+        <a class="brand" href="./" aria-label="LVGL Studio home">
           <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
           <span class="brand-name">LVGL<span>Studio</span></span>
         </a>
@@ -197,6 +208,6 @@
         <p id="nested-source-error" class="demo-error" role="alert" hidden></p>
       </div>
     </aside>
-    <script type="module" src="/target/studio/main.js"></script>
+    <script type="module" src="../target/studio/main.js"></script>
   </body>
 </html>

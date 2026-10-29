@@ -1,4 +1,5 @@
 import type { ResourceSource } from "./protocol.ts";
+import { assetUrl } from "./paths.ts";
 
 const maxFiles = 32;
 const maxFileBytes = 16 * 1024 * 1024;
@@ -12,7 +13,7 @@ export interface ResourceFile {
 
 export async function loadResources(sample: readonly ResourceFile[], uploads: readonly File[]): Promise<ResourceSource[]> {
   const files = await Promise.all(sample.map(async ({ name, url }) => {
-    const response = await fetch(url, { cache: "no-store" });
+    const response = await fetch(assetUrl(url), { cache: "no-store" });
     if (!response.ok) throw new Error(`Could not load resource ${name} (${response.status})`);
     return new File([await response.blob()], name);
   }));

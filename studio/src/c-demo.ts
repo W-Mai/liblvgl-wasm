@@ -1,6 +1,7 @@
 import { sha256 } from "@noble/hashes/sha2.js";
 import { bytesToHex } from "@noble/hashes/utils.js";
 import { createWasiImports } from "../../bindings/typescript/src/wasi.ts";
+import { assetUrl } from "./paths.ts";
 
 type DemoCore = {
   memory: WebAssembly.Memory;
@@ -26,7 +27,7 @@ export async function startCDemo(canvas: HTMLCanvasElement, signal: AbortSignal,
                                  onError: (error: unknown) => void): Promise<CDemo> {
   const context = canvas.getContext("2d");
   if (!context) throw new Error("Canvas 2D context is unavailable");
-  const path = "/target/wasm/examples/c/liblvgl-c-demo.wasm";
+  const path = assetUrl("/target/wasm/examples/c/liblvgl-c-demo.wasm");
   const response = await fetch(path, { signal, cache: "no-store" });
   if (!response.ok) throw new Error(`Could not load C demo (${response.status})`);
   const bytes = await response.arrayBuffer();

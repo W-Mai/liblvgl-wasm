@@ -1,0 +1,3 @@
+User-agent: *
+Allow: /
+Sitemap: https://w-mai.github.io/liblvgl-wasm/sitemap.xml

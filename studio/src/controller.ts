@@ -1,4 +1,5 @@
 import type { LvglAppRun, RunnerInput, RunnerOutput, FirmwareRun } from "./protocol.ts";
+import { assetUrl } from "./paths.ts";
 
 export type RunConfig = LvglAppRun | FirmwareRun;
 
@@ -18,7 +19,7 @@ export class StudioController {
   async start(config: RunConfig): Promise<void> {
     this.stop();
     const generation = this.generation;
-    const response = await fetch("/target/studio/worker.js", { cache: "no-store" });
+    const response = await fetch(assetUrl("/target/studio/worker.js"), { cache: "no-store" });
     if (!response.ok) throw new Error(`Unable to load runner (${response.status})`);
     const workerSource = await response.text();
     if (generation !== this.generation) throw new DOMException("Run cancelled", "AbortError");

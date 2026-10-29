@@ -1,5 +1,9 @@
 # liblvgl-wasm
 
+[Open LVGL Studio](https://w-mai.github.io/liblvgl-wasm/studio/) · [GitHub repository](https://github.com/W-Mai/liblvgl-wasm)
+
+`liblvgl-wasm` runs LVGL as a versioned WASI WebAssembly module and provides browser, TypeScript, Rust, C, and C++ host paths. The browser studio loads the default core or a compatible local artifact, runs sample applications, and renders LVGL frames without a native GUI.
+
 `liblvgl.wasm` builds LVGL as a WASIp1 reactor, with 9.6.0 as the default source. The `lvw_*` bridge accepts input, advances time, provides resources, and returns software-rendered frames. LVGL Studio runs the module and user applications in a browser workspace. Browser/Bun and Rust hosts can also load the same module directly.
 
 ## Build

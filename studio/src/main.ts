@@ -5,6 +5,7 @@ import { inspectArtifact, type ArtifactReport } from "./artifacts.ts";
 import { attachCapabilityManifest, parseCapabilityManifest, type CapabilityManifest } from "./capabilities.ts";
 import { renderHighlighted } from "./highlight.ts";
 import { loadResources, readResources, type ResourceFile } from "./resources.ts";
+import { assetUrl } from "./paths.ts";
 import type { AppSource, RunnerOutput } from "./protocol.ts";
 
 type Language = "js" | "ts" | "c" | "cpp" | "rust";
@@ -267,7 +268,7 @@ function onOutput(message: RunnerOutput): void {
 const controller = new StudioController(onOutput);
 
 async function fetchBuffer(path: string): Promise<ArrayBuffer> {
-  const response = await fetch(path, { cache: "no-store" });
+  const response = await fetch(assetUrl(path), { cache: "no-store" });
   if (!response.ok) throw new Error(`Could not load ${path} (${response.status})`);
   return response.arrayBuffer();
 }
@@ -828,7 +829,7 @@ async function loadSource(name: string, path: string, code: HTMLElement, errorMe
   errorMessage.hidden = true;
   errorMessage.textContent = "";
   try {
-    const response = await fetch(path, { signal, cache: "no-store" });
+    const response = await fetch(assetUrl(path), { signal, cache: "no-store" });
     if (!response.ok) throw new Error(`Could not load ${name} (${response.status})`);
     const source = await response.text();
     if (!signal.aborted && code.textContent !== source) renderHighlighted(code, source, name);
