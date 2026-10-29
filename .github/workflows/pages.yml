@@ -56,7 +56,7 @@ jobs:
         run: ./scripts/build.sh
       - name: Assemble Pages site
         run: |
-          mkdir -p _site
+          mkdir -p _site/tests
           cp -R site/. _site/
           cp -R studio _site/studio
           cp -R target _site/target
