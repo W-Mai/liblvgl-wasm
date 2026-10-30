@@ -62,7 +62,7 @@
 
       <main>
         <section class="hero" aria-labelledby="hero-title">
-          <div class="hero-copy">
+          <div class="hero-copy" data-reveal="hero-copy">
             <p class="eyebrow"><span class="eyebrow-mark" aria-hidden="true"></span> LVGL / WASI / WEBASSEMBLY</p>
             <h1 id="hero-title" data-i18n="hero.title">LVGL, running where the browser can see it.</h1>
             <p class="hero-lede" data-i18n="hero.lede">A versioned LVGL WebAssembly runtime with a browser studio and host SDKs for TypeScript, Rust, C, and C++.</p>
@@ -77,7 +77,7 @@
             </dl>
           </div>
 
-          <div class="hero-preview" aria-label="LVGL Studio preview">
+          <div class="hero-preview" aria-label="LVGL Studio preview" data-reveal="hero-preview" data-depth="0.08">
             <div class="preview-bar"><span class="preview-label" data-i18n="preview.label">STUDIO / PREVIEW</span><span class="status"><i></i> <span data-i18n="preview.ready">READY</span></span></div>
             <div class="preview-stage">
               <div class="device-wrap">
@@ -94,18 +94,18 @@
           </div>
         </section>
 
-        <section class="section" aria-labelledby="included-title">
+        <section class="section" aria-labelledby="included-title" data-reveal="section">
           <div class="section-heading"><p class="eyebrow" data-i18n="workspace.eyebrow">THE WORKSPACE</p><h2 id="included-title" data-i18n="workspace.title">One core, several ways to use it.</h2></div>
           <div class="feature-grid">
-            <article class="feature-card"><span class="feature-index">01</span><h3 data-i18n="workspace.browser.title">Browser studio</h3><p data-i18n="workspace.browser.body">Load the default core or a compatible local Wasm artifact, run an application, and inspect rendered frames in a contained workspace.</p><a href="./studio/"><span data-i18n="workspace.browser.link">Launch Studio</span> <span aria-hidden="true">→</span></a></article>
-            <article class="feature-card"><span class="feature-index">02</span><h3 data-i18n="workspace.sdk.title">Generated SDKs</h3><p data-i18n="workspace.sdk.body">TypeScript and Rust bindings are generated from the selected core's API, layout, constants, and signature proof.</p><a href="https://github.com/W-Mai/liblvgl-wasm/tree/main/bindings" rel="noopener noreferrer"><span data-i18n="workspace.sdk.link">Browse bindings</span> <span aria-hidden="true">→</span></a></article>
-            <article class="feature-card"><span class="feature-index">03</span><h3 data-i18n="workspace.host.title">Host applications</h3><p data-i18n="workspace.host.body">Versioned application ABIs keep C, C++, Rust, and JavaScript samples on the same runtime boundary.</p><a href="https://github.com/W-Mai/liblvgl-wasm/tree/main/toolchains" rel="noopener noreferrer"><span data-i18n="workspace.host.link">See toolchains</span> <span aria-hidden="true">→</span></a></article>
+            <article class="feature-card" data-reveal="card"><span class="feature-index">01</span><h3 data-i18n="workspace.browser.title">Browser studio</h3><p data-i18n="workspace.browser.body">Load the default core or a compatible local Wasm artifact, run an application, and inspect rendered frames in a contained workspace.</p><a href="./studio/"><span data-i18n="workspace.browser.link">Launch Studio</span> <span aria-hidden="true">→</span></a></article>
+            <article class="feature-card" data-reveal="card"><span class="feature-index">02</span><h3 data-i18n="workspace.sdk.title">Generated SDKs</h3><p data-i18n="workspace.sdk.body">TypeScript and Rust bindings are generated from the selected core's API, layout, constants, and signature proof.</p><a href="https://github.com/W-Mai/liblvgl-wasm/tree/main/bindings" rel="noopener noreferrer"><span data-i18n="workspace.sdk.link">Browse bindings</span> <span aria-hidden="true">→</span></a></article>
+            <article class="feature-card" data-reveal="card"><span class="feature-index">03</span><h3 data-i18n="workspace.host.title">Host applications</h3><p data-i18n="workspace.host.body">Versioned application ABIs keep C, C++, Rust, and JavaScript samples on the same runtime boundary.</p><a href="https://github.com/W-Mai/liblvgl-wasm/tree/main/toolchains" rel="noopener noreferrer"><span data-i18n="workspace.host.link">See toolchains</span> <span aria-hidden="true">→</span></a></article>
           </div>
         </section>
 
-        <section class="section quickstart" aria-labelledby="quickstart-title">
+        <section class="section quickstart" aria-labelledby="quickstart-title" data-reveal="section">
           <div class="quickstart-copy"><p class="eyebrow" data-i18n="start.eyebrow">START HERE</p><h2 id="quickstart-title" data-i18n="start.title">Open the studio or build the core locally.</h2><p data-i18n="start.body">The browser demo starts with a working LVGL core and sample application. Local builds expose the same module to native and browser hosts.</p></div>
-          <div class="command-card"><div class="command-head"><span data-i18n="start.terminal">TERMINAL</span><button type="button" data-i18n="start.copy" data-copy="bun install --frozen-lockfile\nbun run quality">Copy</button></div><pre><code><span class="prompt">$</span> bun install --frozen-lockfile
+          <div class="command-card" data-reveal="command"><div class="command-head"><span data-i18n="start.terminal">TERMINAL</span><button type="button" data-i18n="start.copy" data-copy="bun install --frozen-lockfile\nbun run quality">Copy</button></div><pre><code><span class="prompt">$</span> bun install --frozen-lockfile
 <span class="prompt">$</span> bun run quality</code></pre><a href="https://github.com/W-Mai/liblvgl-wasm#build" rel="noopener noreferrer"><span data-i18n="start.guide">Read the build guide</span> <span aria-hidden="true">↗</span></a></div>
         </section>
       </main>
@@ -113,5 +113,6 @@
       <footer class="footer"><span>liblvgl-wasm</span><span data-i18n="footer.stack">LVGL · WASI · WebAssembly</span><a href="https://github.com/W-Mai/liblvgl-wasm" rel="noopener noreferrer"><span data-i18n="nav.github">GitHub</span> <span aria-hidden="true">↗</span></a></footer>
     </div>
     <script src="./i18n.js"></script>
+    <script src="./landing.js"></script>
   </body>
 </html>

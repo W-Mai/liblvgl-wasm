@@ -663,13 +663,89 @@ const nestedSourceCode = element<HTMLElement>("#nested-source-code");
 const nestedSourceError = element<HTMLElement>("#nested-source-error");
 const demoError = element<HTMLElement>("#c-demo-error");
 const demoIdentity = element<HTMLElement>("#c-demo-identity");
+const panelBackdrops = element<HTMLElement>("#panel-backdrops");
 let demoAbort: AbortController | undefined;
 let stopDemo: (() => void) | undefined;
 let sourceAbort: AbortController | undefined;
 let nestedSourceAbort: AbortController | undefined;
-let closeTimer: ReturnType<typeof setTimeout> | undefined;
-let nestedCloseTimer: ReturnType<typeof setTimeout> | undefined;
+type PanelEntry = {
+  panel: HTMLElement;
+  returnFocus?: HTMLElement;
+  cleanup?: () => void;
+};
+const panelStack: PanelEntry[] = [];
 let panelTrigger: HTMLElement | undefined;
+
+function renderPanelBackdrops(): void {
+  panelBackdrops.replaceChildren();
+  const depth = panelStack.length;
+  panelBackdrops.hidden = depth === 0;
+  panelBackdrops.setAttribute("aria-hidden", String(depth === 0));
+  if (!depth) return;
+  const panelWidth = Math.min(520, Math.max(0, window.innerWidth - (window.innerWidth < 560 ? 28 : 0)));
+  const base = Math.max(0, window.innerWidth - panelWidth * depth);
+  for (let target = 0; target < depth; target++) {
+    const backdrop = document.createElement("button");
+    backdrop.type = "button";
+    backdrop.className = "panel-backdrop";
+    backdrop.setAttribute("aria-label", target === 0 ? t("studio.returnToWorkspace") : t("studio.returnToPreviousPanel"));
+    const left = target === 0 ? 0 : Math.max(0, base + panelWidth * (target - 1));
+    const rightEdge = target === 0 ? base : Math.min(window.innerWidth, base + panelWidth * target);
+    backdrop.style.left = `${left}px`;
+    backdrop.style.right = `${Math.max(0, window.innerWidth - rightEdge)}px`;
+    backdrop.style.setProperty("--backdrop-opacity", String(Math.max(0.14, 0.28 - target * 0.06)));
+    backdrop.addEventListener("click", () => popPanelsTo(target));
+    panelBackdrops.append(backdrop);
+  }
+}
+
+function updatePanelStack(): void {
+  const depth = panelStack.length;
+  document.body.classList.toggle("panel-stack-open", depth > 0);
+  document.body.style.setProperty("--panel-stack-depth", String(depth));
+  appShell.inert = depth > 0;
+  for (const [index, entry] of panelStack.entries()) {
+    entry.panel.classList.add("is-open");
+    entry.panel.classList.remove("is-closing");
+    entry.panel.inert = index !== depth - 1;
+    entry.panel.setAttribute("aria-hidden", "false");
+    entry.panel.style.setProperty("--panel-offset", String(-(depth - index - 1)));
+  }
+  for (const panel of [sidePanel, nestedSourcePanel]) {
+    if (panelStack.some((entry) => entry.panel === panel)) continue;
+    panel.inert = true;
+    panel.setAttribute("aria-hidden", "true");
+    panel.classList.remove("is-open");
+    panel.style.removeProperty("--panel-offset");
+  }
+  renderPanelBackdrops();
+}
+
+function pushPanel(panel: HTMLElement, returnFocus: HTMLElement | undefined, cleanup?: () => void): void {
+  if (panelStack.some((entry) => entry.panel === panel)) return;
+  panelStack.push({ panel, returnFocus, cleanup });
+  updatePanelStack();
+  panel.querySelector<HTMLButtonElement>(".side-panel-head .icon-button")?.focus();
+}
+
+function popPanelsTo(size: number): void {
+  const target = Math.max(0, Math.min(size, panelStack.length));
+  if (target === panelStack.length) return;
+  const focusTarget = panelStack[target]?.returnFocus;
+  const removed = panelStack.splice(target);
+  for (const entry of removed.reverse()) {
+    entry.cleanup?.();
+    entry.panel.classList.remove("is-open");
+    entry.panel.classList.add("is-closing");
+    entry.panel.inert = true;
+    entry.panel.setAttribute("aria-hidden", "true");
+    window.setTimeout(() => entry.panel.classList.remove("is-closing"), 360);
+  }
+  updatePanelStack();
+  if (target === 0) stopPanelContent();
+  if (focusTarget?.isConnected && !focusTarget.matches(":disabled")) focusTarget.focus();
+  else if (target === 0 && panelTrigger?.isConnected && !panelTrigger.matches(":disabled")) panelTrigger.focus();
+}
 function renderDemoIdentity(info?: CDemo["identity"]): void {
   demoIdentity.classList.toggle("is-loaded", Boolean(info));
   element<HTMLElement>("#c-demo-path").textContent = info?.path.slice(1) ?? "";
@@ -790,14 +866,9 @@ function openAppDetails(): void {
 }
 appDetails.addEventListener("click", openAppDetails);
 function showPanel(): void {
-  if (document.body.classList.contains("panel-open")) return;
-  if (closeTimer) clearTimeout(closeTimer);
+  if (panelStack.length) return;
   panelTrigger = document.activeElement instanceof HTMLElement ? document.activeElement : undefined;
-  sidePanel.inert = false;
-  sidePanel.setAttribute("aria-hidden", "false");
-  appShell.inert = true;
-  document.body.classList.add("panel-open");
-  element<HTMLButtonElement>("#panel-close").focus();
+  pushPanel(sidePanel, panelTrigger, stopPanelContent);
 }
 function stopPanelContent(): void {
   sourceAbort?.abort();
@@ -814,7 +885,7 @@ function showDemoError(error: unknown): void {
   demoError.hidden = false;
 }
 async function openCDemo(): Promise<void> {
-  if (!panelDemo.hidden && document.body.classList.contains("panel-open")) return;
+  if (!panelDemo.hidden && panelStack.at(-1)?.panel === sidePanel) return;
   stopPanelContent();
   showPanel();
   panelTitle.textContent = t("studio.cApiDemo");
@@ -864,13 +935,13 @@ async function loadSource(name: string, path: string, code: HTMLElement, errorMe
 }
 function refreshVisibleSource(): void {
   if (document.hidden) return;
-  if (document.body.classList.contains("nested-source-open")) {
+  if (panelStack.at(-1)?.panel === nestedSourcePanel) {
     nestedSourceAbort?.abort();
     const abort = new AbortController();
     nestedSourceAbort = abort;
     void loadSource("direct_api.c", "/examples/c/direct_api.c",
       nestedSourceCode, nestedSourceError, abort.signal, true);
-  } else if (document.body.classList.contains("panel-open") && !panelSource.hidden) {
+  } else if (panelStack.at(-1)?.panel === sidePanel && !panelSource.hidden) {
     sourceAbort?.abort();
     const abort = new AbortController();
     sourceAbort = abort;
@@ -897,52 +968,29 @@ async function openSource(name: string, path: string): Promise<void> {
   await loadSource(name, path, sourceCode, sourceError, abort.signal);
 }
 async function openNestedSource(): Promise<void> {
-  if (document.body.classList.contains("nested-source-open")) return;
-  if (nestedCloseTimer) clearTimeout(nestedCloseTimer);
-  sidePanel.inert = true;
-  nestedSourcePanel.inert = false;
-  nestedSourcePanel.setAttribute("aria-hidden", "false");
-  document.body.classList.add("nested-source-open");
-  element<HTMLButtonElement>("#nested-source-close").focus();
+  if (panelStack.at(-1)?.panel === nestedSourcePanel) return;
+  pushPanel(nestedSourcePanel, element<HTMLButtonElement>("#panel-demo-source"), () => {
+    nestedSourceAbort?.abort();
+    nestedSourceAbort = undefined;
+  });
   const abort = new AbortController();
   nestedSourceAbort = abort;
   await loadSource("direct_api.c", "/examples/c/direct_api.c",
     nestedSourceCode, nestedSourceError, abort.signal);
 }
 function closeNestedSource(): void {
-  if (!document.body.classList.contains("nested-source-open")) return;
-  document.body.classList.remove("nested-source-open");
-  nestedSourceAbort?.abort();
-  nestedSourceAbort = undefined;
-  nestedCloseTimer = setTimeout(() => {
-    nestedSourcePanel.inert = true;
-    nestedSourcePanel.setAttribute("aria-hidden", "true");
-    sidePanel.inert = false;
-    element<HTMLButtonElement>("#panel-demo-source").focus();
-    nestedCloseTimer = undefined;
-  }, 360);
+  if (panelStack.at(-1)?.panel === nestedSourcePanel) popPanelsTo(panelStack.length - 1);
 }
 function closePanel(): void {
-  if (!document.body.classList.contains("panel-open")) return;
-  if (document.body.classList.contains("nested-source-open")) return closeNestedSource();
-  if (nestedCloseTimer) return;
-  document.body.classList.remove("panel-open");
-  stopPanelContent();
-  closeTimer = setTimeout(() => {
-    sidePanel.inert = true;
-    sidePanel.setAttribute("aria-hidden", "true");
-    appShell.inert = false;
-    if (panelTrigger?.isConnected && !panelTrigger.matches(":disabled")) panelTrigger.focus();
-    else document.querySelector<HTMLButtonElement>(`[data-language="${selectedLanguage}"]`)?.focus();
-    closeTimer = undefined;
-  }, 360);
+  if (panelStack.length) popPanelsTo(panelStack.length - 1);
 }
 element<HTMLButtonElement>("#panel-close").addEventListener("click", closePanel);
-element<HTMLButtonElement>("#nested-source-close").addEventListener("click", closeNestedSource);
+element<HTMLButtonElement>("#nested-source-close").addEventListener("click", closePanel);
 element<HTMLButtonElement>("#panel-demo-source").addEventListener("click", () => { void openNestedSource(); });
 window.addEventListener("keydown", (event) => {
-  if (event.key === "Escape" && document.body.classList.contains("panel-open")) closePanel();
+  if (event.key === "Escape" && panelStack.length) closePanel();
 });
+window.addEventListener("resize", renderPanelBackdrops);
 for (const [button, command] of [["#copy-command", "#build-command"], ["#copy-host-command", "#host-command"]]) {
   element<HTMLButtonElement>(button).addEventListener("click", async () => {
     try {
