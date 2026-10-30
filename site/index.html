@@ -29,32 +29,98 @@
       }
     </script>
     <title>liblvgl-wasm — LVGL WebAssembly runtime</title>
-    <style>
-      :root { color-scheme: light; font: 16px/1.6 system-ui, sans-serif; background: #efeeeb; color: #20201e; }
-      body { max-width: 60rem; margin: 0 auto; padding: 4rem 1.25rem; }
-      a { color: #7357c7; }
-      .eyebrow { letter-spacing: .12em; text-transform: uppercase; font-size: .75rem; font-weight: 700; }
-      .actions { display: flex; flex-wrap: wrap; gap: .8rem; margin: 2rem 0; }
-      .button { display: inline-block; padding: .7rem 1rem; border-radius: .6rem; background: #7357c7; color: white; text-decoration: none; font-weight: 700; }
-      .button.secondary { background: transparent; color: #7357c7; border: 1px solid #7357c7; }
-      code { background: #e1dfda; padding: .12rem .3rem; border-radius: .25rem; }
-    </style>
+    <link rel="stylesheet" href="./landing.css">
+    <script>
+      try {
+        document.documentElement.dataset.theme = localStorage.getItem("lvgl-studio-theme") ||
+          (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+      } catch {
+        document.documentElement.dataset.theme = "light";
+      }
+    </script>
   </head>
   <body>
-    <main>
-      <p class="eyebrow">LVGL · WASI · WebAssembly</p>
-      <h1>liblvgl-wasm</h1>
-      <p>Run LVGL as a versioned WASI WebAssembly module with browser, TypeScript, Rust, C, and C++ host support.</p>
-      <div class="actions">
-        <a class="button" href="./studio/">Open LVGL Studio</a>
-        <a class="button secondary" href="https://github.com/W-Mai/liblvgl-wasm">View the source on GitHub</a>
-      </div>
-      <h2>What is included</h2>
-      <ul>
-        <li>A browser studio for loading LVGL libraries and application artifacts.</li>
-        <li>Generated TypeScript and Rust bindings tied to the exact Wasm core.</li>
-        <li>Versioned application ABIs for C, C++, Rust, and JavaScript samples.</li>
-      </ul>
-    </main>
+    <div class="app-shell">
+      <header class="topbar">
+        <a class="brand" href="./" aria-label="liblvgl-wasm home">
+          <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
+          <span class="brand-name">LVGL<span>Studio</span></span>
+        </a>
+        <nav class="topbar-actions" aria-label="Primary navigation">
+          <div class="theme-switch" role="group" aria-label="Color theme">
+            <button type="button" data-theme-choice="light" aria-pressed="false">Light</button>
+            <button type="button" data-theme-choice="dark" aria-pressed="false">Dark</button>
+          </div>
+          <a class="topbar-link" href="./studio/">Open Studio <span aria-hidden="true">↗</span></a>
+          <a class="topbar-link" href="https://github.com/W-Mai/liblvgl-wasm" rel="noopener noreferrer">GitHub <span aria-hidden="true">↗</span></a>
+        </nav>
+      </header>
+
+      <main>
+        <section class="hero" aria-labelledby="hero-title">
+          <div class="hero-copy">
+            <p class="eyebrow"><span class="eyebrow-mark" aria-hidden="true"></span> LVGL / WASI / WEBASSEMBLY</p>
+            <h1 id="hero-title">LVGL, running where the browser can see it.</h1>
+            <p class="hero-lede">A versioned LVGL WebAssembly runtime with a browser studio and host SDKs for TypeScript, Rust, C, and C++.</p>
+            <div class="hero-actions">
+              <a class="run-button" href="./studio/"><span aria-hidden="true">▶</span> Open LVGL Studio</a>
+              <a class="outline-button" href="https://github.com/W-Mai/liblvgl-wasm" rel="noopener noreferrer">View source <span aria-hidden="true">↗</span></a>
+            </div>
+            <dl class="hero-facts">
+              <div><dt>CORE</dt><dd>WASI reactor</dd></div>
+              <div><dt>DEFAULT</dt><dd>LVGL 9.6.0</dd></div>
+              <div><dt>LICENSE</dt><dd>MIT</dd></div>
+            </dl>
+          </div>
+
+          <div class="hero-preview" aria-label="LVGL Studio preview">
+            <div class="preview-bar"><span class="preview-label">STUDIO / PREVIEW</span><span class="status"><i></i> READY</span></div>
+            <div class="preview-stage">
+              <div class="device-wrap">
+                <div class="device-top"><span></span><span class="small"></span></div>
+                <div class="device-screen">
+                  <div class="screen-header"><span>LVGL</span><span>09:41</span></div>
+                  <div class="screen-body"><strong>Ready to render.</strong><span>Load a library or start with the sample app.</span><b>RUN SAMPLE&nbsp; →</b></div>
+                  <div class="screen-nav"><i></i><i></i><i></i></div>
+                </div>
+                <div class="device-bottom"><span></span><span></span><span></span><span></span><span></span></div>
+              </div>
+            </div>
+            <div class="preview-foot"><span>liblvgl.wasm</span><span>ABI 1 · 2102 exports</span></div>
+          </div>
+        </section>
+
+        <section class="section" aria-labelledby="included-title">
+          <div class="section-heading"><p class="eyebrow">THE WORKSPACE</p><h2 id="included-title">One core, several ways to use it.</h2></div>
+          <div class="feature-grid">
+            <article class="feature-card"><span class="feature-index">01</span><h3>Browser studio</h3><p>Load the default core or a compatible local Wasm artifact, run an application, and inspect rendered frames in a contained workspace.</p><a href="./studio/">Launch Studio <span aria-hidden="true">→</span></a></article>
+            <article class="feature-card"><span class="feature-index">02</span><h3>Generated SDKs</h3><p>TypeScript and Rust bindings are generated from the selected core's API, layout, constants, and signature proof.</p><a href="https://github.com/W-Mai/liblvgl-wasm/tree/main/bindings" rel="noopener noreferrer">Browse bindings <span aria-hidden="true">→</span></a></article>
+            <article class="feature-card"><span class="feature-index">03</span><h3>Host applications</h3><p>Versioned application ABIs keep C, C++, Rust, and JavaScript samples on the same runtime boundary.</p><a href="https://github.com/W-Mai/liblvgl-wasm/tree/main/toolchains" rel="noopener noreferrer">See toolchains <span aria-hidden="true">→</span></a></article>
+          </div>
+        </section>
+
+        <section class="section quickstart" aria-labelledby="quickstart-title">
+          <div class="quickstart-copy"><p class="eyebrow">START HERE</p><h2 id="quickstart-title">Open the studio or build the core locally.</h2><p>The browser demo starts with a working LVGL core and sample application. Local builds expose the same module to native and browser hosts.</p></div>
+          <div class="command-card"><div class="command-head"><span>TERMINAL</span><button type="button" data-copy="bun install --frozen-lockfile\nbun run quality">Copy</button></div><pre><code><span class="prompt">$</span> bun install --frozen-lockfile
+<span class="prompt">$</span> bun run quality</code></pre><a href="https://github.com/W-Mai/liblvgl-wasm#build" rel="noopener noreferrer">Read the build guide <span aria-hidden="true">↗</span></a></div>
+        </section>
+      </main>
+
+      <footer class="footer"><span>liblvgl-wasm</span><span>LVGL · WASI · WebAssembly</span><a href="https://github.com/W-Mai/liblvgl-wasm" rel="noopener noreferrer">GitHub <span aria-hidden="true">↗</span></a></footer>
+    </div>
+    <script>
+      function setTheme(theme) {
+        document.documentElement.dataset.theme = theme;
+        document.querySelector('meta[name="theme-color"]').setAttribute("content", theme === "dark" ? "#20201e" : "#efeeeb");
+        document.querySelectorAll("[data-theme-choice]").forEach((button) => button.setAttribute("aria-pressed", String(button.dataset.themeChoice === theme)));
+        try { localStorage.setItem("lvgl-studio-theme", theme); } catch {}
+      }
+      document.querySelectorAll("[data-theme-choice]").forEach((button) => button.addEventListener("click", () => setTheme(button.dataset.themeChoice)));
+      setTheme(document.documentElement.dataset.theme === "dark" ? "dark" : "light");
+      document.querySelector("[data-copy]")?.addEventListener("click", async (event) => {
+        const button = event.currentTarget;
+        try { await navigator.clipboard.writeText(button.dataset.copy); button.textContent = "Copied"; setTimeout(() => { button.textContent = "Copy"; }, 1200); } catch { button.textContent = "Select manually"; }
+      });
+    </script>
   </body>
 </html>
