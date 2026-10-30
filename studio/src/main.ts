@@ -663,7 +663,6 @@ const nestedSourceCode = element<HTMLElement>("#nested-source-code");
 const nestedSourceError = element<HTMLElement>("#nested-source-error");
 const demoError = element<HTMLElement>("#c-demo-error");
 const demoIdentity = element<HTMLElement>("#c-demo-identity");
-const panelBackdrops = element<HTMLElement>("#panel-backdrops");
 let demoAbort: AbortController | undefined;
 let stopDemo: (() => void) | undefined;
 let sourceAbort: AbortController | undefined;
@@ -676,40 +675,19 @@ type PanelEntry = {
 const panelStack: PanelEntry[] = [];
 let panelTrigger: HTMLElement | undefined;
 
-function renderPanelBackdrops(): void {
-  panelBackdrops.replaceChildren();
-  const depth = panelStack.length;
-  panelBackdrops.hidden = depth === 0;
-  panelBackdrops.setAttribute("aria-hidden", String(depth === 0));
-  if (!depth) return;
-  const panelWidth = Math.min(520, Math.max(0, window.innerWidth - (window.innerWidth < 560 ? 28 : 0)));
-  const base = Math.max(0, window.innerWidth - panelWidth * depth);
-  for (let target = 0; target < depth; target++) {
-    const backdrop = document.createElement("button");
-    backdrop.type = "button";
-    backdrop.className = "panel-backdrop";
-    backdrop.setAttribute("aria-label", target === 0 ? t("studio.returnToWorkspace") : t("studio.returnToPreviousPanel"));
-    const left = target === 0 ? 0 : Math.max(0, base + panelWidth * (target - 1));
-    const rightEdge = target === 0 ? base : Math.min(window.innerWidth, base + panelWidth * target);
-    backdrop.style.left = `${left}px`;
-    backdrop.style.right = `${Math.max(0, window.innerWidth - rightEdge)}px`;
-    backdrop.style.setProperty("--backdrop-opacity", String(Math.max(0.14, 0.28 - target * 0.06)));
-    backdrop.addEventListener("click", () => popPanelsTo(target));
-    panelBackdrops.append(backdrop);
-  }
-}
-
 function updatePanelStack(): void {
   const depth = panelStack.length;
   document.body.classList.toggle("panel-stack-open", depth > 0);
   document.body.style.setProperty("--panel-stack-depth", String(depth));
-  appShell.inert = depth > 0;
+  appShell.inert = false;
+  appShell.style.setProperty("--surface-brightness", String(Math.max(0.72, 1 - depth * 0.14)));
   for (const [index, entry] of panelStack.entries()) {
     entry.panel.classList.add("is-open");
     entry.panel.classList.remove("is-closing");
-    entry.panel.inert = index !== depth - 1;
+    entry.panel.inert = false;
     entry.panel.setAttribute("aria-hidden", "false");
     entry.panel.style.setProperty("--panel-offset", String(-(depth - index - 1)));
+    entry.panel.style.setProperty("--surface-brightness", String(Math.max(0.72, 1 - (depth - index - 1) * 0.14)));
   }
   for (const panel of [sidePanel, nestedSourcePanel]) {
     if (panelStack.some((entry) => entry.panel === panel)) continue;
@@ -717,8 +695,8 @@ function updatePanelStack(): void {
     panel.setAttribute("aria-hidden", "true");
     panel.classList.remove("is-open");
     panel.style.removeProperty("--panel-offset");
+    panel.style.removeProperty("--surface-brightness");
   }
-  renderPanelBackdrops();
 }
 
 function pushPanel(panel: HTMLElement, returnFocus: HTMLElement | undefined, cleanup?: () => void): void {
@@ -990,7 +968,23 @@ element<HTMLButtonElement>("#panel-demo-source").addEventListener("click", () =>
 window.addEventListener("keydown", (event) => {
   if (event.key === "Escape" && panelStack.length) closePanel();
 });
-window.addEventListener("resize", renderPanelBackdrops);
+window.addEventListener("pointerdown", (event) => {
+  if (!panelStack.length || event.clientX >= window.innerWidth - Math.min(520, Math.max(0, window.innerWidth - (window.innerWidth < 560 ? 28 : 0)))) return;
+  const width = Math.min(520, Math.max(1, window.innerWidth - (window.innerWidth < 560 ? 28 : 0)));
+  const depth = panelStack.length;
+  const outerEdge = Math.max(0, window.innerWidth - width * depth);
+  const target = event.clientX < outerEdge
+    ? 0
+    : Math.min(depth - 1, Math.floor((event.clientX - outerEdge) / width) + 1);
+  event.preventDefault();
+  event.stopPropagation();
+  popPanelsTo(target);
+}, true);
+window.addEventListener("focusin", (event) => {
+  const active = panelStack.at(-1)?.panel;
+  if (!active || !(event.target instanceof Node) || active.contains(event.target)) return;
+  active.querySelector<HTMLButtonElement>(".side-panel-head .icon-button")?.focus();
+});
 for (const [button, command] of [["#copy-command", "#build-command"], ["#copy-host-command", "#host-command"]]) {
   element<HTMLButtonElement>(button).addEventListener("click", async () => {
     try {
