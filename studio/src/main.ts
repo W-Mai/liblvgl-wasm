@@ -6,7 +6,16 @@ import { attachCapabilityManifest, parseCapabilityManifest, type CapabilityManif
 import { renderHighlighted } from "./highlight.ts";
 import { loadResources, readResources, type ResourceFile } from "./resources.ts";
 import { assetUrl } from "./paths.ts";
+import { initI18n, t } from "./i18n.ts";
 import type { AppSource, RunnerOutput } from "./protocol.ts";
+
+initI18n();
+document.addEventListener("lvgl-locale-change", () => {
+  showCoreSource();
+  showAppSource();
+  renderResources();
+  showToolchain(selectedLanguage);
+});
 
 type Language = "js" | "ts" | "c" | "cpp" | "rust";
 type Source = {
@@ -15,13 +24,14 @@ type Source = {
 };
 
 type Toolchain = {
-  name: string; output: string; summary: string; command: string;
+  name: string; output: string; summary: string; command: string; i18nKey: string;
   sample: string; kind: "js" | "wasm"; links: [string, string][];
   sampleName?: string; resources?: readonly ResourceFile[];
 };
 
 const toolchains: Record<Language, Toolchain> = {
   js: {
+    i18nKey: "javascript",
     name: "JavaScript", output: "Upload .js",
     summary: "Write a single JavaScript file with a main(api) entry point. No compilation needed.",
     command: "No build step — upload toolchains/js/app.js",
@@ -29,6 +39,7 @@ const toolchains: Record<Language, Toolchain> = {
     links: [["app.js", "/toolchains/js/app.js"]],
   },
   ts: {
+    i18nKey: "typescript",
     name: "TypeScript", output: "Build to .js", sampleName: "API button",
     summary: "Call LVGL APIs with generated constants and layouts. Handle clicks through the host SDK.",
     command: "bun run build:ts-app\n# upload target/apps/ts/app.js",
@@ -36,6 +47,7 @@ const toolchains: Record<Language, Toolchain> = {
     links: [["app.ts", "/toolchains/ts/app.ts"], ["api.ts", "/toolchains/ts/api.ts"], ["sdk.ts", "/toolchains/ts/sdk.ts"]],
   },
   c: {
+    i18nKey: "c",
     name: "C", output: "Build to .wasm",
     summary: "Call the versioned application ABI through a small C header. Compile with wasi-sdk.",
     command: "./toolchains/c/build.sh\n# upload target/apps/c/app.wasm",
@@ -43,6 +55,7 @@ const toolchains: Record<Language, Toolchain> = {
     links: [["app.c", "/toolchains/c/app.c"], ["build.sh", "/toolchains/c/build.sh"], ["lvw_app.h", "/toolchains/include/lvw_app.h"]],
   },
   cpp: {
+    i18nKey: "cpp",
     name: "C++", output: "Build to .wasm",
     summary: "Use the same application ABI from C++ with a C linkage boundary and wasi-sdk.",
     command: "./toolchains/cpp/build.sh\n# upload target/apps/cpp/app.wasm",
@@ -50,6 +63,7 @@ const toolchains: Record<Language, Toolchain> = {
     links: [["app.cpp", "/toolchains/cpp/app.cpp"], ["build.sh", "/toolchains/cpp/build.sh"], ["lvw_app.h", "/toolchains/include/lvw_app.h"]],
   },
   rust: {
+    i18nKey: "rust",
     name: "Rust", output: "Build to .wasm",
     summary: "Build a no_std Wasm app that imports the application ABI from the browser host.",
     command: "./toolchains/rust/build.sh\n# upload target/apps/rust/app.wasm",
@@ -173,7 +187,7 @@ let selectedCore: File | undefined;
 let selectedCoreReport: ArtifactReport | undefined;
 let selectedCoreManifest: CapabilityManifest | undefined;
 let selectedApp: Source = {
-  name: "JS sample application", origin: "SAMPLE",
+  name: t("language.sampleApplication", { name: t("tool.javascript") }), origin: t("artifact.sample"),
   load: () => fetchApp(toolchains.js.sample, "js"),
 };
 let selectedAppReport: ArtifactReport | undefined;
@@ -228,11 +242,11 @@ function setStatus(value: "starting" | "running" | "stopped" | "error", label: s
 }
 
 function artifactSummary(report: ArtifactReport): string {
-  if (report.mode === "unavailable") return `Blocked · ${report.reasons[0] ?? "Unsupported artifact"}`;
-  if (report.kind === "firmware") return "Firmware ABI · standalone framebuffer";
-  if (report.kind === "lvw-app") return "LVW app ABI · LVGL app mode";
-  if (report.kind === "lvgl-core") return "LVGL core · bridge ready";
-  return "Unknown artifact";
+  if (report.mode === "unavailable") return t("status.blocked", { reason: report.reasons[0] ?? t("artifact.unknown") });
+  if (report.kind === "firmware") return t("artifact.firmware");
+  if (report.kind === "lvw-app") return t("artifact.app");
+  if (report.kind === "lvgl-core") return t("artifact.core");
+  return t("artifact.unknown");
 }
 
 function onOutput(message: RunnerOutput): void {
@@ -240,12 +254,12 @@ function onOutput(message: RunnerOutput): void {
     running = true;
     if (message.mode === "firmware") {
       renderCore();
-      setStatus("running", "Firmware running");
-      appendLog(`Firmware ABI ${message.firmware.abi} ready · ${message.width} × ${message.height}`, "success");
+      setStatus("running", t("status.firmware"));
+      appendLog(t("status.firmwareReady", { abi: message.firmware.abi, width: message.width, height: message.height }), "success");
     } else {
       renderCore(message.core);
-      setStatus("running", "Application running");
-      appendLog(`Core ABI ${message.core.identity.bridgeAbi} ready · ${message.core.exports} exports · ${message.width} × ${message.height}`, "success");
+      setStatus("running", t("status.running"));
+      appendLog(t("status.coreReady", { abi: message.core.identity.bridgeAbi, exports: message.core.exports, width: message.width, height: message.height }), "success");
     }
   } else if (message.type === "frame") {
     if (canvas.width !== message.width || canvas.height !== message.height) {
@@ -253,14 +267,16 @@ function onOutput(message: RunnerOutput): void {
       canvas.height = message.height;
     }
     context!.putImageData(new ImageData(new Uint8ClampedArray(message.pixels), message.width, message.height), 0, 0);
-    element<HTMLElement>("#frame-count").textContent = `Frame ${message.frameId}`;
+    const frameCount = element<HTMLElement>("#frame-count");
+    frameCount.dataset.i18nFrame = String(message.frameId);
+    frameCount.textContent = t("studio.frame", { frame: message.frameId });
   } else if (message.type === "log") {
     appendLog(message.message);
   } else if (message.type === "error") {
     running = false;
     renderCore();
     controller.stop();
-    setStatus("error", "Application error");
+    setStatus("error", t("status.error"));
     appendLog(message.message, "error");
   }
 }
@@ -283,7 +299,7 @@ function stop(): void {
   controller.stop();
   running = false;
   renderCore();
-  setStatus("stopped", "Application stopped");
+  setStatus("stopped", t("status.stopped"));
 }
 
 async function run(): Promise<"started" | "failed" | "cancelled"> {
@@ -292,8 +308,8 @@ async function run(): Promise<"started" | "failed" | "cancelled"> {
   const source = selectedApp;
   const uploads = [...resources];
   const library = selectedCore;
-  setStatus("starting", "Loading application");
-  appendLog(`Starting ${source.name} with ${selectedAppReport?.mode === "firmware" ? "firmware mode" : library?.name || "default liblvgl.wasm"}…`);
+  setStatus("starting", t("status.loading"));
+  appendLog(t("status.starting", { name: source.name, mode: selectedAppReport?.mode === "firmware" ? t("status.firmwareMode") : library?.name || "default liblvgl.wasm" }));
   try {
     const [app, assets] = await Promise.all([source.load(), loadResources(source.resources ?? [], uploads)]);
     if (runId !== generation) return "cancelled";
@@ -309,7 +325,7 @@ async function run(): Promise<"started" | "failed" | "cancelled"> {
     if (runId !== generation) return "cancelled";
     controller.stop();
     renderCore();
-    setStatus("error", "Application failed to start");
+    setStatus("error", t("status.appFailed"));
     appendLog(error instanceof Error ? error.message : String(error), "error");
     return "failed";
   }
@@ -323,20 +339,20 @@ function showCoreSource(): void {
   element<HTMLButtonElement>("#core-custom").setAttribute("aria-pressed", String(custom));
   coreDrop.classList.toggle("is-hidden", !custom);
   coreName.textContent = selectedCore?.name || "liblvgl.wasm";
-  coreOrigin.textContent = custom ? "LOCAL FILE" : "BUILT-IN";
-  corePreflight.textContent = selectedCoreReport ? artifactSummary(selectedCoreReport) : "Default bridge core";
+  coreOrigin.textContent = custom ? t("artifact.localFile") : t("artifact.builtIn");
+  corePreflight.textContent = selectedCoreReport ? artifactSummary(selectedCoreReport) : t("studio.defaultBridgeCore");
   coreManifestButton.disabled = !selectedCore;
   const version = selectedCoreManifest?.lvgl.version;
   coreManifestState.textContent = selectedCoreManifest
-    ? `MATCHED · LVGL ${version?.major ?? "?"}.${version?.minor ?? "?"}.${version?.patch ?? "?"}`
-    : "No manifest loaded";
+    ? t("manifest.matched", { version: `${version?.major ?? "?"}.${version?.minor ?? "?"}.${version?.patch ?? "?"}` })
+    : t("studio.noManifest");
 }
 
 async function chooseCore(file: File): Promise<void> {
   const choice = ++coreChoice;
   const runId = generation;
   if (!file.name.toLowerCase().endsWith(".wasm") || file.size === 0 || file.size > 32 * 1024 * 1024) {
-    appendLog("Choose a .wasm library between 1 byte and 32 MiB", "error");
+    appendLog(t("status.chooseCore"), "error");
     return;
   }
   let report: ArtifactReport;
@@ -369,7 +385,7 @@ async function chooseCore(file: File): Promise<void> {
 
 async function chooseCoreManifest(file: File): Promise<void> {
   if (!selectedCore || !selectedCoreReport) {
-    appendLog("Load a custom liblvgl.wasm before its capability manifest", "error");
+    appendLog(t("status.loadManifestFirst"), "error");
     return;
   }
   try {
@@ -377,7 +393,7 @@ async function chooseCoreManifest(file: File): Promise<void> {
     selectedCoreReport = attachCapabilityManifest(selectedCoreReport, manifest);
     selectedCoreManifest = manifest;
     showCoreSource();
-    appendLog(`Capability manifest matched ${manifest.identity.wasm_sha256.slice(0, 12)}…`, "success");
+    appendLog(t("status.coreMatched", { hash: manifest.identity.wasm_sha256.slice(0, 12) }), "success");
   } catch (error) {
     appendLog(`Manifest rejected: ${error instanceof Error ? error.message : String(error)}`, "error");
   }
@@ -387,7 +403,7 @@ async function chooseApp(file: File): Promise<void> {
   const suffix = file.name.toLowerCase();
   const kind = suffix.endsWith(".wasm") ? "wasm" : suffix.endsWith(".js") ? "js" : undefined;
   if (!kind || file.size === 0 || file.size > 8 * 1024 * 1024) {
-    appendLog("Choose a built .js or .wasm application up to 8 MiB", "error");
+    appendLog(t("status.chooseApp"), "error");
     return;
   }
   let report: ArtifactReport | undefined;
@@ -443,7 +459,7 @@ function fileDrop(target: HTMLElement, onFile: (file: File) => void): void {
 function showAppSource(): void {
   appName.textContent = selectedApp.name;
   appOrigin.textContent = selectedApp.origin;
-  appPreflight.textContent = selectedAppReport ? artifactSummary(selectedAppReport) : "JavaScript · LVGL app mode";
+  appPreflight.textContent = selectedAppReport ? artifactSummary(selectedAppReport) : t("studio.jsAppMode");
   appDetails.disabled = !selectedAppReport;
   renderResources();
 }
@@ -452,13 +468,13 @@ function renderResources(): void {
   resourceList.replaceChildren();
   clearResources.disabled = resources.length === 0;
   const entries = [
-    ...(selectedApp.resources ?? []).map(({ name }) => ({ name, detail: "Sample" })),
-    ...resources.map(({ name, size }) => ({ name, detail: `Upload · ${Math.max(1, Math.ceil(size / 1024))} KB` })),
+    ...(selectedApp.resources ?? []).map(({ name }) => ({ name, detail: t("resource.sample") })),
+    ...resources.map(({ name, size }) => ({ name, detail: t("resource.upload", { size: Math.max(1, Math.ceil(size / 1024)) }) })),
   ];
   if (!entries.length) {
     const item = document.createElement("li");
     item.className = "empty-resource";
-    item.textContent = "No assets added";
+    item.textContent = t("status.noAssets");
     resourceList.append(item);
     return;
   }
@@ -515,11 +531,17 @@ function showToolchain(language: Language): void {
     button.setAttribute("aria-pressed", String(active));
   }
   element<HTMLElement>("#language-symbol").textContent = language === "cpp" ? "C++" : language.toUpperCase();
-  element<HTMLElement>("#language-name").textContent = tool.name;
-  element<HTMLElement>("#language-output").textContent = tool.output;
-  element<HTMLElement>("#language-summary").textContent = tool.summary;
-  element<HTMLElement>("#build-command").textContent = tool.command;
-  element<HTMLElement>("#sample-button").innerHTML = `<span aria-hidden="true">◈</span> Load ${tool.sampleName ?? tool.name} sample <span aria-hidden="true">→</span>`;
+  const toolName = t(`tool.${tool.i18nKey}`);
+  const outputKey = language === "js" ? "tool.uploadJs" : language === "ts" ? "tool.buildJs" : "tool.buildWasm";
+  const summary = tool.sampleName && tool !== toolchains.ts
+    ? t(`tool.${tool.sampleName.toLowerCase()}Summary`)
+    : t(`tool.${tool.i18nKey}Summary`);
+  element<HTMLElement>("#language-name").textContent = toolName;
+  element<HTMLElement>("#language-output").textContent = t(outputKey);
+  element<HTMLElement>("#language-summary").textContent = summary;
+  element<HTMLElement>("#build-command").textContent = language === "js" ? t("tool.noBuild") : tool.command;
+  const sampleName = tool.sampleName === "API button" ? t("tool.apiButton") : tool.sampleName ?? toolName;
+  element<HTMLElement>("#sample-button").innerHTML = `<span aria-hidden="true">◈</span> ${t("studio.loadSample", { name: sampleName })} <span aria-hidden="true">→</span>`;
   const required = element<HTMLElement>("#sample-resources");
   required.hidden = !tool.resources?.length;
   required.textContent = (tool.resources ?? []).map(({ name, url }) => `${url.slice(1)} → W:${name}`).join("\n");
@@ -531,7 +553,7 @@ function showToolchain(language: Language): void {
   if (language === "c") {
     const preview = document.createElement("button");
     preview.type = "button";
-    preview.textContent = "C API preview →";
+    preview.textContent = `${t("studio.cApiPreview")} →`;
     preview.addEventListener("click", () => { void openCDemo(); });
     links.append(preview);
   }
@@ -540,7 +562,7 @@ function showToolchain(language: Language): void {
 async function chooseSample(language: Language): Promise<void> {
   const tool = currentToolchain(language);
   selectedApp = {
-    name: `${tool.name}${tool.sampleName ? ` ${tool.sampleName}` : ""} sample application`, origin: "SAMPLE",
+    name: t("language.sampleApplication", { name: `${t(`tool.${tool.i18nKey}`)}${tool.sampleName ? ` ${tool.sampleName === "API button" ? t("tool.apiButton") : tool.sampleName}` : ""}` }), origin: t("artifact.sample"),
     resources: tool.resources,
     load: () => fetchApp(tool.sample, tool.kind),
   };
@@ -604,7 +626,7 @@ element<HTMLButtonElement>("#run-button").addEventListener("click", () => { void
 element<HTMLButtonElement>("#reset-button").addEventListener("click", () => { void run(); });
 element<HTMLButtonElement>("#stop-button").addEventListener("click", () => {
   stop();
-  appendLog("Application stopped");
+  appendLog(t("status.stopped"));
 });
 element<HTMLButtonElement>("#clear-log").addEventListener("click", () => consoleOutput.replaceChildren());
 viewportSelect.addEventListener("change", () => {
@@ -657,16 +679,16 @@ function renderDemoIdentity(info?: CDemo["identity"]): void {
 function renderCore(info?: CoreReport): void {
   coreDetails.disabled = !info && !selectedCoreReport;
   const sdkStatus = info?.identity.sdk.status;
-  element<HTMLElement>("#core-sdk-status").textContent = !info ? "No active library"
-    : sdkStatus === "matched" ? "Host SDK matched"
-    : sdkStatus === "core-mismatch" ? "Bridge only" : "Host SDK mismatch";
+  element<HTMLElement>("#core-sdk-status").textContent = !info ? t("status.noActiveLibrary")
+    : sdkStatus === "matched" ? t("status.hostSdkMatched")
+    : sdkStatus === "core-mismatch" ? t("status.bridgeOnly") : t("status.hostSdkMismatch");
   panelLibrary.replaceChildren();
   const paragraph = (text: string): void => {
     const node = document.createElement("p");
     node.textContent = text;
     panelLibrary.append(node);
   };
-  if (!info) return paragraph("No active library.");
+  if (!info) return paragraph(t("status.noActiveLibrary"));
   const heading = (text: string): void => {
     const node = document.createElement("h3");
     node.textContent = text;
@@ -685,25 +707,25 @@ function renderCore(info?: CoreReport): void {
     panelLibrary.append(list);
   };
   rows([
-    ["Bridge ABI", String(info.identity.bridgeAbi)],
-    ["Host SDK", sdkStatus === "matched" ? "Matched" : "Mismatch"],
-    ["Imports / exports", `${info.imports} / ${info.exports}`],
+    [t("studio.bridgeAbi"), String(info.identity.bridgeAbi)],
+    [t("status.hostSdkMatched"), sdkStatus === "matched" ? t("status.matched") : t("status.mismatch")],
+    [t("status.importsExports"), `${info.imports} / ${info.exports}`],
   ]);
-  if (selectedCoreReport?.manifest) rows([["Manifest LVGL", selectedCoreReport.manifest.version],
-    ["Manifest source", selectedCoreReport.manifest.sourceRevision],
-    ["Manifest config · SHA-256", selectedCoreReport.manifest.configSha256],
-    ["Manifest API · SHA-256", selectedCoreReport.manifest.apiSha256]]);
-  if (sdkStatus !== "matched") paragraph("Generated APIs need a matching SDK. Bridge applications remain available.");
-  heading("Build configuration");
+  if (selectedCoreReport?.manifest) rows([[t("status.manifestLvgl"), selectedCoreReport.manifest.version],
+    [t("status.manifestSource"), selectedCoreReport.manifest.sourceRevision],
+    [t("status.manifestConfig"), selectedCoreReport.manifest.configSha256],
+    [t("status.manifestApi"), selectedCoreReport.manifest.apiSha256]]);
+  if (sdkStatus !== "matched") paragraph(t("status.apiNeedsSdk"));
+  heading(t("status.buildConfiguration"));
   if (info.build) {
     rows([["LVGL", info.build.version],
       ["Generated APIs", String(info.identity.sdk.verifiedFunctions)],
-      ...info.build.features.map(({ name, enabled }): [string, string] => [name, enabled ? "Enabled" : "Disabled"])]);
-  } else paragraph("Unknown for this core.");
-  heading("Identity");
+      ...info.build.features.map(({ name, enabled }): [string, string] => [name, enabled ? t("status.enabled") : t("status.disabled")])]);
+  } else paragraph(t("status.unknownCore"));
+  heading(t("status.identity"));
   const hashes: [string, string][] = [["Loaded core · SHA-256", info.identity.coreSha256]];
-  if (sdkStatus !== "matched") hashes.push(["SDK core · SHA-256", info.identity.sdk.coreSha256]);
-  hashes.push(["SDK API · SHA-256", info.identity.sdk.apiSha256]);
+  if (sdkStatus !== "matched") hashes.push([t("status.sdkCore"), info.identity.sdk.coreSha256]);
+  hashes.push([t("status.sdkApi"), info.identity.sdk.apiSha256]);
   rows(hashes, "library-hashes");
 }
 
@@ -733,30 +755,30 @@ function renderArtifactReport(report: ArtifactReport, title: string): void {
     panelLibrary.append(list);
   };
   rows([
-    ["Detected", report.kind],
-    ["Run mode", report.mode],
-    ["Size", `${report.bytes} bytes`],
-    ["SHA-256", report.sha256],
-    ["Imports / exports", `${report.imports.length} / ${report.exports.length}`],
+    [t("status.detected"), report.kind],
+    [t("status.runMode"), report.mode],
+    [t("status.size"), `${report.bytes} bytes`],
+    [t("studio.sha256"), report.sha256],
+    [t("status.importsExports"), `${report.imports.length} / ${report.exports.length}`],
   ]);
-  if (report.manifest) rows([["Manifest LVGL", report.manifest.version],
-    ["Manifest source", report.manifest.sourceRevision],
-    ["Manifest config · SHA-256", report.manifest.configSha256],
-    ["Manifest API · SHA-256", report.manifest.apiSha256]]);
+  if (report.manifest) rows([[t("status.manifestLvgl"), report.manifest.version],
+    [t("status.manifestSource"), report.manifest.sourceRevision],
+    [t("status.manifestConfig"), report.manifest.configSha256],
+    [t("status.manifestApi"), report.manifest.apiSha256]]);
   for (const capability of report.capabilities) {
     paragraph(`${capability.state.toUpperCase()} · ${capability.id} · ${capability.detail}`);
   }
-  for (const reason of report.reasons) paragraph(`Blocked · ${reason}`);
+  for (const reason of report.reasons) paragraph(t("status.blocked", { reason }));
 }
 
 function openCoreDetails(): void {
   if (selectedCoreReport && !running) {
-    renderArtifactReport(selectedCoreReport, "Library preflight");
+    renderArtifactReport(selectedCoreReport, t("studio.preflight"));
     return;
   }
   stopPanelContent();
   showPanel();
-  panelTitle.textContent = "Library details";
+  panelTitle.textContent = t("studio.libraryDetails");
   panelDemo.hidden = true;
   panelDemoFooter.hidden = true;
   panelSource.hidden = true;
@@ -764,7 +786,7 @@ function openCoreDetails(): void {
 }
 coreDetails.addEventListener("click", openCoreDetails);
 function openAppDetails(): void {
-  if (selectedAppReport) renderArtifactReport(selectedAppReport, "Application preflight");
+  if (selectedAppReport) renderArtifactReport(selectedAppReport, t("studio.preflight"));
 }
 appDetails.addEventListener("click", openAppDetails);
 function showPanel(): void {
@@ -795,7 +817,7 @@ async function openCDemo(): Promise<void> {
   if (!panelDemo.hidden && document.body.classList.contains("panel-open")) return;
   stopPanelContent();
   showPanel();
-  panelTitle.textContent = "C API demo";
+  panelTitle.textContent = t("studio.cApiDemo");
   panelSource.hidden = true;
   panelLibrary.hidden = true;
   panelDemo.hidden = false;

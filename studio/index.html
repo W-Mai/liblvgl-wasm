@@ -36,83 +36,87 @@
           <span class="brand-name">LVGL<span>Studio</span></span>
         </a>
         <div class="topbar-actions">
+          <div class="language-switch" role="group" aria-label="Language" data-i18n-aria-label="locale.english">
+            <button type="button" data-locale-choice="en" aria-pressed="false">EN</button>
+            <button type="button" data-locale-choice="zh-CN" aria-pressed="false">中文</button>
+          </div>
           <div class="theme-switch" role="group" aria-label="Color theme">
-            <button type="button" data-theme-choice="light" aria-pressed="false">Light</button>
-            <button type="button" data-theme-choice="dark" aria-pressed="false">Dark</button>
+            <button type="button" data-theme-choice="light" aria-pressed="false" data-i18n="theme.light">Light</button>
+            <button type="button" data-theme-choice="dark" aria-pressed="false" data-i18n="theme.dark">Dark</button>
           </div>
           <a class="topbar-link" href="https://github.com/lvgl/lvgl" target="_blank" rel="noopener noreferrer">LVGL <span aria-hidden="true">↗</span></a>
         </div>
       </header>
 
       <div class="workspace">
-        <aside class="setup-panel" aria-label="Project setup">
+        <aside class="setup-panel" aria-label="Project setup" data-i18n-aria-label="studio.projectFiles">
           <div class="panel-heading">
-            <h1>Project files</h1>
-            <p>Choose the LVGL library, application, and resource files.</p>
+            <h1 data-i18n="studio.projectFiles">Project files</h1>
+            <p data-i18n="studio.projectFilesHint">Choose the LVGL library, application, and resource files.</p>
           </div>
 
           <section class="setup-card" aria-labelledby="core-title">
-            <div class="card-top"><span class="step-number">01</span><h2 id="core-title">LVGL library</h2><span class="card-icon" aria-hidden="true">◈</span></div>
+            <div class="card-top"><span class="step-number">01</span><h2 id="core-title" data-i18n="studio.lvglLibrary">LVGL library</h2><span class="card-icon" aria-hidden="true">◈</span></div>
             <div class="source-switch" role="group" aria-label="Library source">
-              <button id="core-default" class="selected" type="button" aria-pressed="true">Default build</button>
-              <button id="core-custom" type="button" aria-pressed="false">My own .wasm</button>
+              <button id="core-default" class="selected" type="button" aria-pressed="true" data-i18n="studio.defaultCore">Default core</button>
+              <button id="core-custom" type="button" aria-pressed="false" data-i18n="studio.myWasm">My own .wasm</button>
             </div>
             <label class="upload-target is-hidden" id="core-drop" for="core-file" tabindex="0">
               <span class="upload-glyph" aria-hidden="true">↥</span>
-              <strong>Drop a compatible liblvgl.wasm</strong>
-              <small>or browse your files</small>
+              <strong data-i18n="studio.dropCore">Drop a compatible liblvgl.wasm file</strong>
+              <small data-i18n="studio.browseFiles">or browse your files</small>
             </label>
-            <input id="core-file" class="sr-only" type="file" accept=".wasm,application/wasm" aria-label="Choose custom LVGL Wasm library">
+            <input id="core-file" class="sr-only" type="file" accept=".wasm,application/wasm" aria-label="Choose custom LVGL Wasm library" data-i18n-aria-label="studio.chooseCore">
             <div class="file-state"><span class="file-dot"></span><span id="core-name">liblvgl.wasm</span><span id="core-origin">BUILT-IN</span></div>
-            <p id="core-preflight" class="artifact-status">Default bridge core</p>
-            <button id="core-manifest-button" class="text-action" type="button">Load capability manifest</button>
-            <input id="core-manifest-file" class="sr-only" type="file" accept=".json,application/json" aria-label="Choose LVGL capability manifest">
-            <p id="core-manifest-state" class="artifact-status">No manifest loaded</p>
-            <button id="core-details" class="core-details" type="button" aria-label="Library details" disabled><span id="core-sdk-status">No active library</span><span aria-hidden="true">→</span></button>
+            <p id="core-preflight" class="artifact-status" data-i18n="studio.defaultBridgeCore">Default bridge core</p>
+            <button id="core-manifest-button" class="text-action" type="button" data-i18n="studio.loadManifest">Load capability manifest</button>
+            <input id="core-manifest-file" class="sr-only" type="file" accept=".json,application/json" aria-label="Choose LVGL capability manifest" data-i18n-aria-label="studio.chooseManifest">
+            <p id="core-manifest-state" class="artifact-status" data-i18n="studio.noManifest">No manifest loaded</p>
+            <button id="core-details" class="core-details" type="button" aria-label="Library details" data-i18n-aria-label="studio.libraryDetails" disabled><span id="core-sdk-status" data-i18n="studio.noActiveLibrary">No active library</span><span aria-hidden="true">→</span></button>
           </section>
 
           <section class="setup-card" aria-labelledby="app-title">
-            <div class="card-top"><span class="step-number">02</span><h2 id="app-title">Application</h2><span class="card-icon" aria-hidden="true">⌘</span></div>
+            <div class="card-top"><span class="step-number">02</span><h2 id="app-title" data-i18n="studio.application">Application</h2><span class="card-icon" aria-hidden="true">⌘</span></div>
             <label class="upload-target" id="app-drop" for="app-file" tabindex="0">
               <span class="upload-glyph" aria-hidden="true">↥</span>
-              <strong>Drop your application</strong>
-              <small>Single-file .js or compiled .wasm</small>
+              <strong data-i18n="studio.dropApplication">Drop an application file</strong>
+              <small data-i18n="studio.appHint">A single .js file or a compiled .wasm file</small>
             </label>
-            <input id="app-file" class="sr-only" type="file" accept=".js,.wasm,text/javascript,application/wasm" aria-label="Choose an application artifact">
-            <div class="file-state"><span class="file-dot app-dot"></span><span id="app-name">JS sample application</span><span id="app-origin">SAMPLE</span></div>
-            <p id="app-preflight" class="artifact-status">JavaScript · LVGL app mode</p>
-            <button id="app-details" class="core-details" type="button" aria-label="Application preflight details" disabled><span>Preflight report</span><span aria-hidden="true">→</span></button>
-            <button id="app-reset" class="text-action" type="button">↺ &nbsp;Restore sample app</button>
+            <input id="app-file" class="sr-only" type="file" accept=".js,.wasm,text/javascript,application/wasm" aria-label="Choose an application artifact" data-i18n-aria-label="studio.chooseApplication">
+            <div class="file-state"><span class="file-dot app-dot"></span><span id="app-name" data-i18n="studio.jsSample">JavaScript sample application</span><span id="app-origin">SAMPLE</span></div>
+            <p id="app-preflight" class="artifact-status" data-i18n="studio.jsAppMode">JavaScript · LVGL app mode</p>
+            <button id="app-details" class="core-details" type="button" aria-label="Application preflight details" disabled><span data-i18n="studio.preflight">Preflight report</span><span aria-hidden="true">→</span></button>
+            <button id="app-reset" class="text-action" type="button">↺ &nbsp;<span data-i18n="studio.restoreSample">Restore sample app</span></button>
           </section>
 
           <section class="setup-card resources-card" aria-labelledby="resources-title">
-            <div class="card-top"><span class="step-number">03</span><h2 id="resources-title">Assets</h2><span class="card-icon" aria-hidden="true">▤</span></div>
-            <p class="card-note">Images and fonts are copied into the library’s <code>W:</code> resource drive.</p>
+            <div class="card-top"><span class="step-number">03</span><h2 id="resources-title" data-i18n="studio.assets">Assets</h2><span class="card-icon" aria-hidden="true">▤</span></div>
+            <p class="card-note" data-i18n="studio.assetHint">Images and fonts are copied into the library's <code>W:</code> resource drive.</p>
             <label class="resource-button" for="resource-files"><span aria-hidden="true">＋</span> Choose upload files</label>
-            <input id="resource-files" class="sr-only" type="file" multiple aria-label="Choose resource files">
-            <ul id="resource-list" class="resource-list" aria-label="Selected resources"><li class="empty-resource">No assets added</li></ul>
-            <button id="clear-resources" class="text-action" type="button" disabled>Clear uploads</button>
+            <input id="resource-files" class="sr-only" type="file" multiple aria-label="Choose resource files" data-i18n-aria-label="studio.chooseResources">
+            <ul id="resource-list" class="resource-list" aria-label="Selected resources" data-i18n-aria-label="studio.selectedResources"><li class="empty-resource" data-i18n="studio.noAssets">No assets added</li></ul>
+            <button id="clear-resources" class="text-action" type="button" disabled data-i18n="studio.clearUploads">Clear uploads</button>
           </section>
         </aside>
 
         <main class="preview-panel">
           <div class="preview-toolbar">
             <div>
-              <div class="preview-title-row"><h2>Preview</h2><span id="run-status" class="sr-only" role="status" aria-live="polite">Loading application</span></div>
+              <div class="preview-title-row"><h2 data-i18n="studio.preview">Preview</h2><span id="run-status" class="sr-only" role="status" aria-live="polite" data-i18n="status.loading">Loading application</span></div>
             </div>
             <div class="run-actions">
-              <button id="run-button" class="run-button" type="button"><span aria-hidden="true">▶</span> Run app</button>
-              <button id="reset-button" class="icon-button" type="button" aria-label="Restart application" title="Restart application">↻</button>
-              <button id="stop-button" class="icon-button" type="button" aria-label="Stop application" title="Stop application">■</button>
+              <button id="run-button" class="run-button" type="button"><span aria-hidden="true">▶</span> <span data-i18n="studio.runApp">Run app</span></button>
+              <button id="reset-button" class="icon-button" type="button" aria-label="Restart application" title="Restart application" data-i18n-aria-label="studio.restart" data-i18n-title="studio.restart">↻</button>
+              <button id="stop-button" class="icon-button" type="button" aria-label="Stop application" title="Stop application" data-i18n-aria-label="studio.stop" data-i18n-title="studio.stop">■</button>
             </div>
           </div>
 
           <div class="viewport-toolbar">
-            <div class="viewport-label"><span class="mini-grid" aria-hidden="true">▦</span> DEVICE VIEWPORT</div>
+            <div class="viewport-label"><span class="mini-grid" aria-hidden="true">▦</span> <span data-i18n="studio.deviceViewport">DEVICE VIEWPORT</span></div>
             <div class="viewport-controls">
-              <span id="frame-count" class="frame-count">Frame 0</span>
-              <label for="viewport-select">Resolution</label>
-              <select id="viewport-select" aria-label="Preview resolution">
+              <span id="frame-count" class="frame-count" data-i18n="studio.frame" data-i18n-frame="0">Frame 0</span>
+              <label for="viewport-select" data-i18n="studio.resolution">Resolution</label>
+              <select id="viewport-select" aria-label="Preview resolution" data-i18n-aria-label="studio.resolution">
                 <option value="320x240">320 × 240</option>
                 <option value="480x320">480 × 320</option>
                 <option value="800x480">800 × 480</option>
@@ -125,22 +129,22 @@
             <div class="stage-glow"></div>
             <div class="device-wrap">
               <div class="device-top"><span class="device-sensor"></span><span class="device-sensor small"></span></div>
-              <div class="device-screen"><canvas id="screen" width="320" height="240" aria-label="Interactive LVGL application preview"></canvas></div>
+              <div class="device-screen"><canvas id="screen" width="320" height="240" aria-label="Interactive LVGL application preview" data-i18n-aria-label="studio.interactivePreview"></canvas></div>
               <div class="device-bottom"><span></span><span></span><span></span><span></span><span></span><span></span></div>
             </div>
-            <div class="stage-hint">Click or drag to send pointer input</div>
+            <div class="stage-hint" data-i18n="studio.pointerHint">Click or drag to send pointer input</div>
           </div>
 
           <section class="console-panel" aria-labelledby="console-title">
-            <div class="console-heading"><h3 id="console-title"><span class="console-chevron">&gt;_</span> Runtime console</h3><button id="clear-log" type="button">Clear</button></div>
+            <div class="console-heading"><h3 id="console-title"><span class="console-chevron">&gt;_</span> <span data-i18n="studio.runtimeConsole">Runtime console</span></h3><button id="clear-log" type="button" data-i18n="studio.clear">Clear</button></div>
             <div id="console-output" class="console-output" role="log" aria-live="polite"></div>
           </section>
         </main>
 
         <aside class="toolchain-panel" aria-labelledby="toolchain-title">
-          <h2 id="toolchain-title">Application toolchains</h2>
-          <p class="toolchain-intro">View starter files, copy a build command, or load a sample. Upload the resulting <code>.js</code> or <code>.wasm</code> file on the left.</p>
-          <div class="language-picker" role="group" aria-label="Choose a toolchain">
+          <h2 id="toolchain-title" data-i18n="studio.toolchains">Application toolchains</h2>
+          <p class="toolchain-intro" data-i18n="studio.toolchainHint">View starter files, copy a build command, or load a sample. Upload the resulting <code>.js</code> or <code>.wasm</code> file on the left.</p>
+          <div class="language-picker" role="group" aria-label="Choose a toolchain" data-i18n-aria-label="studio.chooseToolchain">
             <button class="active" data-language="js" type="button" aria-pressed="true">JS</button>
             <button data-language="ts" type="button" aria-pressed="false">TS</button>
             <button data-language="c" type="button" aria-pressed="false">C</button>
@@ -149,34 +153,34 @@
           </div>
           <div class="toolchain-detail">
             <div class="toolchain-badge"><span id="language-symbol">JS</span><div><strong id="language-name">JavaScript</strong><small id="language-output">Upload .js</small></div></div>
-            <div id="sample-picker" class="sample-picker" hidden><label for="ts-sample">Sample</label><select id="ts-sample" aria-label="TypeScript sample"></select></div>
+            <div id="sample-picker" class="sample-picker" hidden><label for="ts-sample" data-i18n="studio.sample">Sample</label><select id="ts-sample" aria-label="TypeScript sample" data-i18n-aria-label="studio.sample"></select></div>
             <p id="language-summary">Write a single JavaScript file with a main(api) entry point.</p>
-            <div class="command-head"><span>BUILD COMMAND</span><button id="copy-command" type="button" aria-label="Copy build command">Copy <span aria-hidden="true">↗</span></button></div>
-            <pre id="build-command" class="command-block"><code>No build step — upload toolchains/js/app.js</code></pre>
+            <div class="command-head"><span data-i18n="studio.buildCommand">BUILD COMMAND</span><button id="copy-command" type="button" aria-label="Copy build command" data-i18n-aria-label="studio.buildCommand"><span data-i18n="studio.copy">Copy</span> <span aria-hidden="true">↗</span></button></div>
+            <pre id="build-command" class="command-block"><code data-i18n="tool.noBuild">No build step — upload toolchains/js/app.js</code></pre>
             <div id="template-links" class="template-links"></div>
             <p id="sample-resources" class="sample-resources" aria-label="Required sample resources" hidden></p>
             <button id="sample-button" class="sample-button" type="button"><span aria-hidden="true">◈</span> Load JS sample <span aria-hidden="true">→</span></button>
             <details id="rust-host" class="native-host" hidden>
-              <summary>Rust host · LVGL API</summary>
-              <p>Prints rendering and input checks to the terminal. Run from the repository root with Rust 1.92+.</p>
-              <div class="command-head"><span>RUN COMMAND</span><button id="copy-host-command" type="button" aria-label="Copy Rust host command">Copy <span aria-hidden="true">↗</span></button></div>
+              <summary data-i18n="studio.rustHost">Rust host · LVGL API</summary>
+              <p data-i18n="studio.rustHostHint">Prints rendering and input checks to the terminal. Run from the repository root with Rust 1.92+.</p>
+              <div class="command-head"><span data-i18n="studio.runCommand">RUN COMMAND</span><button id="copy-host-command" type="button" aria-label="Copy Rust host command" data-i18n-aria-label="studio.runCommand"><span data-i18n="studio.copy">Copy</span> <span aria-hidden="true">↗</span></button></div>
               <pre id="host-command" class="command-block"></pre>
               <div id="host-links" class="template-links"></div>
             </details>
           </div>
-          <div class="toolchain-tip"><span aria-hidden="true">ⓘ</span><p>C, C++ and Rust apps use a small, versioned application ABI. Build locally, then drop the resulting Wasm here.</p></div>
+          <div class="toolchain-tip"><span aria-hidden="true">ⓘ</span><p data-i18n="studio.toolchainTip">C, C++ and Rust apps use a small, versioned application ABI. Build locally, then drop the resulting Wasm here.</p></div>
         </aside>
       </div>
     </div>
     <aside id="side-panel" class="side-panel" aria-labelledby="panel-title" aria-hidden="true" inert>
       <div class="side-panel-head">
-        <h2 id="panel-title">C API demo</h2>
-        <button id="panel-close" class="icon-button" type="button" aria-label="Close panel">×</button>
+        <h2 id="panel-title" data-i18n="studio.cApiDemo">C API demo</h2>
+        <button id="panel-close" class="icon-button" type="button" aria-label="Close panel" data-i18n-aria-label="studio.closePanel">×</button>
       </div>
       <div id="panel-demo" class="c-demo-stage" hidden>
         <div class="device-wrap demo-device">
           <div class="device-top"><span class="device-sensor"></span><span class="device-sensor small"></span></div>
-          <div class="device-screen"><canvas id="c-demo-screen" width="320" height="240" aria-label="Interactive LVGL C demo"></canvas></div>
+          <div class="device-screen"><canvas id="c-demo-screen" width="320" height="240" aria-label="Interactive LVGL C demo" data-i18n-aria-label="studio.cApiDemo"></canvas></div>
           <div class="device-bottom"><span></span><span></span><span></span><span></span><span></span><span></span></div>
         </div>
         <p id="c-demo-error" class="demo-error" role="alert" hidden></p>
@@ -200,7 +204,7 @@
     <aside id="nested-source-panel" class="side-panel nested-source-panel" aria-labelledby="nested-source-title" aria-hidden="true" inert>
       <div class="side-panel-head">
         <h2 id="nested-source-title">direct_api.c</h2>
-        <button id="nested-source-close" class="icon-button" type="button" aria-label="Close source and return to C API demo">×</button>
+        <button id="nested-source-close" class="icon-button" type="button" aria-label="Close source and return to C API demo" data-i18n-aria-label="studio.closeSource">×</button>
       </div>
       <div class="source-view">
         <div class="source-path">examples/c/direct_api.c</div>

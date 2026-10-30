@@ -99,6 +99,9 @@ button:focus-visible, a:focus-visible, select:focus-visible, label[tabindex]:foc
 .brand-name { font-weight: 700; font-size: 21px; letter-spacing: -.07em; }
 .brand-name span { color: var(--quiet); letter-spacing: -.07em; }
 .topbar-actions { display: flex; align-items: center; gap: 12px; }
+.language-switch { display: flex; border: 1px solid var(--line-strong); padding: 2px; background: var(--field); }
+.language-switch button { border: 0; padding: 6px 8px; background: transparent; color: var(--muted); font: 10px var(--mono); }
+.language-switch button[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); }
 .theme-switch { display: flex; border: 1px solid var(--line-strong); padding: 2px; background: var(--field); }
 .theme-switch button { border: 0; padding: 6px 10px; background: transparent; color: var(--muted); font: 10px var(--mono); }
 .theme-switch button[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); }
