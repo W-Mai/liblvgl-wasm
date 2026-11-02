@@ -18,7 +18,7 @@ onmessage = ({data}) => {
   const worker = new Worker(url);
   worker.onmessage = event => { worker.terminate(); URL.revokeObjectURL(url); parent.postMessage(event.data, '*'); };
   worker.onerror = event => { worker.terminate(); URL.revokeObjectURL(url); parent.postMessage({error:event.message}, '*'); };
-  worker.postMessage(data.core, [data.core]);
+  worker.postMessage({core:data.core, wasi:data.wasi}, [data.core, data.wasi]);
 };
 </script>'''
     return '''<!doctype html><iframe sandbox="allow-scripts"></iframe><script>
@@ -26,8 +26,8 @@ const frame = document.querySelector('iframe');
 frame.srcdoc = %s;
 window.onmessage = event => { if (event.source === frame.contentWindow) fetch(%s, {method:'POST', body:JSON.stringify(event.data)}); };
 frame.onload = async () => {
-  const [code, core] = await Promise.all([fetch('/consumer.js').then(r => r.text()), fetch('/core').then(r => r.arrayBuffer())]);
-  frame.contentWindow.postMessage({code, core}, '*', [core]);
+  const [code, core, wasi] = await Promise.all([fetch('/consumer.js').then(r => r.text()), fetch('/core').then(r => r.arrayBuffer()), fetch('/wasi').then(r => r.arrayBuffer())]);
+  frame.contentWindow.postMessage({code, core, wasi}, '*', [core, wasi]);
 };
 </script>''' % (json.dumps(frame).replace("</", "<\\/"), json.dumps(endpoint))
 
@@ -69,14 +69,15 @@ class Handler(BaseHTTPRequestHandler):
         pass
 
 
-def run_browser(project, sdk, work, chromium):
+def run_browser(project, sdk, work, chromium, wasi):
     consumer = project / "target/browser-worker.js"
     subprocess.run(["bun", "build", "browser-worker.ts", "--target", "browser", "--format", "iife",
                     "--outfile", consumer], cwd=project, check=True)
     server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
     server.endpoint = "/result/" + secrets.token_urlsafe(24)
     server.files = {"/consumer.js": (consumer, "text/javascript; charset=utf-8"),
-                    "/core": (sdk / "runtime/liblvgl.wasm", "application/wasm")}
+                    "/core": (sdk / "runtime/liblvgl.wasm", "application/wasm"),
+                    "/wasi": (wasi, "application/wasm")}
     server.finished = threading.Event()
     server.unexpected = []
     threading.Thread(target=server.serve_forever, daemon=True).start()

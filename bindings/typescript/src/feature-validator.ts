@@ -6,6 +6,8 @@ import { inspectIsolatedFacts, type IsolatedResourceReport } from "./isolated-re
 import { inspectWasiFacts, type WasiPreview1Report } from "./wasi-preview1.ts";
 import { compileNumericModules, instantiateNumericEnvironment, prepareNumericProfile, type NumericEnvironment, type NumericEnvironmentOptions } from "./numeric-environment.ts";
 export type { NumericEnvironment, NumericEnvironmentOptions } from "./numeric-environment.ts";
+export { NumericWasiExit } from "./numeric-environment.ts";
+export type { NumericWasiOptions, NumericWasiService } from "./numeric-environment.ts";
 
 export type FeatureValidationErrorCode = "policy" | "invalid-input" | "input-limit" | "busy" | "aborted" | "timeout" | "worker-unavailable" | "helper-failed" | "reserve-failed" | "module-rejected";
 

@@ -29,6 +29,30 @@ def main():
         destination = OUTPUT / f"{name}.wasm"
         subprocess.run(["wasm-tools", "parse", "-o", str(destination), "-"], input=wat, text=True, check=True)
         subprocess.run(["wasm-tools", "validate", "--features=wasm1", str(destination)], check=True)
+        marker = '  (memory (export "memory") 1 2)'
+        if wat.count(marker) != 1:
+            raise ValueError("unexpected consumer memory fixture")
+        traced = wat.replace(marker, '  (import "trace" "touch" (func $trace (param i32)))\n' + marker)
+        destination = OUTPUT / f"{name}-trace.wasm"
+        subprocess.run(["wasm-tools", "parse", "-o", str(destination), "-"], input=traced, text=True, check=True)
+        subprocess.run(["wasm-tools", "validate", "--features=wasm1", str(destination)], check=True)
+        before = '(import "wasi_snapshot_preview1" "fd_write" (func $write (param i32 i32 i32 i32) (result i32)))'
+        if traced.count(before) != 1:
+            raise ValueError("unexpected WASI fd_write fixture")
+        wrong = traced.replace(before, '(import "wasi_snapshot_preview1" "fd_write" (func $write_bad (param i32 i32 i32) (result i32)))')
+        wrapper = '  (func $write (param i32 i32 i32 i32) (result i32) local.get 0 local.get 1 local.get 2 call $write_bad)'
+        wrong = wrong.replace(marker, marker + "\n" + wrapper)
+        destination = OUTPUT / f"{name}-bad-signature.wasm"
+        subprocess.run(["wasm-tools", "parse", "-o", str(destination), "-"], input=wrong, text=True, check=True)
+        subprocess.run(["wasm-tools", "validate", "--features=wasm1", str(destination)], check=True)
+        if name == "app":
+            before = '(import "wasi_snapshot_preview1" "fd_write"'
+            if wat.count(before) != 1:
+                raise ValueError("unexpected WASI import fixture")
+            alias = wat.replace(before, '(import "fakewasi" "fd_write"')
+            destination = OUTPUT / "app-alias.wasm"
+            subprocess.run(["wasm-tools", "parse", "-o", str(destination), "-"], input=alias, text=True, check=True)
+            subprocess.run(["wasm-tools", "validate", "--features=wasm1", str(destination)], check=True)
     sdk = Path(subprocess.check_output(["sh", str(ROOT / "scripts/resolve-wasi-sdk.sh"), str(ROOT)], text=True).strip())
     c_source = OUTPUT / "consumer.c"
     c_source.write_text(C_SOURCE)

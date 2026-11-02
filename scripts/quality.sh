@@ -29,7 +29,7 @@ python3 -B validator/fixtures.py
 python3 -B validator/numeric-fixtures.py
 python3 -B validator/wasi-numeric-fixtures.py
 bun test validator/feature-validator.test.ts
-bun test validator/feature-worker.test.ts validator/feature-worker-live.test.ts validator/feature-graph.test.ts validator/numeric-environment.test.ts
+bun test validator/feature-worker.test.ts validator/feature-worker-live.test.ts validator/feature-graph.test.ts validator/numeric-environment.test.ts validator/wasi-numeric-loader.test.ts
 bun test validator/feature-sdk.test.ts
 bun test validator/numeric-wasi-service.test.ts
 python3 -B validator/build-data.test.py

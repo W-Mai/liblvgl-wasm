@@ -48,7 +48,9 @@ def check_result(result, core_sha, identity):
             or result["simdDenied"] != "module-rejected" or result["policyDenied"] != "policy"
             or result["aborted"] != "aborted" or not result["knownFeatures"] or not result["rootExport"]
             or result["graphOrder"] != ["core", "lib", "app"] or result["graphChecks"] != [graph_checks] * 3
-            or result["numericResult"] != 7 or result["numericState"] != "closed"):
+            or result["numericResult"] != 7 or result["numericState"] != "closed"
+            or result["wasiResult"] != 6 or result["wasiState"] != "closed"
+            or result["wasiOutput"] != ["c:2:ci", "c:1:C!", "c:2:ce"] or not result["wasiIdentity"] or not result["wasiExit"]):
         raise ValueError(f"unexpected feature SDK result: {result}")
 
 
@@ -84,14 +86,14 @@ def check_tampering(moved, work):
     else:
         raise ValueError("altered embedded helper passed SDK identity verification")
 
-    for missing in (False, True):
+    for name, missing in (("module-manifest", False), ("module-manifest", True), ("numeric-wasi", False), ("numeric-wasi", True)):
         shutil.rmtree(altered)
         shutil.copytree(moved, altered)
         readonly(altered, False)
         typescript = altered / "typescript"
         manifest_path = altered / "sdk.json"
         manifest = json.loads(manifest_path.read_bytes())
-        dependency = typescript / "types/bindings/typescript/src/module-manifest.d.ts"
+        dependency = typescript / f"types/bindings/typescript/src/{name}.d.ts"
         if missing:
             dependency.unlink()
         else:
@@ -107,7 +109,37 @@ def check_tampering(moved, work):
         else:
             raise ValueError("modified feature declaration dependency passed SDK identity verification")
 
-    for selected in (b"module-manifest", None, b"comments", b"block", b"numeric", b"numeric-block"):
+    shutil.rmtree(altered)
+    shutil.copytree(moved, altered)
+    readonly(altered, False)
+    typescript = altered / "typescript"
+    manifest_path = altered / "sdk.json"
+    manifest = json.loads(manifest_path.read_bytes())
+    identity_path = typescript / "feature-validator.identity.json"
+    identity = json.loads(identity_path.read_bytes())
+    path = "types/bindings/typescript/src/numeric-environment.d.ts"
+    declaration = typescript / path
+    lines = declaration.read_bytes().splitlines(keepends=True)
+    updated = b"".join(b"// " + line if line.startswith(b"import ") and b"numeric-wasi.ts" in line else line for line in lines)
+    if updated == declaration.read_bytes():
+        raise ValueError("expected numeric WASI declaration import is missing")
+    declaration.write_bytes(updated)
+    identity["typeDependencies"][path] = hashlib.sha256(updated).hexdigest()
+    identity_path.write_text(json.dumps(identity, indent=2) + "\n")
+    manifest["feature_validator"]["identity"] = identity
+    inventory = file_inventory(altered)
+    inventory.pop("sdk.json")
+    manifest["files"] = inventory
+    manifest_path.write_text(json.dumps(manifest, indent=2) + "\n")
+    try:
+        verify_feature_validator(typescript, manifest["feature_validator"])
+    except ValueError as error:
+        if "WASI declaration dependencies are incomplete" not in str(error):
+            raise
+    else:
+        raise ValueError("rehashed numeric WASI declaration passed SDK identity verification")
+
+    for selected in (b"module-manifest", None, b"comments", b"block", b"numeric", b"numeric-block", b"wasi", b"wasi-block"):
         shutil.rmtree(altered)
         shutil.copytree(moved, altered)
         readonly(altered, False)
@@ -118,7 +150,11 @@ def check_tampering(moved, work):
         identity = json.loads(identity_path.read_bytes())
         declaration = typescript / "feature-validator.d.ts"
         lines = declaration.read_bytes().splitlines(keepends=True)
-        if selected == b"numeric":
+        if selected == b"wasi":
+            updated = b"".join(line for line in lines if not line.startswith(b"export { NumericWasiExit }"))
+        elif selected == b"wasi-block":
+            updated = b"".join(b"/*\n" + line + b"*/\n" if line.startswith(b"export { NumericWasiExit }") else line for line in lines)
+        elif selected == b"numeric":
             updated = b"".join(line for line in lines if not (line.startswith(b"export type ") and b"numeric-environment" in line))
         elif selected == b"numeric-block":
             updated = b"".join(b"/*\n" + line + b"*/\n" if line.startswith(b"export type ") and b"numeric-environment" in line else line for line in lines)
@@ -144,7 +180,7 @@ def check_tampering(moved, work):
         try:
             verify_feature_validator(typescript, manifest["feature_validator"])
         except ValueError as error:
-            if not any(part in str(error) for part in ("declaration import", "declaration dependencies", "numeric declaration")):
+            if not any(part in str(error) for part in ("declaration import", "declaration dependencies", "numeric declaration", "WASI declaration")):
                 raise
         else:
             raise ValueError("incomplete feature declaration imports passed SDK verification")
@@ -235,6 +271,9 @@ def check_tampering(moved, work):
 
 def check(sdk, chromium=None):
     sdk = Path(sdk).resolve(strict=True)
+    wasi = ROOT / "target/validator/wasi-numeric-fixtures/c-app.wasm"
+    if not wasi.is_file():
+        raise ValueError("missing WASI fixture; run validator/wasi-numeric-fixtures.py")
     with tempfile.TemporaryDirectory(prefix="lvw feature sdk ") as temporary:
         work = Path(temporary)
         moved = work / "moved package"
@@ -289,12 +328,12 @@ def check(sdk, chromium=None):
                 run("bun", ROOT / "node_modules/typescript/bin/tsc", "--project", project / "tsconfig.json")
             (project / "runner.ts").write_text('''globalThis.fetch = (() => { throw new Error("network is unavailable"); }) as typeof fetch;
 const { exercise } = await import("./consumer.ts");
-const result = await exercise(await Bun.file(Bun.argv[2]!).arrayBuffer());
+const result = await exercise(await Bun.file(Bun.argv[2]!).arrayBuffer(), await Bun.file(Bun.argv[3]!).arrayBuffer());
 console.log(JSON.stringify(result));
 ''')
             core = moved / "runtime/liblvgl.wasm"
             core_sha = hashlib.sha256(core.read_bytes()).hexdigest()
-            result = subprocess.run(["bun", "runner.ts", core], cwd=project, check=True, capture_output=True, text=True)
+            result = subprocess.run(["bun", "runner.ts", core, wasi], cwd=project, check=True, capture_output=True, text=True)
             check_result(json.loads(result.stdout), core_sha, identity)
 
             packable = work / "packable typescript"
@@ -331,7 +370,7 @@ console.log(JSON.stringify(result));
                 noble = archive.extractfile("package/LICENSE-noble-hashes.txt").read()
                 if hashlib.sha256(noble).hexdigest() != notice_manifest["noble"]["license_sha256"]:
                     raise ValueError("packed noble license identity differs")
-            browser = run_browser(project, moved, work, chromium) if chromium else None
+            browser = run_browser(project, moved, work, chromium, wasi) if chromium else None
             if browser is not None:
                 if browser.get("hasSubtle") is not False:
                     raise ValueError("browser worker did not use an opaque origin")

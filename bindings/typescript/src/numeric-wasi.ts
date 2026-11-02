@@ -11,7 +11,7 @@ export interface NumericWasiOptions {
   readonly maxIovecs: number;
   readonly maxWriteBytes: number;
   readonly maxOutputBytes: number;
-  readonly onWrite: (consumerId: string, fd: 1 | 2, bytes: Uint8Array<ArrayBuffer>) => void;
+  readonly onWrite: (consumerId: string, fd: 1 | 2, bytes: Uint8Array<ArrayBuffer>, environmentId: symbol) => void;
   readonly clock?: { readonly realtimeNs: bigint; readonly monotonicNs: bigint };
 }
 
@@ -109,7 +109,8 @@ export function prepareNumericWasi(value: unknown): NumericWasiOptions {
 export function createNumericWasiBudget(): { output: number } { return { output: 0 }; }
 
 /** @internal Bind one provider to one consumer's private linear memory. */
-export function createNumericWasiConsumer(options: NumericWasiOptions, consumer: string, budget: { output: number }, assertActive: () => void) {
+export function createNumericWasiConsumer(options: NumericWasiOptions, consumer: string, budget: { output: number }, assertActive: () => void,
+  environmentId = Symbol("numeric WASI consumer")) {
   let memory: WebAssembly.Memory | undefined;
   let closed = false;
   const descriptors = [false, options.outputFds.includes(1), options.outputFds.includes(2)];
@@ -160,7 +161,7 @@ export function createNumericWasiConsumer(options: NumericWasiOptions, consumer:
       let offset = 0;
       for (const range of ranges) { bytes.set(new Uint8Array(buffer, range.pointer, range.length), offset); offset += range.length; }
       if (total) {
-        const result: unknown = options.onWrite(consumer, fd, bytes);
+        const result: unknown = options.onWrite(consumer, fd, bytes, environmentId);
         if (result !== undefined) {
           try { Promise.prototype.then.call(result, undefined, () => {}); } catch { /* Non-Promise values are rejected below. */ }
           throw new Error("numeric WASI output sink must return undefined");

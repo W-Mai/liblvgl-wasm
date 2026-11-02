@@ -1,4 +1,9 @@
 import type { ModuleExport, ModuleInterface, PreparedModuleGraph } from "./module-manifest.ts";
+import { createNumericWasiBudget, createNumericWasiConsumer, NUMERIC_WASI_SIGNATURES, prepareNumericWasi, NumericWasiExit,
+  type NumericWasiOptions, type NumericWasiService } from "./numeric-wasi.ts";
+
+export { NumericWasiExit };
+export type { NumericWasiOptions, NumericWasiService };
 
 const WasmModule = WebAssembly.Module;
 const WasmInstance = WebAssembly.Instance;
@@ -33,6 +38,7 @@ export interface NumericEnvironmentOptions {
   readonly profile: "numeric-v1";
   readonly modules: readonly NumericModuleContract[];
   readonly hosts: readonly NumericHostContract[];
+  readonly wasi?: NumericWasiOptions;
   readonly allowedFeatures: readonly string[];
   readonly startupTimeoutMs: number;
   readonly executionTimeoutMs: number;
@@ -47,6 +53,7 @@ type NumericRecord = PreparedModuleGraph["modules"][number];
 interface NumericProfile {
   readonly modules: ReadonlyMap<string, NumericModuleContract>;
   readonly hosts: ReadonlyMap<string, NumericHostContract>;
+  readonly wasi?: NumericWasiOptions;
   readonly app: string;
   readonly featureOptions: Pick<NumericEnvironmentOptions, "allowedFeatures" | "startupTimeoutMs" | "executionTimeoutMs" | "signal">;
 }
@@ -115,6 +122,11 @@ function sameFunction(a: NumericFunctionContract, b: ModuleExport): boolean {
   return b.kind === "function" && a.params.length === b.params.length && a.results.length === b.results.length
     && b.params.every((value) => value === "i32") && b.results.every((value) => value === "i32");
 }
+function wasiSignature(service: NumericWasiService, value: ModuleExport): boolean {
+  if (value.kind !== "function" || !Object.hasOwn(NUMERIC_WASI_SIGNATURES, service)) return false;
+  const encode = (types: readonly string[]) => types.map((type) => type === "i32" ? "i" : type === "i64" ? "I" : "?").join("");
+  return `${encode(value.params)}/${encode(value.results)}` === NUMERIC_WASI_SIGNATURES[service];
+}
 function ownEntrypoint(record: NumericRecord, entry: string, params: readonly string[], results: readonly string[], required: boolean): void {
   const item = record.facts.exports.find((value) => value.name === entry);
   if (!item) { if (required) fail(`${JSON.stringify(record.manifest.id)}: missing ${entry}`); return; }
@@ -126,7 +138,7 @@ function ownEntrypoint(record: NumericRecord, entry: string, params: readonly st
 /** @internal Snapshot the trusted numeric profile and match it to the prepared graph. */
 export function prepareNumericProfile(prepared: PreparedModuleGraph, options: NumericEnvironmentOptions): NumericProfile {
   const root = fields(options, ["profile", "modules", "hosts", "allowedFeatures", "startupTimeoutMs", "executionTimeoutMs",
-    "maxMemoryPages", "maxTotalMemoryPages", "maxTableElements", "maxTotalTableElements"], ["signal"]);
+    "maxMemoryPages", "maxTotalMemoryPages", "maxTableElements", "maxTotalTableElements"], ["signal", "wasi"]);
   if (root.profile !== "numeric-v1") return fail("unsupported numeric profile");
   const budget = { entries: 0 };
   const modules = new Map<string, NumericModuleContract>();
@@ -141,19 +153,21 @@ export function prepareNumericProfile(prepared: PreparedModuleGraph, options: Nu
     if (hosts.has(id) || typeof item.create !== "function") return fail(`invalid numeric host ${JSON.stringify(id)}`);
     hosts.set(id, { id, interface: interfaceContract(item.interface), exports: functionContracts(item.exports, true, budget), create: item.create as NumericHostContract["create"] });
   }
+  const wasi = root.wasi === undefined ? undefined : prepareNumericWasi(root.wasi);
+  if (wasi && hosts.has(wasi.id)) fail("numeric WASI provider conflicts with a numeric host");
   const allowedFeatures = list(root.allowedFeatures, 32).map(name);
   const featureOptions = { allowedFeatures, startupTimeoutMs: root.startupTimeoutMs as number, executionTimeoutMs: root.executionTimeoutMs as number,
     signal: root.signal as AbortSignal | undefined };
   const maxMemoryPages = limit(root.maxMemoryPages, 65536), maxTotalMemoryPages = limit(root.maxTotalMemoryPages, 65536 * 256);
   const maxTableElements = limit(root.maxTableElements, 0xffff_ffff), maxTotalTableElements = limit(root.maxTotalTableElements, 0xffff_ffff * 256);
-  if (modules.size !== prepared.modules.length || hosts.size !== prepared.hosts.length) return fail("numeric profile provider inventory differs");
+  if (modules.size !== prepared.modules.length || hosts.size + Number(wasi !== undefined) !== prepared.hosts.length) return fail("numeric profile provider inventory differs");
   let totalMemory = 0, totalTables = 0;
   let app: string | undefined;
   for (const record of prepared.modules) {
     const current = record.manifest, contract = modules.get(current.id);
     if (!contract || contract.sha256 !== record.facts.sha256 || !sameInterface(contract.interface, current.interface)) fail(`${JSON.stringify(current.id)}: numeric module is not authorized`);
     if (current.role === "app") { if (app !== undefined) fail("numeric profile requires exactly one app"); app = current.id; }
-    if (record.facts.imports.some((item) => item.module === "wasi_snapshot_preview1" || item.module === "wasi_unstable" || item.module.startsWith("wasi:"))) {
+    if (record.facts.imports.some((item) => item.module === "wasi_unstable" || item.module.startsWith("wasi:") || item.module === "wasi_snapshot_preview1" && !wasi)) {
       fail(`${JSON.stringify(current.id)}: WASI imports are unsupported by numeric-v1`);
     }
     if (record.facts.exports.some((item) => item.name === "_start")) fail(`${JSON.stringify(current.id)}: _start is unsupported by numeric-v1`);
@@ -179,6 +193,14 @@ export function prepareNumericProfile(prepared: PreparedModuleGraph, options: Nu
   if (app === undefined) return fail("numeric profile requires exactly one app");
   if (totalMemory > maxTotalMemoryPages || totalTables > maxTotalTableElements) return fail("numeric environment resource limit exceeded");
   for (const host of prepared.hosts) {
+    if (wasi && host.id === wasi.id) {
+      if (!sameInterface(wasi.interface, host.interface) || host.exports.length !== wasi.allowed.length) fail("numeric WASI host contract differs");
+      for (const item of host.exports) {
+        const service = item.name as NumericWasiService;
+        if (!wasi.allowed.includes(service) || !wasiSignature(service, item)) fail("numeric WASI host export differs");
+      }
+      continue;
+    }
     const contract = hosts.get(host.id);
     if (!contract || !sameInterface(contract.interface, host.interface) || contract.exports.length !== host.exports.length) fail(`${JSON.stringify(host.id)}: numeric host contract differs`);
     for (const fn of contract.exports) {
@@ -187,12 +209,18 @@ export function prepareNumericProfile(prepared: PreparedModuleGraph, options: Nu
     }
   }
   for (const record of prepared.modules) for (const requirement of record.manifest.requires) for (const item of requirement.imports) {
+    if (item.module === "wasi_snapshot_preview1" || wasi && requirement.provider === wasi.id) {
+      const service = item.name as NumericWasiService;
+      if (!wasi || requirement.provider !== wasi.id || item.module !== "wasi_snapshot_preview1" || item.provider_export !== item.name
+          || !wasi.allowed.includes(service) || !wasiSignature(service, item)) fail(`${JSON.stringify(record.manifest.id)}: numeric WASI import is not authorized`);
+      continue;
+    }
     if (item.kind !== "function" || reserved.has(item.provider_export)) fail(`${JSON.stringify(record.manifest.id)}: unsupported numeric import`);
     const provider = modules.get(requirement.provider) ?? hosts.get(requirement.provider);
     const contract = provider?.exports.find((fn) => fn.name === item.provider_export);
     if (!contract || !sameFunction(contract, { ...item, name: item.name })) fail(`${JSON.stringify(record.manifest.id)}: numeric import is not authorized`);
   }
-  return { modules, hosts, app, featureOptions };
+  return { modules, hosts, wasi, app, featureOptions };
 }
 
 /** @internal Compile all private snapshots before creating any guest instance. */
@@ -224,6 +252,7 @@ class NumericRuntime {
   #failure: unknown;
   #depth = 0;
   #modules = new Map<string, LiveModule>();
+  #wasi = new Map<string, ReturnType<typeof createNumericWasiConsumer>>();
   #initialized: LiveModule[] = [];
   #hosts: LiveHost[] = [];
   #app: string;
@@ -266,6 +295,8 @@ class NumericRuntime {
     return errors;
   }
   #invalidateModules(): void {
+    for (const wasi of this.#wasi.values()) wasi.close();
+    this.#wasi.clear();
     for (const module of this.#modules.values()) { module.instance = undefined; module.initialized = false; }
     this.#initialized.length = 0;
     this.#modules.clear();
@@ -281,6 +312,8 @@ class NumericRuntime {
       const close = module.instance!.exports.module_close as () => number;
       const status = this.#enter(close);
       if (status !== 0) this.#poison(new Error(`${JSON.stringify(module.record.manifest.id)}: module_close returned ${status}`));
+      this.#wasi.get(module.record.manifest.id)?.close();
+      this.#wasi.delete(module.record.manifest.id);
       module.initialized = false;
       this.#initialized.pop();
     }
@@ -316,6 +349,7 @@ class NumericRuntime {
   static load(prepared: PreparedModuleGraph, profile: NumericProfile, compiled: ReadonlyMap<string, WebAssembly.Module>, beforeGuest: () => void): NumericRuntime {
     const environment = new NumericRuntime(profile.app);
     const environmentId = Symbol("numeric environment");
+    const wasiBudget = createNumericWasiBudget();
     const hostBindings = new Map<string, Map<string, LiveHost>>();
     try {
       for (const record of prepared.modules) environment.#modules.set(record.manifest.id, { record, initialized: false });
@@ -323,6 +357,10 @@ class NumericRuntime {
         const record = environment.#modules.get(id)!.record;
         const byHost = new Map<string, LiveHost>();
         for (const requirement of record.manifest.requires) {
+          if (profile.wasi && requirement.provider === profile.wasi.id) {
+            if (requirement.imports.length && !environment.#wasi.has(id)) environment.#wasi.set(id, createNumericWasiConsumer(profile.wasi, id, wasiBudget, () => environment.#rethrow(), environmentId));
+            continue;
+          }
           const contract = profile.hosts.get(requirement.provider);
           if (!contract || byHost.has(contract.id)) continue;
           const create = contract.create;
@@ -353,6 +391,12 @@ class NumericRuntime {
         for (const requirement of live.record.manifest.requires) for (const item of requirement.imports) {
           const namespace = imports[item.module] ?? (imports[item.module] = Object.create(null));
           if (Object.hasOwn(namespace, item.name)) continue;
+          if (profile.wasi && requirement.provider === profile.wasi.id) {
+            const callback = environment.#wasi.get(id)!.exports[item.name as NumericWasiService] as ((...args: (number | bigint)[]) => number | void) | undefined;
+            if (!callback) fail(`${JSON.stringify(id)}: missing numeric WASI service`);
+            namespace[item.name] = (...args: (number | bigint)[]) => environment.#enter(() => callback(...args));
+            continue;
+          }
           const host = hostBindings.get(id)!.get(requirement.provider);
           const contract = (profile.modules.get(requirement.provider) ?? profile.hosts.get(requirement.provider))!.exports.find((fn) => fn.name === item.provider_export)!;
           if (host) {
@@ -371,10 +415,18 @@ class NumericRuntime {
           }
         }
         live.instance = new WasmInstance(compiled.get(id)!, imports);
+        const wasi = environment.#wasi.get(id);
+        if (wasi) {
+          const memory = live.instance.exports.memory;
+          if (!(memory instanceof WebAssembly.Memory)) fail(`${JSON.stringify(id)}: numeric WASI memory is unavailable`);
+          wasi.bind(memory);
+        }
         const initialize = live.instance.exports._initialize;
         if (typeof initialize === "function") environment.#enter(() => initialize());
         const status = environment.#enter(() => (live.instance!.exports.module_init as () => number)());
         if (status !== 0) {
+          environment.#wasi.get(id)?.close();
+          environment.#wasi.delete(id);
           const failure = new Error(`${JSON.stringify(id)}: module_init returned ${status}`);
           environment.#state = "closing";
           try { environment.#closeInitialized(); }

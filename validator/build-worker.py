@@ -21,6 +21,7 @@ INPUTS = (
     "bindings/typescript/src/feature-validator.ts",
     "bindings/typescript/src/feature-validator-policy.ts",
     "bindings/typescript/src/numeric-environment.ts",
+    "bindings/typescript/src/numeric-wasi.ts",
     "bindings/typescript/src/wasm-facts.ts",
     "bindings/typescript/src/module-graph.ts",
     "bindings/typescript/src/module-manifest.ts",
@@ -232,9 +233,11 @@ def build(output, sdk=False):
                 for line in text.splitlines():
                     if line.startswith("import ") and not re.fullmatch(r'import (?:type )?\{[^{}]+\} from "\./types/bindings/typescript/src/(?:module-manifest|isolated-resources|wasi-preview1|numeric-environment)\.ts";', line):
                         raise ValueError("feature declaration contains an unresolved import")
-                    if line.startswith("export type ") and " from " in line and not re.fullmatch(r'export type \{ NumericEnvironment, NumericEnvironmentOptions \} from "\./types/bindings/typescript/src/numeric-environment\.ts";', line):
+                    if line.startswith("export type ") and " from " in line and not re.fullmatch(r'export type \{ (?:NumericEnvironment, NumericEnvironmentOptions|NumericWasiOptions, NumericWasiService) \} from "\./types/bindings/typescript/src/numeric-environment\.ts";', line):
                         raise ValueError("feature declaration contains an unresolved export")
-                for name in ("module-manifest", "wasm-facts", "isolated-resources", "wasi-preview1", "numeric-environment"):
+                    if line.startswith("export { ") and " from " in line and not re.fullmatch(r'export \{ NumericWasiExit \} from "\./types/bindings/typescript/src/numeric-environment\.ts";', line):
+                        raise ValueError("feature declaration contains an unresolved export")
+                for name in ("module-manifest", "wasm-facts", "isolated-resources", "wasi-preview1", "numeric-environment", "numeric-wasi"):
                     path = f"types/bindings/typescript/src/{name}.d.ts"
                     type_dependencies[path] = (stage / path).read_bytes()
                 declaration = text.encode()

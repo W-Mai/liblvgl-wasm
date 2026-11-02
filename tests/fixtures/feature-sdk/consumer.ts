@@ -1,4 +1,4 @@
-import { FeatureValidationError, WASM_FEATURE_POLICY_NAMES, inspectFeatureModuleGraph, loadNumericEnvironment, validateWasmFeatures, type NumericEnvironmentOptions } from "liblvgl-wasm/feature-validator";
+import { FeatureValidationError, NumericWasiExit, WASM_FEATURE_POLICY_NAMES, inspectFeatureModuleGraph, loadNumericEnvironment, validateWasmFeatures, type NumericEnvironmentOptions, type NumericWasiOptions } from "liblvgl-wasm/feature-validator";
 import { inspectWasmFacts, type ModuleManifestInput } from "liblvgl-wasm";
 
 const coreFeatures = ["bulk-memory", "reference-types", "sign-extension", "saturating-float-to-int", "exceptions"];
@@ -38,7 +38,7 @@ async function rejected(promise: Promise<unknown>): Promise<string> {
   catch (error) { if (!(error instanceof FeatureValidationError)) throw error; return error.code; }
 }
 
-export async function exercise(core: ArrayBuffer) {
+export async function exercise(core: ArrayBuffer, wasiApp: ArrayBuffer) {
   const options = { startupTimeoutMs: 10_000, executionTimeoutMs: 10_000 };
   const input = new Uint8Array(core), original = input.slice();
   const pending = validateWasmFeatures(input, { ...options, declaredFeatures: coreFeatures, allowedFeatures: coreFeatures });
@@ -66,8 +66,32 @@ export async function exercise(core: ArrayBuffer) {
   const numeric = await numericPending;
   const numericResult = numeric.run(5);
   numeric.close();
+  const cBytes = new Uint8Array(wasiApp), cFacts = inspectWasmFacts(cBytes);
+  const wasiFunction = { name: "fd_write", kind: "function", params: ["i32", "i32", "i32", "i32"], results: ["i32"] } as const;
+  const noArgs = { kind: "function", params: [], results: ["i32"] } as const;
+  const cManifest: ModuleManifestInput["modules"][number]["manifest"] = { schema_version: 1 as const, kind: "wasm-module" as const, id: "c", role: "app" as const,
+    artifact: { path: "c.wasm", sha256: cFacts.sha256 }, target: { abi: "wasip1" as const, features: [] },
+    interface: { name: "c", version: 1 }, memory_model: "isolated" as const, runtime_verification: "not-run" as const,
+    requires: [{ provider: "host.wasi", interface: "wasi", version: 1,
+      imports: [{ ...wasiFunction, module: "wasi_snapshot_preview1", provider_export: "fd_write" }] }],
+    exports: [{ name: "_initialize", kind: "function" as const, params: [], results: [] },
+      { name: "module_init", ...noArgs }, { name: "module_close", ...noArgs },
+      { name: "app_run", kind: "function" as const, params: ["i32"], results: ["i32"] },
+      { name: "memory", kind: "memory" as const, minimumPages: 2, maximumPages: 4, shared: false }] };
+  const output: string[] = [], environmentIds: symbol[] = [];
+  const wasiOptions: NumericWasiOptions = { id: "host.wasi", interface: { name: "wasi", version: 1 }, allowed: ["fd_write"],
+    outputFds: [1, 2], maxIovecs: 4, maxWriteBytes: 32, maxOutputBytes: 64,
+    onWrite: (consumer, fd, bytes, environmentId) => { output.push(`${consumer}:${fd}:${new TextDecoder().decode(bytes)}`); environmentIds.push(environmentId); } };
+  const wasi = await loadNumericEnvironment({ modules: [{ manifest: cManifest, bytes: cBytes }],
+    hosts: [{ id: "host.wasi", interface: { name: "wasi", version: 1 }, exports: [wasiFunction] }] },
+    { ...options, profile: "numeric-v1", allowedFeatures: [], modules: [{ id: "c", sha256: cFacts.sha256, interface: cManifest.interface, exports: [] }],
+      hosts: [], wasi: wasiOptions, maxMemoryPages: 4, maxTotalMemoryPages: 4, maxTableElements: 1, maxTotalTableElements: 1 });
+  const wasiResult = wasi.run(5);
+  wasi.close();
   return { report, coreDenied, simdStatus: simdResult.status, simdDenied, policyDenied, aborted,
     numericResult, numericState: numeric.state,
+    wasiResult, wasiState: wasi.state, wasiOutput: output, wasiIdentity: environmentIds.length === 3 && new Set(environmentIds).size === 1,
+    wasiExit: new NumericWasiExit(42).code === 42,
     graphOrder: graphReport.order, graphChecks: graphReport.modules.map((item) => item.checks),
     knownFeatures: WASM_FEATURE_POLICY_NAMES.includes("simd") && Object.isFrozen(WASM_FEATURE_POLICY_NAMES),
     rootExport: inspectWasmFacts(new Uint8Array([0, 97, 115, 109, 1, 0, 0, 0])).imports.length === 0 };

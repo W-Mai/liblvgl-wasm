@@ -14,6 +14,7 @@ from feature_sdk_consumer import check
 
 def main(output):
     output = Path(output).resolve()
+    subprocess.run([sys.executable, "-B", ROOT / "validator/wasi-numeric-fixtures.py"], check=True)
     build, ndk = ROOT / "target/wasm", output / "ndk"
     subprocess.run(["cmake", "--build", build, "--target", "lvw_ndk", "-j", "4"], check=True)
     subprocess.run(["cmake", "--install", build, "--prefix", ndk, "--component", "ndk"], check=True)
