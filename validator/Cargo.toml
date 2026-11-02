@@ -1,0 +1,12 @@
+[package]
+name = "lvw-feature-validator"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.92"
+publish = false
+
+[lib]
+crate-type = ["rlib", "cdylib"]
+
+[dependencies]
+wasmparser = { version = "=0.246.2", default-features = false, features = ["validate", "features", "prefer-btree-collections", "simd"] }

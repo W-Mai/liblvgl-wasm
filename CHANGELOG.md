@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+- Standalone Wasm feature policy validator with bounded input and explicit host allowlists.
 - TypeScript inspection of WASI Preview 1 import signatures and entrypoint types.
 - Isolated Wasm resource topology inspection for owned memories, tables, and instance boundaries.
 - TypeScript module manifest identity, declaration, and provider interface validation.
