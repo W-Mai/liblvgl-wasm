@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+- Optional relocatable TypeScript feature validator SDK with bounded Worker execution and recorded dependency notices.
 - Internal TypeScript feature validation Worker with explicit policies and execution deadlines.
 - Standalone Wasm feature policy validator with bounded input and explicit host allowlists.
 - TypeScript inspection of WASI Preview 1 import signatures and entrypoint types.

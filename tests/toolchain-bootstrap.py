@@ -203,6 +203,32 @@ class BootstrapTests(unittest.TestCase):
                 lvw.export_sdk(args, lock, "test-host", self.root, self.cache)
         self.assertEqual(list((self.root / "target").iterdir()), [])
 
+    def test_sdk_feature_validator_is_explicitly_selected(self):
+        import host_sdk
+
+        ndk = self.root / "ndk"
+        ndk.mkdir()
+        (ndk / "input").write_text("verified")
+        lock = json.loads((ROOT / "toolchains/tools.lock.json").read_text())
+        native = {"schema_version": 1, "kind": "wasip1-native-sdk", "target": lock["target"],
+                  "files": lvw.file_inventory(ndk)}
+        (ndk / "ndk.json").write_text(json.dumps(native))
+        calls = []
+
+        def build(project, ndk, core, staged, validator, **options):
+            calls.append(options)
+            staged.mkdir()
+            (staged / "package").write_text("sdk")
+            return {"identity": {}}
+
+        tools = {"wasm-tools": {"ok": True, "executable": "unused"}}
+        with patch.object(lvw, "tool_report", return_value=tools), patch.object(host_sdk, "build_host_sdk", side_effect=build):
+            for index, enabled in enumerate((False, True)):
+                args = argparse.Namespace(command="export-sdk", ndk="ndk", core="unused.wasm",
+                                          output=f"target/sdk-{index}", with_validator=enabled)
+                lvw.export_sdk(args, lock, "test-host", self.root, self.cache)
+        self.assertEqual(calls, [{}, {"with_validator": True}])
+
     def test_ndk_failed_install_has_no_published_output(self):
         scripts = self.root / "scripts"
         scripts.mkdir()

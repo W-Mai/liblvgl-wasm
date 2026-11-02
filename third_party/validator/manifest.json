@@ -1,0 +1,195 @@
+{
+  "schema_version": 1,
+  "kind": "lvw-feature-validator-notices",
+  "sources": {
+    "project": {
+      "origin": "liblvgl-wasm",
+      "path": "third_party/validator"
+    },
+    "wasmparser": {
+      "version": "0.246.2",
+      "origin": "https://crates.io/crates/wasmparser/0.246.2",
+      "archive_sha256": "71cde4757396defafd25417cfb36aa3161027d06d865b0c24baaae229aac005d"
+    },
+    "bitflags": {
+      "version": "2.13.2",
+      "origin": "https://crates.io/crates/bitflags/2.13.2",
+      "archive_sha256": "3ded4057c258ba199e2d26386d3af3780957ecaee6c4ef4041c6b4b8b97c0b06"
+    },
+    "rust": {
+      "version": "1.92.0",
+      "commit": "ded5c06cf21d2b93bffd5d884aa6e96934ee4234",
+      "origin": "https://github.com/rust-lang/rust/tree/ded5c06cf21d2b93bffd5d884aa6e96934ee4234",
+      "material": "Rust 1.92.0 toolchain standard library copyright inventory and license files"
+    },
+    "compiler-builtins": {
+      "version": "0.1.160",
+      "rust_version": "1.92.0",
+      "origin": "https://github.com/rust-lang/rust/tree/ded5c06cf21d2b93bffd5d884aa6e96934ee4234/library/compiler-builtins"
+    },
+    "compiler-rt": {
+      "commit": "1b1dc505057322f4fa1110ef4f53c44347f52986",
+      "origin": "https://github.com/llvm/llvm-project/tree/1b1dc505057322f4fa1110ef4f53c44347f52986/compiler-rt",
+      "reference": "Rust 1.92.0 compiler-builtins README"
+    },
+    "dlmalloc": {
+      "version": "0.2.10",
+      "origin": "https://crates.io/crates/dlmalloc/0.2.10",
+      "archive_sha256": "fa3a2dbee57b69fbb5dbe852fa9c0925697fb0c7fbcb1593e90e5ffaedf13d51",
+      "reference": "Rust 1.92.0 standard library Cargo.lock"
+    }
+  },
+  "validator_cargo_lock_sha256": "178100a9d2c51364812cbd5af6acd396e54317b517cb4a6891a8e225e760a7f0",
+  "noble": {
+    "version": "2.0.1",
+    "origin": "https://registry.npmjs.org/@noble/hashes/-/hashes-2.0.1.tgz",
+    "archive_integrity": "sha512-XlOlEbQcE9fmuXxrVTXCTlG2nlRXa9Rj3rr5Ue/+tX+nmkgbX720YHh0VR3hBF9xDvwnb8D2shVGOwNx+ulArw==",
+    "license_sha256": "4f221aee6e072336700c408c68ab3b96a3fc09f6aebe6f48f1bd99e5ef13faec",
+    "sdk_license_path": "typescript/LICENSE-noble-hashes.txt",
+    "package_license_path": "LICENSE-noble-hashes.txt",
+    "inputs": {
+      "@noble/hashes/package.json": "ceb30ba96a14786c419db53f2b8d3d59ece7ac5221c198ac03def462cf96ef23",
+      "@noble/hashes/utils.js": "11319ec0a8132a0c2ced8c98af33ae9274c001d6baf4f4709c4a6115e031a3c5",
+      "@noble/hashes/_md.js": "a112f0fe1b15db00f2638618c436a17be1c5e13baf19d02fcc29016ae1db2233",
+      "@noble/hashes/_u64.js": "e48c0cfc10810439a4807b46db136ce603a3fa09b62584f513ef2f3ca496af54",
+      "@noble/hashes/sha2.js": "3ddc587c588283cbceed4dd9929cefcce06a0c231b54d4c6f0f99c478c686c00"
+    }
+  },
+  "files": {
+    "README.md": {
+      "sha256": "863bbc118de6f0318c1e5325aec928f79fdcb4930cdd4f3bb9ef24c1e22218ca",
+      "source": "project",
+      "origin_path": "README.md"
+    },
+    "bitflags-2.13.2/LICENSE-APACHE": {
+      "sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2",
+      "source": "bitflags",
+      "origin_path": "LICENSE-APACHE"
+    },
+    "bitflags-2.13.2/LICENSE-MIT": {
+      "sha256": "6485b8ed310d3f0340bf1ad1f47645069ce4069dcc6bb46c7d5c6faf41de1fdb",
+      "source": "bitflags",
+      "origin_path": "LICENSE-MIT"
+    },
+    "dlmalloc-0.2.10/LICENSE-APACHE": {
+      "sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2",
+      "source": "dlmalloc",
+      "origin_path": "LICENSE-APACHE"
+    },
+    "dlmalloc-0.2.10/LICENSE-MIT": {
+      "sha256": "378f5840b258e2779c39418f3f2d7b2ba96f1c7917dd6be0713f88305dbda397",
+      "source": "dlmalloc",
+      "origin_path": "LICENSE-MIT"
+    },
+    "dlmalloc-0.2.10/src/dlmalloc.rs": {
+      "sha256": "ffe57f78deba6460d8d03ddda069b78429372fb2f523f70845f11043427bf6ca",
+      "source": "dlmalloc",
+      "origin_path": "src/dlmalloc.rs"
+    },
+    "dlmalloc-0.2.10/src/wasm.rs": {
+      "sha256": "30051da2d422253897ff54dd25e9972cd4066ae70233a60cc2844fc0d041b886",
+      "source": "dlmalloc",
+      "origin_path": "src/wasm.rs"
+    },
+    "rust-1.92.0/COPYRIGHT-library.html": {
+      "sha256": "c90d52b09be83ce6e930d00f4b26559611eadcee806b2307184e04f2c78ad522",
+      "source": "rust",
+      "origin_path": "share/doc/rust/COPYRIGHT-library.html"
+    },
+    "rust-1.92.0/compiler-builtins/LICENSE.txt": {
+      "sha256": "ab6eec6caf0fa5775e411c7a8bc6a45c4ef2956b0980b157ab74fc5cd62a928b",
+      "source": "compiler-builtins",
+      "origin_path": "LICENSE.txt"
+    },
+    "rust-1.92.0/compiler-builtins/compiler-rt/CREDITS.TXT": {
+      "sha256": "a9901f47a089da41e4690682d00ce4cedaa2baf41fedbe79beee366d43ac2461",
+      "source": "compiler-rt",
+      "origin_path": "CREDITS.TXT"
+    },
+    "rust-1.92.0/compiler-builtins/compiler-rt/LICENSE.TXT": {
+      "sha256": "1a8f1058753f1ba890de984e48f0242a3a5c29a6a8f2ed9fd813f36985387e8d",
+      "source": "compiler-rt",
+      "origin_path": "LICENSE.TXT"
+    },
+    "rust-1.92.0/compiler-builtins/libm/LICENSE.txt": {
+      "sha256": "3823dda7cf046602f4b4e77ec8e227863dc4736037cc85bb33d9f19febe16bb7",
+      "source": "compiler-builtins",
+      "origin_path": "libm/LICENSE.txt"
+    },
+    "rust-1.92.0/licenses/Apache-2.0.txt": {
+      "sha256": "074e6e32c86a4c0ef8b3ed25b721ca23aca83df277cd88106ef7177c354615ff",
+      "source": "rust",
+      "origin_path": "share/doc/rust/licenses/Apache-2.0.txt"
+    },
+    "rust-1.92.0/licenses/BSD-2-Clause.txt": {
+      "sha256": "f32fb3b417a194167cfad068223fc975ba96c5960513a10f66a3c28720aec1df",
+      "source": "rust",
+      "origin_path": "share/doc/rust/licenses/BSD-2-Clause.txt"
+    },
+    "rust-1.92.0/licenses/CC-BY-SA-4.0.txt": {
+      "sha256": "23ee78c8bae49cf08ea2f0c84945c66b987ebe4520881fb51b3dad4fb43d07c2",
+      "source": "rust",
+      "origin_path": "share/doc/rust/licenses/CC-BY-SA-4.0.txt"
+    },
+    "rust-1.92.0/licenses/GCC-exception-3.1.txt": {
+      "sha256": "a3966c9410ef94a1efbfa9ec04e9c1994026a70623fbf0885ce36737bfba3b54",
+      "source": "rust",
+      "origin_path": "share/doc/rust/licenses/GCC-exception-3.1.txt"
+    },
+    "rust-1.92.0/licenses/GPL-2.0-only.txt": {
+      "sha256": "54b212ba1f97f6948fa5486239ab505dd820b02e50cbfd296b4062c8609a70af",
+      "source": "rust",
+      "origin_path": "share/doc/rust/licenses/GPL-2.0-only.txt"
+    },
+    "rust-1.92.0/licenses/GPL-3.0-or-later.txt": {
+      "sha256": "05315fce6c35f79b8a35454828995fa26336f235895ac64557abc028f4ffcea2",
+      "source": "rust",
+      "origin_path": "share/doc/rust/licenses/GPL-3.0-or-later.txt"
+    },
+    "rust-1.92.0/licenses/ISC.txt": {
+      "sha256": "0ff61769b238634e042ab759dddfd104a8e69d091e3600ae3410e401a6164381",
+      "source": "rust",
+      "origin_path": "share/doc/rust/licenses/ISC.txt"
+    },
+    "rust-1.92.0/licenses/LLVM-exception.txt": {
+      "sha256": "e34c58338bd89d43e709e226610d8f32b3e3c47f4ad9a99a8dc1d4ac7842488e",
+      "source": "rust",
+      "origin_path": "share/doc/rust/licenses/LLVM-exception.txt"
+    },
+    "rust-1.92.0/licenses/MIT.txt": {
+      "sha256": "b85dcd3e453d05982552c52b5fc9e0bdd6d23c6f8e844b984a88af32570b0cc0",
+      "source": "rust",
+      "origin_path": "share/doc/rust/licenses/MIT.txt"
+    },
+    "rust-1.92.0/licenses/NCSA.txt": {
+      "sha256": "39cb0234065c92b9e6cee3830cbb52b1aa289aa8fe9ba2e66730fec5cf05c630",
+      "source": "rust",
+      "origin_path": "share/doc/rust/licenses/NCSA.txt"
+    },
+    "rust-1.92.0/licenses/OFL-1.1.txt": {
+      "sha256": "8eea8287e5876b539670cadb82e99f9a7afddec6f6730811be1daf25d2e9bcfd",
+      "source": "rust",
+      "origin_path": "share/doc/rust/licenses/OFL-1.1.txt"
+    },
+    "rust-1.92.0/licenses/Unicode-3.0.txt": {
+      "sha256": "f5062c9a188d81dfe66b56db4182dcf9e4b17c0d9b0d311a8e20b3a1b075c443",
+      "source": "rust",
+      "origin_path": "share/doc/rust/licenses/Unicode-3.0.txt"
+    },
+    "wasmparser-0.246.2/LICENSE-APACHE": {
+      "sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2",
+      "source": "wasmparser",
+      "origin_path": "LICENSE-APACHE"
+    },
+    "wasmparser-0.246.2/LICENSE-Apache-2.0_WITH_LLVM-exception": {
+      "sha256": "268872b9816f90fd8e85db5a28d33f8150ebb8dd016653fb39ef1f94f2686bc5",
+      "source": "wasmparser",
+      "origin_path": "LICENSE-Apache-2.0_WITH_LLVM-exception"
+    },
+    "wasmparser-0.246.2/LICENSE-MIT": {
+      "sha256": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3",
+      "source": "wasmparser",
+      "origin_path": "LICENSE-MIT"
+    }
+  }
+}

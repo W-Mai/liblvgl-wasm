@@ -7,6 +7,7 @@ import importlib.util
 import json
 import os
 from pathlib import Path
+import shutil
 import stat
 import subprocess
 import sys
@@ -19,6 +20,13 @@ INPUTS = (
     "bindings/typescript/src/feature-validator.ts",
     "bindings/typescript/src/feature-validator-policy.ts",
     "bindings/typescript/src/wasm-facts.ts",
+    "generator/wasm.py",
+    "validator/build-worker.py",
+    "validator/build-worker.sh",
+    "validator/build-data.py",
+    "validator/build-data.sh",
+    "validator/generate-data.py",
+    "validator/notices.py",
     "validator/verify-policy.ts",
     "tsconfig.feature-worker.json",
     "tsconfig.feature-validator.json",
@@ -29,12 +37,102 @@ generator = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(generator)
 
 
-def build(output):
+def rustc_version():
+    environment = {**os.environ, "RUSTUP_TOOLCHAIN": "1.92.0"}
+    compiler = environment.get("RUSTC") or "rustc"
+    version = subprocess.check_output([compiler, "-vV"], env=environment, text=True)
+    if not version.startswith("rustc 1.92.0 ") or "\nrelease: 1.92.0\n" not in version:
+        raise ValueError("feature validator requires Rust 1.92.0")
+    return version
+
+
+def validator_sources():
+    spec = importlib.util.spec_from_file_location("validator_build_data", ROOT / "validator/build-data.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module.source_snapshot()
+
+
+def source_identity(sources, worker_sources):
+    files = {name: hashlib.sha256(data).hexdigest() for name, data in sorted(sources.items())}
+    encoded = json.dumps(files, sort_keys=True, separators=(",", ":")).encode()
+    worker_files = {name: hashlib.sha256(data).hexdigest() for name, data in sorted(worker_sources.items())}
+    worker_encoded = json.dumps(worker_files, sort_keys=True, separators=(",", ":")).encode()
+    return {"treeSha256": hashlib.sha256(encoded).hexdigest(), "cargoLockSha256": files["Cargo.lock"],
+            "files": files, "workerTreeSha256": hashlib.sha256(worker_encoded).hexdigest(), "workerFiles": worker_files}
+
+
+def sdk_dependency(stage):
+    spec = importlib.util.spec_from_file_location("validator_notices", ROOT / "validator/notices.py")
+    notices = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(notices)
+    manifest = notices.parse_manifest(notices.regular_file(ROOT / "third_party/validator/manifest.json"))
+    noble = notices.verify_noble(ROOT)
+    origin = ROOT / "node_modules/@noble/hashes"
+    for path in origin.rglob("*"):
+        if path.is_symlink():
+            raise ValueError(f"noble package contains a symbolic link: {path}")
+    destination = stage / "node_modules/@noble/hashes"
+    destination.parent.mkdir(parents=True)
+    shutil.copytree(origin, destination)
+    for name, expected in noble["inputs"].items():
+        if hashlib.sha256((stage / "node_modules" / name).read_bytes()).hexdigest() != expected:
+            raise ValueError(f"staged noble bundle input differs: {name}")
+    if hashlib.sha256((destination / "LICENSE").read_bytes()).hexdigest() != noble["license_sha256"]:
+        raise ValueError("staged noble license differs")
+    return noble, manifest
+
+
+def compiler_identity(version, manifest):
+    fields = {}
+    for line in version.splitlines()[1:]:
+        name, separator, value = line.partition(": ")
+        if separator:
+            if name in fields:
+                raise ValueError("duplicate rustc identity field")
+            fields[name] = value
+    expected = manifest["sources"]["rust"]
+    if fields.get("release") != expected["version"] or fields.get("commit-hash") != expected["commit"] or not fields.get("host"):
+        raise ValueError("Rust compiler identity differs from validator notices")
+    return fields["host"]
+
+
+def audit_metafile(path, stage, noble):
+    metadata = json.loads(path.read_bytes())
+    outputs = metadata.get("outputs")
+    if not isinstance(outputs, dict) or len(outputs) != 1:
+        raise ValueError("invalid feature bundle build metadata")
+    output = next(iter(outputs.values()))
+    if output.get("imports"):
+        raise ValueError("feature bundle must not retain external imports")
+    inputs = output.get("inputs")
+    if not isinstance(inputs, dict):
+        raise ValueError("invalid feature bundle input metadata")
+    expected = {name for name in noble["inputs"] if name.endswith(".js")}
+    bundled = set()
+    modules = (stage / "node_modules").resolve()
+    for name, description in inputs.items():
+        if not isinstance(description, dict) or description.get("bytesInOutput", 0) <= 0:
+            continue
+        source = (stage / name).resolve(strict=True)
+        if source.is_relative_to(modules):
+            relative = source.relative_to(modules).as_posix()
+            if relative not in expected:
+                raise ValueError(f"unexpected feature bundle dependency: {relative}")
+            if hashlib.sha256(source.read_bytes()).hexdigest() != noble["inputs"][relative]:
+                raise ValueError(f"feature bundle dependency identity mismatch: {relative}")
+            bundled.add(relative)
+        elif not source.is_relative_to(stage):
+            raise ValueError(f"unexpected feature bundle input: {name}")
+    return sorted(bundled)
+
+
+def build(output, sdk=False):
     output = output.absolute()
     target = ROOT / "target/validator"
     target.mkdir(parents=True, exist_ok=True)
-    if output.name != "feature-validator.js" or not output.parent.resolve().is_relative_to(target.resolve()):
-        raise ValueError("feature worker output must be feature-validator.js under target/validator")
+    if (not sdk and output.name != "feature-validator.js") or not output.parent.resolve().is_relative_to(target.resolve()):
+        raise ValueError("feature worker output must be under target/validator")
     output.parent.mkdir(parents=True, exist_ok=True)
     output = output.parent.resolve() / output.name
     lock_path = output.with_name(f".{output.name}.lock")
@@ -46,8 +144,14 @@ def build(output):
             fcntl.flock(lock.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError as error:
             raise ValueError(f"feature worker build is already active: {output}") from error
-        output.unlink(missing_ok=True)
+        if sdk:
+            if output.exists() or output.is_symlink():
+                raise ValueError(f"feature SDK output already exists: {output}")
+        else:
+            output.unlink(missing_ok=True)
         snapshots = {name: (ROOT / name).read_bytes() for name in INPUTS}
+        validator_snapshot = validator_sources() if sdk else None
+        compiler = rustc_version() if sdk else None
         with tempfile.TemporaryDirectory(prefix=".feature-worker.", dir=output.parent) as directory:
             stage = Path(directory)
             helper_data = stage / "helper-data.json"
@@ -92,18 +196,37 @@ def build(output):
                 f"export const FEATURE_MASKS: Readonly<Record<string, number>> = Object.freeze(Object.fromEntries({json.dumps(entries)}));\n"
             )
             (generated / "helper-data.ts").write_text(helper_source)
-            os.symlink(ROOT / "node_modules", stage / "node_modules", target_is_directory=True)
+            noble, manifest = sdk_dependency(stage) if sdk else (None, None)
+            host = compiler_identity(compiler, manifest) if sdk else None
+            if not sdk:
+                os.symlink(ROOT / "node_modules", stage / "node_modules", target_is_directory=True)
             tsc = ROOT / "node_modules/typescript/bin/tsc"
             subprocess.run(["bun", tsc, "--project", "tsconfig.feature-worker.json"], cwd=stage, check=True)
             worker = stage / "worker.js"
-            subprocess.run(["bun", "build", "bindings/typescript/src/feature-validator-worker.ts", "--target", "browser", "--format", "iife", "--outfile", worker], cwd=stage, check=True)
+            worker_meta = stage / "worker-metafile.json"
+            command = ["bun", "build", "bindings/typescript/src/feature-validator-worker.ts", "--target", "browser", "--format", "iife", "--outfile", worker]
+            if sdk:
+                command.append(f"--metafile={worker_meta}")
+            subprocess.run(command, cwd=stage, check=True)
             if (generated / "helper-data.ts").read_text() != helper_source:
                 raise ValueError("feature helper data changed during worker build")
             worker_source = "export const FEATURE_WORKER_SOURCE = " + json.dumps(worker.read_text()) + ";\n"
             (generated / "worker-source.ts").write_text(worker_source)
             subprocess.run(["bun", tsc, "--project", "tsconfig.feature-validator.json"], cwd=stage, check=True)
+            declaration = None
+            if sdk:
+                types = stage / "types"
+                subprocess.run(["bun", tsc, "--project", "tsconfig.feature-validator.json", "--noEmit", "false",
+                                "--declaration", "--emitDeclarationOnly", "--outDir", types], cwd=stage, check=True)
+                declaration = (types / "bindings/typescript/src/feature-validator.d.ts").read_bytes()
+                if b"import " in declaration or b"target/validator" in declaration or os.fsencode(stage) in declaration or os.fsencode(ROOT) in declaration:
+                    raise ValueError("feature declaration contains an unresolved or local reference")
             bundle = stage / "feature-validator.js"
-            subprocess.run(["bun", "build", "bindings/typescript/src/feature-validator.ts", "--target", "browser", "--format", "esm", "--outfile", bundle], cwd=stage, check=True)
+            bundle_meta = stage / "bundle-metafile.json"
+            command = ["bun", "build", "bindings/typescript/src/feature-validator.ts", "--target", "browser", "--format", "esm", "--outfile", bundle]
+            if sdk:
+                command.append(f"--metafile={bundle_meta}")
+            subprocess.run(command, cwd=stage, check=True)
             if (generated / "helper-data.ts").read_text() != helper_source:
                 raise ValueError("feature helper data changed during bundle build")
             if (generated / "worker-source.ts").read_text() != worker_source:
@@ -111,10 +234,56 @@ def build(output):
             for name, contents in snapshots.items():
                 if (ROOT / name).read_bytes() != contents or (stage / name).read_bytes() != contents:
                     raise ValueError(f"feature worker input changed during build: {name}")
-            os.replace(bundle, output)
+            if sdk:
+                if validator_sources() != validator_snapshot or rustc_version() != compiler:
+                    raise ValueError("validator source or compiler changed during feature SDK build")
+                sources = source_identity(validator_snapshot, snapshots)
+                if sources["cargoLockSha256"] != manifest["validator_cargo_lock_sha256"]:
+                    raise ValueError("validator source lock differs from notice materials")
+                result = stage / "package"
+                result.mkdir()
+                bundle_bytes = bundle.read_bytes()
+                encoded_bytes = encoded.encode("ascii")
+                if bundle_bytes.count(encoded_bytes) != 1 or base64.b64decode(encoded_bytes, validate=True) != helper:
+                    raise ValueError("feature bundle helper bytes do not match")
+                helper_spec = importlib.util.spec_from_file_location("validator_build_helper", ROOT / "validator/build-helper.py")
+                helper_builder = importlib.util.module_from_spec(helper_spec)
+                helper_spec.loader.exec_module(helper_builder)
+                for prefix in (*helper_builder.path_prefixes(os.environ), str(stage)):
+                    if os.fsencode(prefix) in helper or os.fsencode(prefix) in bundle_bytes:
+                        raise ValueError(f"feature SDK contains an unremapped build path: {prefix}")
+                worker_inputs = audit_metafile(worker_meta, stage, noble)
+                bundle_inputs = audit_metafile(bundle_meta, stage, noble)
+                expected_inputs = sorted(name for name in noble["inputs"] if name.endswith(".js"))
+                if worker_inputs != expected_inputs:
+                    raise ValueError("feature worker dependency inventory differs")
+                (result / "feature-validator.js").write_bytes(bundle_bytes)
+                (result / "feature-validator.d.ts").write_bytes(declaration)
+                (result / "helper.wasm").write_bytes(helper)
+                identity = {
+                    "schemaVersion": 1,
+                    "helperSha256": digest,
+                    "policyVersion": metadata["policyVersion"],
+                    "bundleSha256": hashlib.sha256(bundle_bytes).hexdigest(),
+                    "typesSha256": hashlib.sha256(declaration).hexdigest(),
+                    "sourceIdentity": sources,
+                    "rustcVersion": compiler,
+                    "rustcHost": host,
+                    "noble": noble,
+                    "bundledInputs": {"worker": worker_inputs, "bundle": bundle_inputs},
+                }
+                (result / "identity.json").write_text(json.dumps(identity, indent=2) + "\n")
+                if output.exists() or output.is_symlink():
+                    raise ValueError(f"feature SDK output appeared during build: {output}")
+                os.rename(result, output)
+            else:
+                os.replace(bundle, output)
 
 
 if __name__ == "__main__":
-    if len(sys.argv) > 2:
-        raise SystemExit("usage: build-worker.sh [output-js]")
-    build(Path(sys.argv[1]) if len(sys.argv) == 2 else ROOT / "target/validator/feature-validator.js")
+    if len(sys.argv) == 3 and sys.argv[1] == "--sdk-dir":
+        build(Path(sys.argv[2]), sdk=True)
+    elif len(sys.argv) <= 2 and (len(sys.argv) == 1 or not sys.argv[1].startswith("--")):
+        build(Path(sys.argv[1]) if len(sys.argv) == 2 else ROOT / "target/validator/feature-validator.js")
+    else:
+        raise SystemExit("usage: build-worker.sh [output-js] | --sdk-dir NEW_DIRECTORY")

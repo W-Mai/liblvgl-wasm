@@ -28,8 +28,11 @@ bun run test
 python3 -B validator/fixtures.py
 bun test validator/feature-validator.test.ts
 bun test validator/feature-worker.test.ts validator/feature-worker-live.test.ts
+bun test validator/feature-sdk.test.ts
 python3 -B validator/build-data.test.py
+python3 -B validator/build-helper.test.py
 python3 -B validator/build-worker.test.py
+python3 -B validator/notices.test.py
 
 cargo fmt --manifest-path bindings/rust/Cargo.toml --all -- --check
 cargo fmt --manifest-path toolchains/rust/Cargo.toml --all -- --check

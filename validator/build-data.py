@@ -10,7 +10,7 @@ import tempfile
 
 
 ROOT = Path(__file__).resolve().parent.parent
-SOURCE_FILES = ("Cargo.toml", "Cargo.lock", "build.sh")
+SOURCE_FILES = ("Cargo.toml", "Cargo.lock", "build.sh", "build-helper.py")
 MAX_SOURCE_BYTES = 8 * 1024 * 1024
 
 
@@ -74,6 +74,7 @@ def build(output):
             helper, metadata = staging / "helper.wasm", staging / "policy.json"
             subprocess.run(["sh", project / "validator/build.sh", helper], env=environment, check=True)
             environment.update({"CARGO_TARGET_DIR": environment["LVW_VALIDATOR_TARGET_DIR"], "RUSTFLAGS": ""})
+            environment.pop("CARGO_ENCODED_RUSTFLAGS", None)
             with metadata.open("wb") as target:
                 subprocess.run(["cargo", "run", "--manifest-path", project / "validator/Cargo.toml", "--locked", "--quiet", "--bin", "metadata"], env=environment, stdout=target, check=True)
             if source != source_snapshot():

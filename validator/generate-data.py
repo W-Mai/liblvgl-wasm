@@ -49,7 +49,7 @@ def policy_metadata(path):
     return data
 
 
-def inspect_helper(snapshot):
+def inspect_helper_structure(snapshot):
     reader = Reader(snapshot, "validator helper")
     if bytes(reader.take(8)) != b"\0asm\x01\0\0\0":
         raise ValueError("invalid validator helper header")
@@ -78,6 +78,10 @@ def inspect_helper(snapshot):
     for name, expected in required.items():
         if module["exports"].get(name) != expected:
             raise ValueError(f"validator helper export does not match: {name}")
+
+
+def inspect_helper(snapshot):
+    inspect_helper_structure(snapshot)
     subprocess.run([os.environ.get("WASM_TOOLS", "wasm-tools"), "validate", f"--features={BOOTSTRAP_FEATURES}", "-"], input=snapshot, check=True)
 
 

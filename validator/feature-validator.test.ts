@@ -61,6 +61,7 @@ test("failed helper builds remove stale output", async () => {
     mkdirSync(validator, { recursive: true });
     mkdirSync(join(root, "target/validator"), { recursive: true });
     copyFileSync("validator/build.sh", join(validator, "build.sh"));
+    copyFileSync("validator/build-helper.py", join(validator, "build-helper.py"));
     writeFileSync(output, "stale");
     const compiler = join(root, "failing-rustc");
     writeFileSync(compiler, "#!/bin/sh\nexit 1\n");

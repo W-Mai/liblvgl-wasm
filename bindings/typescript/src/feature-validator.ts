@@ -30,12 +30,14 @@ export interface FeatureValidationReport {
 
 const MAX_WORKERS = 2;
 let activeWorkers = 0;
+/** Optional names accepted by the feature policy validator. This list does not describe engine support. */
+export const WASM_FEATURE_POLICY_NAMES: readonly string[] = Object.freeze(Object.keys(FEATURE_MASKS));
 const signalAborted = Object.getOwnPropertyDescriptor(AbortSignal.prototype, "aborted")!.get!;
 const addListener = EventTarget.prototype.addEventListener;
 const removeListener = EventTarget.prototype.removeEventListener;
 
 function featureMask(names: readonly string[], label: string): number {
-  if (!Array.isArray(names) || names.length > Object.keys(FEATURE_MASKS).length) {
+  if (!Array.isArray(names) || names.length > WASM_FEATURE_POLICY_NAMES.length) {
     throw new FeatureValidationError("policy", `invalid ${label} feature list`);
   }
   let mask = 0;
@@ -59,8 +61,8 @@ function deadline(value: number, label: string): number {
 /** Validate an owned copy of the input against an explicit feature upper bound. This report does not authorize module loading. */
 export async function validateWasmFeatures(input: BufferSource, options: FeatureValidationOptions): Promise<FeatureValidationReport> {
   if (!Array.isArray(options.allowedFeatures) || !Array.isArray(options.declaredFeatures)
-      || options.allowedFeatures.length > Object.keys(FEATURE_MASKS).length
-      || options.declaredFeatures.length > Object.keys(FEATURE_MASKS).length) {
+      || options.allowedFeatures.length > WASM_FEATURE_POLICY_NAMES.length
+      || options.declaredFeatures.length > WASM_FEATURE_POLICY_NAMES.length) {
     throw new FeatureValidationError("policy", "invalid feature list");
   }
   const declaredFeatures = Object.freeze([...options.declaredFeatures]);

@@ -69,7 +69,7 @@ class ValidatorDataTest(unittest.TestCase):
         self.temporary = tempfile.TemporaryDirectory(prefix="lvw-build-data-test-")
         self.root = Path(self.temporary.name)
         self.source = self.root / "validator"
-        for path in ("Cargo.toml", "Cargo.lock", "build.sh", "src/lib.rs", "src/bin/metadata.rs"):
+        for path in ("Cargo.toml", "Cargo.lock", "build.sh", "build-helper.py", "src/lib.rs", "src/bin/metadata.rs"):
             destination = self.source / path
             destination.parent.mkdir(parents=True, exist_ok=True)
             destination.write_text(path)

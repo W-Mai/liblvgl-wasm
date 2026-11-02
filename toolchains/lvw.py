@@ -678,6 +678,19 @@ def verify_package(package, allow_dirty=False):
     if (ndk_entry.get("manifest") != "ndk/ndk.json"
             or sdk_entry.get("manifest") != "host-sdk/sdk.json"):
         raise ValueError("package manifest paths are inconsistent")
+    feature = sdk.get("feature_validator")
+    typescript = package_member(package, sdk_entry["path"]) / "typescript"
+    if feature is not None:
+        from host_sdk import verify_feature_validator
+        verify_feature_validator(typescript, feature, source_path)
+    else:
+        artifacts = ("feature-validator.js", "feature-validator.d.ts", "feature-validator.identity.json", "licenses/validator")
+        package_file = typescript / "package.json"
+        package_data = json.loads(package_file.read_bytes()) if package_file.is_file() else {}
+        exports = package_data.get("exports") if isinstance(package_data, dict) else None
+        if (any((typescript / name).exists() for name in artifacts)
+                or isinstance(exports, dict) and "./feature-validator" in exports):
+            raise ValueError("feature validator package metadata is missing")
     capability = verify_capability_manifest(package, manifest, source_entry, ndk, sdk)
     return {"output": str(package), "identity": manifest["core"],
             "capabilities": len(capability["capabilities"]), "files": len(inventory)}
@@ -768,8 +781,9 @@ def export_sdk(args, lock, host, project, cache):
     output.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix=".sdk-", dir=output.parent) as temporary:
         staged = Path(temporary) / "package"
+        options = {"with_validator": True} if getattr(args, "with_validator", False) else {}
         metadata = build_host_sdk(project, ndk, resolve_path(args.core, project), staged,
-                                  tools["wasm-tools"]["executable"])
+                                  tools["wasm-tools"]["executable"], **options)
         files = file_inventory(staged)
         manifest = {"schema_version": 1, "kind": "wasip1-host-sdk", "target": native["target"],
                     "ndk_sha256": ndk_sha256, **metadata, "files": files}
@@ -813,7 +827,7 @@ def export_package(args, lock, host, project, cache, sdk):
         ndk_result = export_ndk(ndk_args, lock, host, project, cache, sdk)
         sdk_args = argparse.Namespace(command="export-sdk", output=str(sdk_package),
                                       ndk=str(ndk), core="target/wasm/liblvgl.wasm",
-                                      with_zig=False)
+                                      with_zig=False, with_validator=getattr(args, "with_validator", False))
         sdk_result = export_sdk(sdk_args, lock, host, project, cache)
 
         staged = temporary / "package"
@@ -929,6 +943,9 @@ def main():
         if name == "export-package":
             command.add_argument("--allow-dirty", action="store_true",
                                  help="allow a development package from a dirty checkout")
+        if name in ("export-sdk", "export-package"):
+            command.add_argument("--with-validator", action="store_true",
+                                 help="include the optional TypeScript feature validator")
         if name == "export-sdk":
             command.add_argument("--ndk", default="target/ndk", help="verified NDK directory")
             command.add_argument("--core", default="target/wasm/liblvgl.wasm", help="core linked with the selected NDK")

@@ -66,6 +66,16 @@ jobs:
         run: |
           test -x "$LVW_TEST_BROWSER"
           bun test ./tests/package-consumer.test.ts
+      - name: Fetch feature validator dependencies
+        run: cargo fetch --locked --manifest-path validator/Cargo.toml
+      - name: Export and test optional feature validator package
+        env:
+          LVW_TEST_BROWSER: /usr/bin/google-chrome-stable
+        run: |
+          python3 -B toolchains/lvw.py export-package --cache "$RUNNER_TEMP/lvw-tools" \
+            --output target/feature-package --with-validator --json
+          python3 -B toolchains/lvw.py verify-package --package target/feature-package --json
+          python3 -B tests/feature_sdk_consumer.py target/feature-package/host-sdk --chromium "$LVW_TEST_BROWSER"
       - name: Archive package
         run: |
           archive="liblvgl-wasm-${GITHUB_SHA}.tar.gz"

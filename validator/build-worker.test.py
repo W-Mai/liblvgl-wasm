@@ -3,6 +3,7 @@
 import base64
 import fcntl
 import hashlib
+import importlib.util
 import json
 import os
 from pathlib import Path
@@ -16,6 +17,9 @@ import unittest
 ROOT = Path(__file__).resolve().parent.parent
 DATA = ROOT / "target/validator/generated/helper-data.json"
 BUILDER = ROOT / "validator/build-worker.sh"
+spec = importlib.util.spec_from_file_location("validator_build_worker", ROOT / "validator/build-worker.py")
+builder = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(builder)
 
 
 class WorkerBuildTests(unittest.TestCase):
@@ -57,7 +61,7 @@ class WorkerBuildTests(unittest.TestCase):
             local.get 0 i32.const 12 i32.mul i32.const 2048 i32.add i32.load
             local.get 1 i32.add i32.load8_u))'''
         fake = self.root / "fake.wasm"
-        subprocess.run(["wasm-tools", "parse", "-o", fake, "-"], input=wat, text=True, check=True)
+        subprocess.run([os.environ.get("WASM_TOOLS", "wasm-tools"), "parse", "-o", fake, "-"], input=wat, text=True, check=True)
         module = fake.read_bytes()
         data["helperBase64"] = base64.b64encode(module).decode("ascii")
         data["helperSha256"] = hashlib.sha256(module).hexdigest()
@@ -85,6 +89,33 @@ class WorkerBuildTests(unittest.TestCase):
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
             self.assertNotEqual(self.build().returncode, 0)
             self.assertEqual(self.output.read_bytes(), b"previous")
+
+        existing = self.root / "existing sdk"
+        existing.mkdir()
+        marker = existing / "marker"
+        marker.write_bytes(b"preserved")
+        result = subprocess.run(["sh", BUILDER, "--sdk-dir", existing], cwd=ROOT, capture_output=True)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(marker.read_bytes(), b"preserved")
+
+    def test_sdk_compiler_and_dependency_identity_are_enforced(self):
+        manifest = json.loads((ROOT / "third_party/validator/manifest.json").read_text())
+        good = ("rustc 1.92.0 (ded5c06cf 2025-12-08)\n"
+                "commit-hash: ded5c06cf21d2b93bffd5d884aa6e96934ee4234\n"
+                "host: x86_64-unknown-linux-gnu\nrelease: 1.92.0\n")
+        self.assertEqual(builder.compiler_identity(good, manifest), "x86_64-unknown-linux-gnu")
+        with self.assertRaisesRegex(ValueError, "compiler identity"):
+            builder.compiler_identity(good.replace("ded5c06cf21d2b93bffd5d884aa6e96934ee4234", "0" * 40), manifest)
+        with self.assertRaisesRegex(ValueError, "compiler identity"):
+            builder.compiler_identity(good.replace("release: 1.92.0", "release: 1.93.0"), manifest)
+        node = self.root / "node_modules/unlisted"
+        node.mkdir(parents=True)
+        (node / "extra.js").write_text("export const x = 1")
+        metadata = self.root / "metafile.json"
+        metadata.write_text(json.dumps({"outputs": {"bundle.js": {"imports": [], "inputs": {
+            "node_modules/unlisted/extra.js": {"bytesInOutput": 1}}}}}))
+        with self.assertRaisesRegex(ValueError, "unexpected feature bundle dependency"):
+            builder.audit_metafile(metadata, self.root, manifest["noble"])
 
     def test_staging_policy_change_cannot_publish_mismatched_worker(self):
         real_bun = shutil.which("bun")
