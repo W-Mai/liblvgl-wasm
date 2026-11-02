@@ -236,6 +236,12 @@ const order = orderModuleGraph({
 
 This function checks provider IDs and dependency edges only. It does not inspect Wasm bytes, validate a manifest or interface metadata, instantiate modules, or run applications.
 
+`inspectWasmFacts(bytes)` reads declaration facts from a private copy of core Wasm version 1 bytes. The result contains that snapshot's SHA-256, ordered imports and exports, indexed functions, tables, memories, globals and tags, and the start function when present. Functions and tags reference their signatures by `typeIndex` in the `types` array. Imports with the same module and name remain separate entries. Indexed lists include definitions that are not exported.
+
+The reader supports function types with numeric, `v128`, `funcref`, and `externref` values; 32-bit memory limits; tables with basic reference types; globals with supported single-instruction initializers; and tags with attribute 0. Unsupported declaration encodings are rejected. Code, element, data, and custom-section payloads are not inspected. The result reports validation, feature detection, and ABI detection as `not-run`; it does not establish that the module is valid or supported by a host, and cannot independently authorize loading. To validate a manifest or load an artifact, first create an exclusively owned byte copy, keep it unchanged for both inspection and compilation, and compare its inspection SHA-256 exactly with the expected hash. Do not rely on the original mutable input buffer remaining unchanged.
+
+To bound inspection of uploaded files, `WASM_FACTS_LIMITS` exposes fixed limits of 64 MiB per input, 50,000 cumulative parsed vector elements, 4 MiB of cumulative UTF-8 name bytes, and 4,096 sections. Exceeding a limit rejects inspection without asserting that the Wasm is invalid.
+
 The Rust directory is an independent library crate with its lockfile and `generated/raw.rs`. A consumer can use a path dependency:
 
 ```toml
