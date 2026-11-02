@@ -219,6 +219,23 @@ runtime.shutdown();
 
 Browser applications can import the same package and pass fetched Wasm bytes to `LvglRuntime.load`. TypeScript 5.9.3 consumers are checked with both `Bundler` and `NodeNext` resolution, an ES2022 target, and DOM types. The runtime bundle has no external JavaScript dependencies and does not require WebCrypto.
 
+`orderModuleGraph` validates library and application dependency declarations and returns library IDs before application IDs in a deterministic provider-first order. All IDs must contain valid Unicode; unpaired surrogates are rejected. Ready library IDs and application IDs are ordered lexicographically by UTF-16 code units. Host provider IDs must be supplied explicitly and are not included in the result. Multiple interface requirements can refer to the same provider.
+
+```ts
+import { orderModuleGraph } from "liblvgl-wasm";
+
+const order = orderModuleGraph({
+  hostProviders: ["host.clock"],
+  modules: [
+    { id: "app", role: "app", requires: [{ provider: "widgets" }] },
+    { id: "widgets", role: "lib", requires: [{ provider: "lvgl" }, { provider: "host.clock" }] },
+    { id: "lvgl", role: "lib", requires: [] },
+  ],
+}); // ["lvgl", "widgets", "app"]
+```
+
+This function checks provider IDs and dependency edges only. It does not inspect Wasm bytes, validate a manifest or interface metadata, instantiate modules, or run applications.
+
 The Rust directory is an independent library crate with its lockfile and `generated/raw.rs`. A consumer can use a path dependency:
 
 ```toml

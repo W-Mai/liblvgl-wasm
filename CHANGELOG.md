@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+- TypeScript module declaration graph validation and deterministic provider-first ordering.
 - Package publication requires same-commit default quality, verifies the checked-out revision, and names archives by commit SHA; compatibility and software matrices are opt-in workflow checks.
 - Wasm metadata inspection records imported and defined memory limits, shared flags, and export indices for capability reports.
 - Complete packages include `liblvgl.manifest.json`, binding exact source/config/API/core hashes, target/toolchain, adapter inputs, and Wasm shapes to declared, enabled, adapted, and runtime-verification states.

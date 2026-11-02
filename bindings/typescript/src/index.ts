@@ -10,6 +10,8 @@ import { Observer, ObserverRegistry, type ObserverCallback, type ObserverExports
 import { ImageDecoder, DecoderSession, DecoderRegistry, type ImageDecoderCallbacks, type DecoderExports } from "./decoder.ts";
 
 export { bindingIdentity, Animation, Observer, ImageDecoder, DecoderSession };
+export { orderModuleGraph } from "./module-graph.ts";
+export type { ModuleDeclaration, ModuleGraph, ModuleRequirement } from "./module-graph.ts";
 export type { AnimationCallbacks, ObserverCallback };
 export type { ImageDecoderCallbacks, DecoderView, DecoderOutput } from "./decoder.ts";
 export type { UnsafeFunctionPointer, UnsafeLvglApi, UnsafePointer };

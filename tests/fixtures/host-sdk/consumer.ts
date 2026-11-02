@@ -1,6 +1,11 @@
-import { LvglRuntime, LV_COLOR_T_SIZE, LV_PART_MAIN, type UnsafePointer } from "liblvgl-wasm";
+import { LvglRuntime, LV_COLOR_T_SIZE, LV_PART_MAIN, orderModuleGraph, type UnsafePointer } from "liblvgl-wasm";
 
 export async function exercise(bytes: ArrayBuffer, otherCore: ArrayBuffer, bitmap: Uint8Array) {
+  const order = orderModuleGraph({ hostProviders: [], modules: [
+    { id: "app", role: "app", requires: [{ provider: "core" }] },
+    { id: "core", role: "lib", requires: [] },
+  ] });
+  if (order.join(",") !== "core,app") throw new Error("Invalid module graph order");
   const runtime = await LvglRuntime.load(bytes);
   const raw = runtime.unsafe;
   const wide: bigint = raw.lv_pow(18014398509494329n, 1);
