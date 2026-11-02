@@ -278,6 +278,10 @@ The validator checks the artifact SHA-256 against a private byte snapshot, match
 
 `artifact.path` is checked as a safe relative path; the validator does not read the file. Memory and table limits are compared using static module declarations, which can reject an instance grown before linking. `MODULE_MANIFEST_LIMITS` bounds the provider count, total Wasm bytes, declaration entries and string sizes. Inputs must be plain data from a trusted JavaScript environment; this API does not sandbox hostile JavaScript or proxies in the same realm.
 
+`inspectIsolatedResources(bytes)` checks an individual module's resource topology from a private byte snapshot and returns its SHA-256. The module may define at most one memory and one table; it cannot import either resource, use shared memory, have a start section, import mutable or reference-typed globals, or expose reference-typed function or tag interfaces. A module with `wasi_snapshot_preview1` imports must define and export its own memory under the name `memory`; other aliases of that same memory are permitted. The snapshot must compile in the current JavaScript engine, but the function does not instantiate it.
+
+The `resourceTopology` result describes declarations only. Feature policy, WASI ABI, pointer and handle contracts, host implementation, environment isolation and lifecycle remain `not-run`. Raw `i32` values cannot be identified as pointers or handles from Wasm types, and the result is not authorization to load or execute a module. A loader must bind any memory access to the owning instance and keep memory and table objects out of other instances.
+
 The Rust directory is an independent library crate with its lockfile and `generated/raw.rs`. A consumer can use a path dependency:
 
 ```toml

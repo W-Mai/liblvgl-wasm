@@ -1,4 +1,4 @@
-import { LvglRuntime, LV_COLOR_T_SIZE, LV_PART_MAIN, inspectWasmFacts, orderModuleGraph, validateModuleManifests, type UnsafePointer } from "liblvgl-wasm";
+import { LvglRuntime, LV_COLOR_T_SIZE, LV_PART_MAIN, inspectIsolatedResources, inspectWasmFacts, orderModuleGraph, validateModuleManifests, type UnsafePointer } from "liblvgl-wasm";
 
 export async function exercise(bytes: ArrayBuffer, otherCore: ArrayBuffer, bitmap: Uint8Array) {
   const order = orderModuleGraph({ hostProviders: [], modules: [
@@ -7,6 +7,9 @@ export async function exercise(bytes: ArrayBuffer, otherCore: ArrayBuffer, bitma
   ] });
   if (order.join(",") !== "core,app") throw new Error("Invalid module graph order");
   const emptyModule = new Uint8Array([0, 97, 115, 109, 1, 0, 0, 0]);
+  const isolated = inspectIsolatedResources(emptyModule);
+  if (isolated.sha256 !== inspectWasmFacts(emptyModule).sha256 || isolated.checks.resourceTopology !== "passed"
+      || isolated.checks.environmentIsolation !== "not-run") throw new Error("Invalid isolated resource report");
   const manifestReport = validateModuleManifests({ modules: [{ bytes: emptyModule, manifest: {
     schema_version: 1, kind: "wasm-module", id: "app", role: "app",
     artifact: { path: "app.wasm", sha256: inspectWasmFacts(emptyModule).sha256 },
