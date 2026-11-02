@@ -707,7 +707,7 @@ def publish_package(staged, output, name, manifest):
 
 def export_ndk(args, lock, host, project, cache, sdk):
     output = new_output(args.output, project)
-    builder = project / "scripts/build-core.sh"
+    builder = project / "scripts/build-core-impl.sh"
     if not builder.is_file():
         raise ValueError(f"export-ndk requires a source checkout at --project: {project}")
     reports = tool_report(args, lock, host, cache, sdk)
@@ -726,39 +726,44 @@ def export_ndk(args, lock, host, project, cache, sdk):
 
     def run(command):
         subprocess.run([str(item) for item in command], cwd=project, env=environment,
-                       stdout=sys.stderr, check=True)
+                       stdout=sys.stderr, check=True, pass_fds=(descriptor,))
 
-    # Rebuild through the same generator/configuration path before exporting.
-    run(["sh", builder])
-    core = build / "liblvgl.wasm"
-    run([reports["wasm-tools"]["executable"], "validate", core])
-    run(["cmake", "--build", build, "--target", "lvw_ndk", "-j", "4"])
-    output.parent.mkdir(parents=True, exist_ok=True)
-    with tempfile.TemporaryDirectory(prefix=".ndk-", dir=output.parent) as temporary:
-        staged = Path(temporary) / "package"
-        run(["cmake", "--install", build, "--prefix", staged, "--component", "ndk"])
-        data = staged / "share/liblvgl-wasm"
-        # Reject missing or source-tree-only configuration includes before publication.
-        subprocess.run([sys.executable, "-B", str(data / "generator/lvgl.py"), "--source", str(staged),
-                        "--config", str(staged / "include/lvgl/config/lv_conf.h"),
-                        "--sdk", reports["wasi-sdk"]["path"], "--contained"],
-                       cwd=project, env=environment, stdout=subprocess.DEVNULL, check=True)
-        proof = data / "metadata/reference-verification.json"
-        run([sys.executable, "-B", data / "generator/signatures.py",
-             "--api", data / "metadata/api.json", "--wasm", core, "--output", proof])
-        reference = json.loads(proof.read_text())
-        files = file_inventory(staged)
-        manifest = {
-            "schema_version": 1, "kind": "wasip1-native-sdk", "target": lock["target"],
-            "reference": reference,
-            "toolchain": {"wasi-sdk": lock["tools"]["wasi-sdk"]["version"],
-                          "clang": lock["tools"]["wasi-sdk"]["clang_version"]},
-            "libraries": {Path(path).stem.removeprefix("lib"): {"path": path, "sha256": digest}
-                          for path, digest in files.items() if path.startswith("lib/lib") and path.endswith(".a")},
-            "files": files,
-        }
-        publish_package(staged, output, "ndk.json", manifest)
-    return {"output": str(output), "reference": reference, "files": len(files)}
+    spec = importlib.util.spec_from_file_location("lvw_core_lock", project / "scripts/core_lock.py")
+    core_lock = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(core_lock)
+    with core_lock.core_build_lock(build, project) as descriptor:
+        environment["LVW_CORE_LOCK_FD"] = str(descriptor)
+        # Rebuild through the same generator/configuration path before exporting.
+        run(["sh", builder])
+        core = build / "liblvgl.wasm"
+        run([reports["wasm-tools"]["executable"], "validate", core])
+        run(["cmake", "--build", build, "--target", "lvw_ndk", "-j", "4"])
+        output.parent.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(prefix=".ndk-", dir=output.parent) as temporary:
+            staged = Path(temporary) / "package"
+            run(["cmake", "--install", build, "--prefix", staged, "--component", "ndk"])
+            data = staged / "share/liblvgl-wasm"
+            # Reject missing or source-tree-only configuration includes before publication.
+            subprocess.run([sys.executable, "-B", str(data / "generator/lvgl.py"), "--source", str(staged),
+                            "--config", str(staged / "include/lvgl/config/lv_conf.h"),
+                            "--sdk", reports["wasi-sdk"]["path"], "--contained"],
+                           cwd=project, env=environment, stdout=subprocess.DEVNULL, check=True, pass_fds=(descriptor,))
+            proof = data / "metadata/reference-verification.json"
+            run([sys.executable, "-B", data / "generator/signatures.py",
+                 "--api", data / "metadata/api.json", "--wasm", core, "--output", proof])
+            reference = json.loads(proof.read_text())
+            files = file_inventory(staged)
+            manifest = {
+                "schema_version": 1, "kind": "wasip1-native-sdk", "target": lock["target"],
+                "reference": reference,
+                "toolchain": {"wasi-sdk": lock["tools"]["wasi-sdk"]["version"],
+                              "clang": lock["tools"]["wasi-sdk"]["clang_version"]},
+                "libraries": {Path(path).stem.removeprefix("lib"): {"path": path, "sha256": digest}
+                              for path, digest in files.items() if path.startswith("lib/lib") and path.endswith(".a")},
+                "files": files,
+            }
+            publish_package(staged, output, "ndk.json", manifest)
+        return {"output": str(output), "reference": reference, "files": len(files)}
 
 
 def export_sdk(args, lock, host, project, cache):

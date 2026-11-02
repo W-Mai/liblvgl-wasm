@@ -5,6 +5,7 @@ root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 cd "$root"
 
 ./scripts/build.sh
+./scripts/build-bounded-core.sh
 sh "$root/validator/build.sh"
 sh "$root/validator/build-data.sh"
 sh "$root/validator/build-worker.sh"
@@ -31,6 +32,8 @@ python3 -B validator/wasi-numeric-fixtures.py
 bun test validator/feature-validator.test.ts
 bun test validator/feature-worker.test.ts validator/feature-worker-live.test.ts validator/feature-graph.test.ts validator/numeric-environment.test.ts validator/wasi-numeric-loader.test.ts
 bun test validator/feature-sdk.test.ts
+bun test validator/bounded-core.test.ts
+python3 -B validator/bounded-core.test.py
 bun test validator/numeric-wasi-service.test.ts
 python3 -B validator/build-data.test.py
 python3 -B validator/build-helper.test.py

@@ -232,12 +232,16 @@ class BootstrapTests(unittest.TestCase):
     def test_ndk_failed_install_has_no_published_output(self):
         scripts = self.root / "scripts"
         scripts.mkdir()
-        (scripts / "build-core.sh").touch()
+        (scripts / "build-core-impl.sh").touch()
+        shutil.copyfile(ROOT / "scripts/core_lock.py", scripts / "core_lock.py")
         args = argparse.Namespace(command="export-ndk", output="target/ndk")
         reports = {"wasi-sdk": {"ok": True, "path": "/unused/sdk"},
                    "wasm-tools": {"ok": True, "executable": "/unused/validator"}}
 
         def command(arguments, **kwargs):
+            with (self.root / "target/wasm/.lvw-core-build.lock").open("w") as held:
+                with self.assertRaises(BlockingIOError):
+                    fcntl.flock(held, fcntl.LOCK_EX | fcntl.LOCK_NB)
             if arguments[:2] == ["cmake", "--install"]:
                 staged = Path(arguments[arguments.index("--prefix") + 1])
                 staged.mkdir()
@@ -247,7 +251,28 @@ class BootstrapTests(unittest.TestCase):
         with patch.object(lvw, "tool_report", return_value=reports), patch.object(lvw.subprocess, "run", side_effect=command):
             with self.assertRaises(subprocess.CalledProcessError):
                 lvw.export_ndk(args, {}, "test-host", self.root, self.cache, None)
-        self.assertEqual(list((self.root / "target").iterdir()), [])
+        self.assertFalse((self.root / "target/ndk").exists())
+        self.assertFalse(list((self.root / "target").glob(".ndk-*")))
+
+    def test_ndk_export_rejects_an_active_core_build(self):
+        scripts = self.root / "scripts"
+        scripts.mkdir()
+        (scripts / "build-core-impl.sh").touch()
+        shutil.copyfile(ROOT / "scripts/core_lock.py", scripts / "core_lock.py")
+        build = self.root / "target/wasm"
+        build.mkdir(parents=True)
+        bounded = build / "api-verification-bounded.json"
+        bounded.write_text("previous proof")
+        args = argparse.Namespace(command="export-ndk", output="target/ndk")
+        reports = {"wasi-sdk": {"ok": True, "path": "/unused/sdk"},
+                   "wasm-tools": {"ok": True, "executable": "/unused/validator"}}
+        with (build / ".lvw-core-build.lock").open("w") as held:
+            fcntl.flock(held, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            with patch.object(lvw, "tool_report", return_value=reports), patch.object(lvw.subprocess, "run") as run:
+                with self.assertRaisesRegex(ValueError, "core build already running"):
+                    lvw.export_ndk(args, {}, "test-host", self.root, self.cache, None)
+                run.assert_not_called()
+        self.assertEqual(bounded.read_text(), "previous proof")
 
     def test_archive_containment(self):
         invalid = [
@@ -427,7 +452,7 @@ class BootstrapTests(unittest.TestCase):
         project = self.root / "build project"
         scripts = project / "scripts"
         scripts.mkdir(parents=True)
-        for name in ("build.sh", "build-core.sh", "resolve-wasi-sdk.sh"):
+        for name in ("build.sh", "build-core.sh", "build-core-impl.sh", "core_lock.py", "resolve-wasi-sdk.sh"):
             shutil.copyfile(ROOT / "scripts" / name, scripts / name)
         config = project / "config/lv_conf.h"
         config.parent.mkdir()
@@ -466,6 +491,7 @@ class BootstrapTests(unittest.TestCase):
                 if recorded is not None:
                     (build / ".lvw-inputs").write_text(recorded + "\n")
                 (build / "api-verification.json").write_text("stale proof")
+                (build / "api-verification-bounded.json").write_text("stale bounded proof")
                 result = subprocess.run(["sh", str(scripts / "build.sh")], cwd=self.root,
                                         env=environment, text=True, capture_output=True)
                 self.assertEqual(result.returncode, 37, result.stderr)
@@ -475,6 +501,7 @@ class BootstrapTests(unittest.TestCase):
                 self.assertIn(f"-DFETCHCONTENT_SOURCE_DIR_LVGL:PATH={source}", arguments)
                 self.assertIn(f"-DLVW_CONF_PATH:FILEPATH={config}", arguments)
                 self.assertFalse((build / "api-verification.json").exists())
+                self.assertFalse((build / "api-verification-bounded.json").exists())
 
 
 if __name__ == "__main__":

@@ -40,6 +40,12 @@ LVW_BRIDGE_FEATURES='' LVW_BUILD_DIR=target/v9.0 \
 
 Generate a new host SDK from the resulting NDK and core before using raw APIs. Bindings, constants, and layouts from another core remain invalid even when both versions are v9. `scripts/build.sh` retains the default `target/wasm` path for website and sample builds; use `build-core.sh` for isolated outputs.
 
+`scripts/build-bounded-core.sh` adds `liblvgl-bounded.wasm` and `api-verification-bounded.json` to an existing core build directory. Set `LVW_BUILD_DIR` to select another existing build. The script verifies the original core and proof, builds a separate core with a fixed-size function table, and checks that its standard sections match the original apart from the table limit. Core builds and NDK exports use a per-directory lock; rebuilding a core invalidates its bounded proof. Direct CMake or generator commands do not acquire this lock. Bindings generated for the original core do not authorize the bounded core; generate matching bindings from the bounded core and its proof. The fixed table cannot grow, so managed animation callbacks that allocate table slots are unsupported.
+
+```sh
+./scripts/build-bounded-core.sh
+```
+
 ### Compiler preparation
 
 `toolchains/lvw.py` prepares wasi-sdk 34.0 and wasm-tools 1.246.2 from the official archives pinned in `toolchains/tools.lock.json`. `--with-zig` also prepares Zig 0.15.2. Python 3.9+ and the standard library are sufficient for preparation.

@@ -95,14 +95,18 @@ if(LV_USE_LOTTIE)
 endif()
 
 add_executable(liblvgl bridge/lvw.c)
+add_executable(liblvgl_bounded EXCLUDE_FROM_ALL bridge/lvw.c)
 if(EXISTS "${CMAKE_BINARY_DIR}/api-shims.c")
     target_sources(liblvgl PRIVATE "${CMAKE_BINARY_DIR}/api-shims.c")
+    target_sources(liblvgl_bounded PRIVATE "${CMAKE_BINARY_DIR}/api-shims.c")
 endif()
-target_compile_features(liblvgl PRIVATE c_std_11)
-target_include_directories(liblvgl PUBLIC bridge PRIVATE ${LVW_BRIDGE_INCLUDE_DIR})
-target_compile_definitions(liblvgl PRIVATE ${LVW_BRIDGE_DEFINITIONS})
-target_link_libraries(liblvgl PRIVATE lvgl::lvgl)
-target_compile_options(liblvgl PRIVATE -Wall -Wextra -Werror)
+foreach(core IN ITEMS liblvgl liblvgl_bounded)
+    target_compile_features(${core} PRIVATE c_std_11)
+    target_include_directories(${core} PUBLIC bridge PRIVATE ${LVW_BRIDGE_INCLUDE_DIR})
+    target_compile_definitions(${core} PRIVATE ${LVW_BRIDGE_DEFINITIONS})
+    target_link_libraries(${core} PRIVATE lvgl::lvgl)
+    target_compile_options(${core} PRIVATE -Wall -Wextra -Werror)
+endforeach()
 
 add_executable(liblvgl_c_demo EXCLUDE_FROM_ALL bridge/lvw.c examples/c/direct_api.c)
 target_compile_features(liblvgl_c_demo PRIVATE c_std_11)
@@ -121,9 +125,18 @@ if(CMAKE_SYSTEM_NAME STREQUAL "WASI")
         -Wl,--growable-table
         -Wl,--max-memory=268435456
     )
+    set_target_properties(liblvgl_bounded PROPERTIES OUTPUT_NAME liblvgl-bounded SUFFIX .wasm)
+    target_link_options(liblvgl_bounded PRIVATE
+        -mexec-model=reactor
+        -Wl,--no-entry
+        -Wl,--export-memory
+        -Wl,--export-table
+        -Wl,--max-memory=268435456
+    )
     if(EXISTS "${CMAKE_BINARY_DIR}/api-exports.txt")
         file(STRINGS "${CMAKE_BINARY_DIR}/api-exports.txt" LVW_EXPORT_FLAGS)
         target_link_options(liblvgl PRIVATE ${LVW_EXPORT_FLAGS})
+        target_link_options(liblvgl_bounded PRIVATE ${LVW_EXPORT_FLAGS})
     endif()
 
     set_target_properties(liblvgl_c_demo PROPERTIES
