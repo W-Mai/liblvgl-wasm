@@ -6,6 +6,8 @@ cd "$root"
 
 ./scripts/build.sh
 sh "$root/validator/build.sh"
+sh "$root/validator/build-data.sh"
+sh "$root/validator/build-worker.sh"
 bun run typecheck
 
 for module in \
@@ -25,6 +27,9 @@ wasm-tools validate --features=wasm1,bulk-memory,reference-types,sign-extension 
 bun run test
 python3 -B validator/fixtures.py
 bun test validator/feature-validator.test.ts
+bun test validator/feature-worker.test.ts validator/feature-worker-live.test.ts
+python3 -B validator/build-data.test.py
+python3 -B validator/build-worker.test.py
 
 cargo fmt --manifest-path bindings/rust/Cargo.toml --all -- --check
 cargo fmt --manifest-path toolchains/rust/Cargo.toml --all -- --check

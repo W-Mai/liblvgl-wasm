@@ -3,6 +3,7 @@
 use wasmparser::{Validator, WasmFeatures};
 
 pub const MAX_INPUT_BYTES: usize = 64 * 1024 * 1024;
+pub const POLICY_VERSION: u32 = 1;
 
 /// A named optional feature and its stable helper policy bit.
 #[derive(Clone, Copy, Debug)]
@@ -119,10 +120,42 @@ pub fn validate(bytes: &[u8], mask: u32) -> Result<(), ValidationError> {
 mod helper {
     use std::cell::RefCell;
 
-    use super::{MAX_INPUT_BYTES, ValidationError, validate};
+    use super::{FEATURES, MAX_INPUT_BYTES, POLICY_VERSION, ValidationError, validate};
 
     thread_local! {
         static INPUT: RefCell<Option<Vec<u8>>> = const { RefCell::new(None) };
+    }
+
+    #[unsafe(no_mangle)]
+    pub extern "C" fn lvw_policy_version() -> u32 {
+        POLICY_VERSION
+    }
+
+    #[unsafe(no_mangle)]
+    pub extern "C" fn lvw_feature_count() -> u32 {
+        FEATURES.len() as u32
+    }
+
+    #[unsafe(no_mangle)]
+    pub extern "C" fn lvw_feature_name_length(index: u32) -> u32 {
+        FEATURES
+            .get(index as usize)
+            .map_or(0, |feature| feature.name.len() as u32)
+    }
+
+    #[unsafe(no_mangle)]
+    pub extern "C" fn lvw_feature_name_byte(index: u32, offset: u32) -> i32 {
+        FEATURES
+            .get(index as usize)
+            .and_then(|feature| feature.name.as_bytes().get(offset as usize))
+            .map_or(-1, |byte| i32::from(*byte))
+    }
+
+    #[unsafe(no_mangle)]
+    pub extern "C" fn lvw_feature_mask(index: u32) -> u32 {
+        FEATURES
+            .get(index as usize)
+            .map_or(0, |feature| feature.mask)
     }
 
     #[unsafe(no_mangle)]

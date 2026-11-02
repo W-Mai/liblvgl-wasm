@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+- Internal TypeScript feature validation Worker with explicit policies and execution deadlines.
 - Standalone Wasm feature policy validator with bounded input and explicit host allowlists.
 - TypeScript inspection of WASI Preview 1 import signatures and entrypoint types.
 - Isolated Wasm resource topology inspection for owned memories, tables, and instance boundaries.
