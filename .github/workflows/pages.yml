@@ -59,7 +59,7 @@ jobs:
           mkdir -p _site/tests
           cp -R site/. _site/
           cp -R studio _site/studio
-          cp -R target _site/target
+          python3 -B scripts/assemble-pages-target.py . _site
           cp -R examples _site/examples
           cp -R toolchains _site/toolchains
           cp -R tests/fixtures _site/tests/fixtures
