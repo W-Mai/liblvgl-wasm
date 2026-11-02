@@ -1,4 +1,4 @@
-import { FeatureValidationError, WASM_FEATURE_POLICY_NAMES, inspectFeatureModuleGraph, validateWasmFeatures } from "liblvgl-wasm/feature-validator";
+import { FeatureValidationError, WASM_FEATURE_POLICY_NAMES, inspectFeatureModuleGraph, loadNumericEnvironment, validateWasmFeatures, type NumericEnvironmentOptions } from "liblvgl-wasm/feature-validator";
 import { inspectWasmFacts, type ModuleManifestInput } from "liblvgl-wasm";
 
 const coreFeatures = ["bulk-memory", "reference-types", "sign-extension", "saturating-float-to-int", "exceptions"];
@@ -13,11 +13,12 @@ function moduleGraph(): ModuleManifestInput {
   const imported = (module: string, name: string) => [...text(module), ...text(name), 0, 0];
   const exported = (name: string, kind: number, index: number) => [...text(name), kind, ...leb(index)];
   const body = (...instructions: number[]) => { const bytes = [0, ...instructions, 11]; return [...leb(bytes.length), ...bytes]; };
-  const type = section(1, vec([0x60, 0, 1, 0x7f])), memory = section(5, vec([1, 1, 4]));
-  const core = wasm(type, section(3, vec([0])), memory, section(7, vec(exported("get", 0, 0), exported("memory", 2, 0))), section(10, vec(body(0x41, 1))));
-  const lib = wasm(type, section(2, vec(imported("core", "get"))), section(3, vec([0])), memory, section(7, vec(exported("get", 0, 1), exported("memory", 2, 0))), section(10, vec(body(0x10, 0))));
-  const app = wasm(type, section(2, vec(imported("core", "get"), imported("lib", "get"))), section(3, vec([0])), memory, section(7, vec(exported("run", 0, 2), exported("memory", 2, 0))), section(10, vec(body(0x10, 0, 0x10, 1, 0x6a))));
+  const type = section(1, vec([0x60, 0, 1, 0x7f], [0x60, 1, 0x7f, 1, 0x7f])), memory = section(5, vec([1, 1, 4]));
+  const core = wasm(type, section(3, vec([0], [0], [0])), memory, section(7, vec(exported("get", 0, 0), exported("module_init", 0, 1), exported("module_close", 0, 2), exported("memory", 2, 0))), section(10, vec(body(0x41, 1), body(0x41, 0), body(0x41, 0))));
+  const lib = wasm(type, section(2, vec(imported("core", "get"))), section(3, vec([0], [0], [0])), memory, section(7, vec(exported("get", 0, 1), exported("module_init", 0, 2), exported("module_close", 0, 3), exported("memory", 2, 0))), section(10, vec(body(0x10, 0), body(0x41, 0), body(0x41, 0))));
+  const app = wasm(type, section(2, vec(imported("core", "get"), imported("lib", "get"))), section(3, vec([1], [0], [0])), memory, section(7, vec(exported("app_run", 0, 2), exported("module_init", 0, 3), exported("module_close", 0, 4), exported("memory", 2, 0))), section(10, vec(body(0x10, 0, 0x10, 1, 0x6a, 0x20, 0, 0x6a), body(0x41, 0), body(0x41, 0))));
   const fn = { kind: "function", params: [], results: ["i32"] } as const;
+  const run = { kind: "function", params: ["i32"], results: ["i32"] } as const;
   const mem = { kind: "memory", minimumPages: 1, maximumPages: 4, shared: false } as const;
   const requirement = (provider: string) => ({ provider, interface: provider, version: 1,
     imports: [{ module: provider, name: "get", provider_export: "get", ...fn }] });
@@ -25,7 +26,8 @@ function moduleGraph(): ModuleManifestInput {
     manifest: { schema_version: 1 as const, kind: "wasm-module" as const, id, role,
       artifact: { path: `${id}.wasm`, sha256: inspectWasmFacts(bytes).sha256 }, target: { abi: "wasip1" as const, features: [] },
       interface: { name: id, version: 1 }, memory_model: "isolated" as const, requires,
-      exports: [{ name: id === "app" ? "run" : "get", ...fn }, { name: "memory", ...mem }], runtime_verification: "not-run" as const }, bytes,
+      exports: [id === "app" ? { name: "app_run", ...run } : { name: "get", ...fn },
+        { name: "module_init", ...fn }, { name: "module_close", ...fn }, { name: "memory", ...mem }], runtime_verification: "not-run" as const }, bytes,
   });
   return { modules: [item("app", "app", app, [requirement("core"), requirement("lib")]),
     item("lib", "lib", lib, [requirement("core")]), item("core", "lib", core, [])], hosts: [] };
@@ -54,7 +56,18 @@ export async function exercise(core: ArrayBuffer) {
   const graphPending = inspectFeatureModuleGraph(graph, { ...options, allowedFeatures: [] });
   for (const item of graph.modules) (item.bytes as Uint8Array).fill(0);
   const graphReport = await graphPending;
+  const numericGraph = moduleGraph();
+  const numericOptions: NumericEnvironmentOptions = { ...options, profile: "numeric-v1", allowedFeatures: [], hosts: [],
+    modules: numericGraph.modules.map(({ manifest }) => ({ id: manifest.id, sha256: manifest.artifact.sha256, interface: manifest.interface,
+      exports: manifest.role === "lib" ? [{ name: "get", params: [], results: ["i32" as const] }] : [] })),
+    maxMemoryPages: 4, maxTotalMemoryPages: 12, maxTableElements: 0, maxTotalTableElements: 0 };
+  const numericPending = loadNumericEnvironment(numericGraph, numericOptions);
+  for (const item of numericGraph.modules) (item.bytes as Uint8Array).fill(0);
+  const numeric = await numericPending;
+  const numericResult = numeric.run(5);
+  numeric.close();
   return { report, coreDenied, simdStatus: simdResult.status, simdDenied, policyDenied, aborted,
+    numericResult, numericState: numeric.state,
     graphOrder: graphReport.order, graphChecks: graphReport.modules.map((item) => item.checks),
     knownFeatures: WASM_FEATURE_POLICY_NAMES.includes("simd") && Object.isFrozen(WASM_FEATURE_POLICY_NAMES),
     rootExport: inspectWasmFacts(new Uint8Array([0, 97, 115, 109, 1, 0, 0, 0])).imports.length === 0 };

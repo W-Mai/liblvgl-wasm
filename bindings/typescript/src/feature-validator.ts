@@ -1,9 +1,11 @@
 import { FEATURE_MASKS, HELPER_SHA256, POLICY_VERSION } from "../../../target/validator/generated/helper-data.ts";
 import { FEATURE_WORKER_SOURCE } from "../../../target/validator/generated/worker-source.ts";
 import { snapshotWasmBytes } from "./wasm-facts.ts";
-import { compilePreparedModules, prepareModuleManifests, type ModuleManifestInput } from "./module-manifest.ts";
+import { compilePreparedModules, prepareModuleManifests, type ModuleManifestInput, type PreparedModuleGraph } from "./module-manifest.ts";
 import { inspectIsolatedFacts, type IsolatedResourceReport } from "./isolated-resources.ts";
 import { inspectWasiFacts, type WasiPreview1Report } from "./wasi-preview1.ts";
+import { compileNumericModules, instantiateNumericEnvironment, prepareNumericProfile, type NumericEnvironment, type NumericEnvironmentOptions } from "./numeric-environment.ts";
+export type { NumericEnvironment, NumericEnvironmentOptions } from "./numeric-environment.ts";
 
 export type FeatureValidationErrorCode = "policy" | "invalid-input" | "input-limit" | "busy" | "aborted" | "timeout" | "worker-unavailable" | "helper-failed" | "reserve-failed" | "module-rejected";
 
@@ -96,49 +98,60 @@ function deadline(value: number, label: string): number {
   return value;
 }
 
+function prepareFeatureChecks(prepared: PreparedModuleGraph, options: FeatureModuleGraphOptions) {
+  if (!Array.isArray(options.allowedFeatures) || options.allowedFeatures.length > WASM_FEATURE_POLICY_NAMES.length) {
+    throw new FeatureValidationError("policy", "invalid feature list");
+  }
+  const allowedFeatures = Object.freeze([...options.allowedFeatures]);
+  const allowed = featureMask(allowedFeatures, "host");
+  const startupTimeoutMs = deadline(options.startupTimeoutMs, "startup");
+  const executionTimeoutMs = deadline(options.executionTimeoutMs, "execution");
+  const signal = options.signal;
+  if (signal !== undefined) {
+    let aborted: boolean;
+    try { aborted = signalAborted.call(signal) as boolean; }
+    catch { throw new FeatureValidationError("invalid-input", "invalid abort signal"); }
+    if (aborted) throw new FeatureValidationError("aborted", "feature validation aborted");
+  }
+  const records = prepared.modules.map((record) => {
+    const id = record.manifest.id;
+    let isolated: Pick<IsolatedResourceReport, "memories" | "tables" | "usesWasi">;
+    let wasi: Pick<WasiPreview1Report, "evidence" | "imports" | "entrypoints">;
+    try { isolated = inspectIsolatedFacts(record.facts); }
+    catch (error) { throw new FeatureModuleGraphError(id, "resource", error); }
+    try { wasi = inspectWasiFacts(record.facts); }
+    catch (error) { throw new FeatureModuleGraphError(id, "wasi", error); }
+    try {
+      const declared = featureMask(record.manifest.target.features, "declared");
+      if ((declared & ~allowed) !== 0) throw new FeatureValidationError("policy", "declared feature is not allowed by the host");
+    } catch (error) { throw new FeatureModuleGraphError(id, "feature", error); }
+    return { record, isolated, wasi };
+  });
+  return { records, options: { allowedFeatures, startupTimeoutMs, executionTimeoutMs, signal } };
+}
+
+async function verifyFeatureChecks(checks: ReturnType<typeof prepareFeatureChecks>): Promise<void> {
+  const { records, options: { allowedFeatures, startupTimeoutMs, executionTimeoutMs, signal } } = checks;
+  for (const { record } of records) {
+    try {
+      const feature = await validateWasmFeatures(record.bytes, { declaredFeatures: record.manifest.target.features,
+        allowedFeatures, startupTimeoutMs, executionTimeoutMs, signal });
+      if (feature.inputSha256 !== record.facts.sha256) throw new Error("feature validation snapshot identity mismatch");
+    } catch (error) { throw new FeatureModuleGraphError(record.manifest.id, "feature", error); }
+  }
+  if (signal && signalAborted.call(signal)) throw new FeatureValidationError("aborted", "feature validation aborted");
+}
+
 /** Inspect a module graph without instantiating it. The report is not an authorization to load the graph. */
 export async function inspectFeatureModuleGraph(input: ModuleManifestInput, options: FeatureModuleGraphOptions): Promise<FeatureModuleGraphReport> {
   if (activeGraphs >= MAX_WORKERS) throw new FeatureValidationError("busy", "module graph inspection concurrency limit reached");
   activeGraphs++;
   try {
     const prepared = prepareModuleManifests(input);
-    if (!Array.isArray(options.allowedFeatures) || options.allowedFeatures.length > WASM_FEATURE_POLICY_NAMES.length) {
-      throw new FeatureValidationError("policy", "invalid feature list");
-    }
-    const allowedFeatures = Object.freeze([...options.allowedFeatures]);
-    const allowed = featureMask(allowedFeatures, "host");
-    const startupTimeoutMs = deadline(options.startupTimeoutMs, "startup");
-    const executionTimeoutMs = deadline(options.executionTimeoutMs, "execution");
-    const signal = options.signal;
-    if (signal !== undefined) {
-      let aborted: boolean;
-      try { aborted = signalAborted.call(signal) as boolean; }
-      catch { throw new FeatureValidationError("invalid-input", "invalid abort signal"); }
-      if (aborted) throw new FeatureValidationError("aborted", "feature validation aborted");
-    }
-    const records = prepared.modules.map((record) => {
-      const id = record.manifest.id;
-      let isolated: Pick<IsolatedResourceReport, "memories" | "tables" | "usesWasi">;
-      let wasi: Pick<WasiPreview1Report, "evidence" | "imports" | "entrypoints">;
-      try { isolated = inspectIsolatedFacts(record.facts); }
-      catch (error) { throw new FeatureModuleGraphError(id, "resource", error); }
-      try { wasi = inspectWasiFacts(record.facts); }
-      catch (error) { throw new FeatureModuleGraphError(id, "wasi", error); }
-      try {
-        const declared = featureMask(record.manifest.target.features, "declared");
-        if ((declared & ~allowed) !== 0) throw new FeatureValidationError("policy", "declared feature is not allowed by the host");
-      } catch (error) { throw new FeatureModuleGraphError(id, "feature", error); }
-      return { record, isolated, wasi };
-    });
-    for (const { record } of records) {
-      try {
-        const feature = await validateWasmFeatures(record.bytes, { declaredFeatures: record.manifest.target.features,
-          allowedFeatures, startupTimeoutMs, executionTimeoutMs, signal });
-        if (feature.inputSha256 !== record.facts.sha256) throw new Error("feature validation snapshot identity mismatch");
-      } catch (error) { throw new FeatureModuleGraphError(record.manifest.id, "feature", error); }
-    }
-    if (signal && signalAborted.call(signal)) throw new FeatureValidationError("aborted", "feature validation aborted");
+    const checks = prepareFeatureChecks(prepared, options);
+    await verifyFeatureChecks(checks);
     compilePreparedModules(prepared);
+    const { records } = checks;
     return { order: prepared.order, helperSha256: HELPER_SHA256, policyVersion: POLICY_VERSION,
       modules: records.map(({ record, isolated, wasi }) => ({ id: record.manifest.id, sha256: record.facts.sha256,
         declaredFeatures: record.manifest.target.features, wasi, isolated, checks: {
@@ -147,6 +160,26 @@ export async function inspectFeatureModuleGraph(input: ModuleManifestInput, opti
           targetProvenance: "not-run", pointerContracts: "not-run", handleIsolation: "not-run", environmentIsolation: "not-run",
           hostImplementation: "not-run", lifecycle: "not-run", runtime: "not-run",
         } })) };
+  } finally {
+    activeGraphs--;
+  }
+}
+
+/** Load a trusted numeric-only graph. The returned environment does not expose Wasm resources. */
+export async function loadNumericEnvironment(input: ModuleManifestInput, options: NumericEnvironmentOptions): Promise<NumericEnvironment> {
+  if (activeGraphs >= MAX_WORKERS) throw new FeatureValidationError("busy", "module graph inspection concurrency limit reached");
+  activeGraphs++;
+  try {
+    const prepared = prepareModuleManifests(input);
+    const profile = prepareNumericProfile(prepared, options);
+    const checks = prepareFeatureChecks(prepared, profile.featureOptions);
+    await verifyFeatureChecks(checks);
+    const compiled = compileNumericModules(prepared);
+    const beforeGuest = () => {
+      if (profile.featureOptions.signal && signalAborted.call(profile.featureOptions.signal)) throw new FeatureValidationError("aborted", "feature validation aborted");
+    };
+    beforeGuest();
+    return instantiateNumericEnvironment(prepared, profile, compiled, beforeGuest);
   } finally {
     activeGraphs--;
   }

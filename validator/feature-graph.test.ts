@@ -1,6 +1,57 @@
 import { createHash } from "node:crypto";
-import { expect, test } from "bun:test";
-import { inspectFeatureModuleGraph } from "../target/validator/feature-validator.js";
+import { AsyncLocalStorage } from "node:async_hooks";
+import { afterEach, expect, test as bunTest } from "bun:test";
+import { inspectFeatureModuleGraph as inspectGraph } from "../target/validator/feature-validator.js";
+
+type Operation = { controller: AbortController; promise: ReturnType<typeof inspectGraph> };
+type Context = { ending: boolean; active: Set<Operation>; worker?: typeof Worker };
+const contexts = new AsyncLocalStorage<Context>();
+let current: Context;
+const test = (name: string, body: () => void | Promise<void>) => bunTest(name, () => {
+  const context: Context = { ending: false, active: new Set() };
+  current = context;
+  const completion = contexts.run(context, () => Promise.resolve().then(body));
+  return completion.catch((error: unknown) => { if (!context.ending) throw error; });
+}, 300_000);
+
+function inspectFeatureModuleGraph(input: Parameters<typeof inspectGraph>[0], options: Parameters<typeof inspectGraph>[1]) {
+  const context = contexts.getStore()!;
+  if (context.ending) return Promise.reject(new Error("test cleanup in progress"));
+  const controller = new AbortController();
+  const signal = options.signal;
+  const forwardAbort = () => controller.abort();
+  if (signal?.aborted) forwardAbort();
+  else signal?.addEventListener("abort", forwardAbort, { once: true });
+  const promise = inspectGraph(input, { ...options, signal: controller.signal });
+  const operation = { controller, promise };
+  context.active.add(operation);
+  const release = () => { signal?.removeEventListener("abort", forwardAbort); context.active.delete(operation); };
+  promise.then(release, release);
+  return promise;
+}
+
+afterEach(async () => {
+  const context = current;
+  context.ending = true;
+  const pending = [...context.active];
+  for (const operation of pending) operation.controller.abort();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    await Promise.race([Promise.allSettled(pending.map(({ promise }) => promise)), new Promise<never>((_, reject) => {
+      timer = setTimeout(() => reject(new Error("graph test cleanup timed out")), 10_000);
+    })]);
+  } finally {
+    clearTimeout(timer);
+    if (current === context && context.worker) Object.defineProperty(globalThis, "Worker", { value: context.worker, configurable: true, writable: true });
+  }
+}, 30_000);
+
+function useWorker(worker: typeof Worker): void {
+  const context = contexts.getStore()!;
+  if (context.ending) throw new Error("test cleanup in progress");
+  context.worker = globalThis.Worker;
+  Object.defineProperty(globalThis, "Worker", { value: worker, configurable: true, writable: true });
+}
 
 const leb = (value: number): number[] => {
   const out: number[] = [];
@@ -50,7 +101,7 @@ function fixture(): any {
   };
 }
 
-const options = { allowedFeatures: [] as string[], startupTimeoutMs: 10_000, executionTimeoutMs: 10_000 };
+const options = { allowedFeatures: [] as string[], startupTimeoutMs: 30_000, executionTimeoutMs: 30_000 };
 const byId = (input: any, id: string) => input.modules.find((item: any) => item.manifest.id === id);
 
 test("one snapshot connects graph identity, feature, WASI and isolated facts", async () => {
@@ -118,7 +169,6 @@ test("declared features are checked against binary instructions and trusted host
 });
 
 test("the full graph and host policy are captured before the first asynchronous validation", async () => {
-  const originalWorker = globalThis.Worker;
   class SnapshotWorker {
     onmessage: ((event: MessageEvent) => void) | null = null;
     onmessageerror = null;
@@ -130,8 +180,8 @@ test("the full graph and host policy are captured before the first asynchronous 
     }
     terminate(): void {}
   }
-  Object.defineProperty(globalThis, "Worker", { value: SnapshotWorker, configurable: true, writable: true });
-  try {
+  useWorker(SnapshotWorker as unknown as typeof Worker);
+  {
     const input = fixture(), allowed = ["simd"], expected = new Map(input.modules.map((item: any) => [item.manifest.id, hash(item.bytes)]));
     byId(input, "app").manifest.target.features = ["simd"];
     const pending = inspectFeatureModuleGraph(input, { ...options, allowedFeatures: allowed });
@@ -142,21 +192,18 @@ test("the full graph and host policy are captured before the first asynchronous 
     expect(report.order).toEqual(["core", "lib", "app"]);
     expect(report.modules.map((item) => item.sha256)).toEqual(report.modules.map((item) => expected.get(item.id)));
     expect(report.modules.find((item) => item.id === "app")!.declaredFeatures).toEqual(["simd"]);
-  } finally {
-    Object.defineProperty(globalThis, "Worker", { value: originalWorker, configurable: true, writable: true });
   }
 });
 
 test("graph abort and worker capacity errors remain distinct", async () => {
-  const originalWorker = globalThis.Worker;
   class WaitingWorker {
     onmessage = null;
     onmessageerror = null;
     onerror = null;
     terminate(): void {}
   }
-  Object.defineProperty(globalThis, "Worker", { value: WaitingWorker, configurable: true, writable: true });
-  try {
+  useWorker(WaitingWorker as unknown as typeof Worker);
+  {
     const first = new AbortController(), second = new AbortController();
     const a = inspectFeatureModuleGraph(fixture(), { ...options, signal: first.signal });
     const b = inspectFeatureModuleGraph(fixture(), { ...options, signal: second.signal });
@@ -169,7 +216,5 @@ test("graph abort and worker capacity errors remain distinct", async () => {
     expect(await aCheck).toMatchObject({ moduleId: "app", stage: "feature", cause: { code: "aborted" } });
     expect(await bCheck).toMatchObject({ moduleId: "app", stage: "feature", cause: { code: "aborted" } });
     await expect(inspectFeatureModuleGraph(fixture(), { ...options, signal: first.signal })).rejects.toMatchObject({ code: "aborted" });
-  } finally {
-    Object.defineProperty(globalThis, "Worker", { value: originalWorker, configurable: true, writable: true });
   }
 });

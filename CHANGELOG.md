@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+- TypeScript numeric-v1 environments with one app, library dependencies, and managed lifecycle.
 - TypeScript module graph inspection for feature policy, WASI signatures, and isolated resource topology.
 - Optional relocatable TypeScript feature validator SDK with bounded Worker execution and recorded dependency notices.
 - Internal TypeScript feature validation Worker with explicit policies and execution deadlines.

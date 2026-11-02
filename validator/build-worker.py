@@ -20,6 +20,7 @@ INPUTS = (
     "bindings/typescript/src/feature-validator-worker.ts",
     "bindings/typescript/src/feature-validator.ts",
     "bindings/typescript/src/feature-validator-policy.ts",
+    "bindings/typescript/src/numeric-environment.ts",
     "bindings/typescript/src/wasm-facts.ts",
     "bindings/typescript/src/module-graph.ts",
     "bindings/typescript/src/module-manifest.ts",
@@ -225,13 +226,15 @@ def build(output, sdk=False):
                 subprocess.run(["bun", tsc, "--project", "tsconfig.feature-validator.json", "--noEmit", "false",
                                 "--declaration", "--emitDeclarationOnly", "--outDir", types], cwd=stage, check=True)
                 text = (types / "bindings/typescript/src/feature-validator.d.ts").read_text()
-                dependencies = ("module-manifest", "isolated-resources", "wasi-preview1")
+                dependencies = ("module-manifest", "isolated-resources", "wasi-preview1", "numeric-environment")
                 for name in dependencies:
                     text = text.replace(f'from "./{name}.ts"', f'from "./types/bindings/typescript/src/{name}.ts"')
                 for line in text.splitlines():
-                    if line.startswith("import ") and not re.fullmatch(r'import (?:type )?\{[^{}]+\} from "\./types/bindings/typescript/src/(?:module-manifest|isolated-resources|wasi-preview1)\.ts";', line):
+                    if line.startswith("import ") and not re.fullmatch(r'import (?:type )?\{[^{}]+\} from "\./types/bindings/typescript/src/(?:module-manifest|isolated-resources|wasi-preview1|numeric-environment)\.ts";', line):
                         raise ValueError("feature declaration contains an unresolved import")
-                for name in ("module-manifest", "wasm-facts", "isolated-resources", "wasi-preview1"):
+                    if line.startswith("export type ") and " from " in line and not re.fullmatch(r'export type \{ NumericEnvironment, NumericEnvironmentOptions \} from "\./types/bindings/typescript/src/numeric-environment\.ts";', line):
+                        raise ValueError("feature declaration contains an unresolved export")
+                for name in ("module-manifest", "wasm-facts", "isolated-resources", "wasi-preview1", "numeric-environment"):
                     path = f"types/bindings/typescript/src/{name}.d.ts"
                     type_dependencies[path] = (stage / path).read_bytes()
                 declaration = text.encode()

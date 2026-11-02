@@ -103,7 +103,7 @@ class ValidatorNoticesTest(unittest.TestCase):
 
         def changed(path):
             result = real_contents(path)
-            if Path(path) != self.materials:
+            if Path(path).resolve() != self.materials.resolve():
                 self.license.write_bytes(b"changed during collection")
             return result
 

@@ -47,7 +47,8 @@ def check_result(result, core_sha, identity):
             or result["coreDenied"] != "module-rejected" or result["simdStatus"] != "passed"
             or result["simdDenied"] != "module-rejected" or result["policyDenied"] != "policy"
             or result["aborted"] != "aborted" or not result["knownFeatures"] or not result["rootExport"]
-            or result["graphOrder"] != ["core", "lib", "app"] or result["graphChecks"] != [graph_checks] * 3):
+            or result["graphOrder"] != ["core", "lib", "app"] or result["graphChecks"] != [graph_checks] * 3
+            or result["numericResult"] != 7 or result["numericState"] != "closed"):
         raise ValueError(f"unexpected feature SDK result: {result}")
 
 
@@ -106,7 +107,7 @@ def check_tampering(moved, work):
         else:
             raise ValueError("modified feature declaration dependency passed SDK identity verification")
 
-    for selected in (b"module-manifest", None, b"comments", b"block"):
+    for selected in (b"module-manifest", None, b"comments", b"block", b"numeric", b"numeric-block"):
         shutil.rmtree(altered)
         shutil.copytree(moved, altered)
         readonly(altered, False)
@@ -117,7 +118,11 @@ def check_tampering(moved, work):
         identity = json.loads(identity_path.read_bytes())
         declaration = typescript / "feature-validator.d.ts"
         lines = declaration.read_bytes().splitlines(keepends=True)
-        if selected == b"block":
+        if selected == b"numeric":
+            updated = b"".join(line for line in lines if not (line.startswith(b"export type ") and b"numeric-environment" in line))
+        elif selected == b"numeric-block":
+            updated = b"".join(b"/*\n" + line + b"*/\n" if line.startswith(b"export type ") and b"numeric-environment" in line else line for line in lines)
+        elif selected == b"block":
             imports = b"".join(line for line in lines if line.startswith(b"import "))
             updated = b"/*\n" + imports + b"*/\n" + b"".join(line for line in lines if not line.startswith(b"import "))
         elif selected == b"comments":
@@ -139,7 +144,7 @@ def check_tampering(moved, work):
         try:
             verify_feature_validator(typescript, manifest["feature_validator"])
         except ValueError as error:
-            if "declaration import" not in str(error):
+            if not any(part in str(error) for part in ("declaration import", "declaration dependencies", "numeric declaration")):
                 raise
         else:
             raise ValueError("incomplete feature declaration imports passed SDK verification")
