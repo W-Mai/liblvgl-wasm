@@ -1,0 +1,7 @@
+cmake_minimum_required(VERSION 3.25)
+project(lvgl_multimodule LANGUAGES C CXX)
+find_package(liblvgl-wasm CONFIG REQUIRED)
+add_executable(lv_provider provider.c)
+target_link_libraries(lv_provider PRIVATE lvw::bridge)
+target_link_options(lv_provider PRIVATE -mexec-model=reactor -Wl,--no-entry -Wl,--export-memory -Wl,--max-memory=268435456)
+set_target_properties(lv_provider PROPERTIES SUFFIX .wasm LINKER_LANGUAGE CXX)

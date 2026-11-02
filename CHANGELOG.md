@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+- C multi-module example with a statically linked LVGL provider and isolated numeric app.
 - Trusted WASI Preview 1 services for numeric environments with per-consumer memory binding and bounded output.
 - TypeScript numeric-v1 environments with one app, library dependencies, and managed lifecycle.
 - TypeScript module graph inspection for feature policy, WASI signatures, and isolated resource topology.

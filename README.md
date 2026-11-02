@@ -309,6 +309,14 @@ An optional `wasi` configuration enables an explicitly authorized Preview 1 prov
 
 `clock_time_get` requires explicit `clock.realtimeNs` and `clock.monotonicNs` bigint values. `proc_exit` throws `NumericWasiExit` with the unsigned exit code and poisons the environment. Output sink failures and guest traps also poison the environment; already emitted output is not rolled back. WASI services outside the authorized subset, invalid signatures and mismatched provider bindings are rejected before guest execution.
 
+The C multi-module example builds an LVGL provider and a separate numeric app from an exported NDK:
+
+```sh
+python3 -B examples/c/multimodule/build.py --ndk target/ndk
+```
+
+The output is `target/examples/c/multimodule/lv_provider.wasm` and `lv_app.wasm`. The provider statically links LVGL, creates its own display and bar, and exposes numeric operations and pixel checks; the app calls those operations without passing pointers between instances. The example requires the bar widget and XRGB8888 software drawing. The SDK acceptance test uses the default NDK, runs two environments, and checks lifecycle order, independent bar values, and rendered pixels; other NDK configurations have not been validated by this test. LVGL callback imports in this example reject calls; the example does not implement cross-module pointer or callback forwarding. The Rust multi-module host has not been implemented.
+
 `inspectWasiPreview1(bytes)` checks observed `wasi_snapshot_preview1` imports against the 46 WASI Preview 1 wasm32 function signatures and reports the snapshot SHA-256. Unknown names, non-function imports, mismatched signatures, `wasi_unstable`, and `wasi:` namespaces are rejected. If `_initialize` or `_start` is exported, it must have the signature `() -> ()`; a Wasm start section is reported separately. The snapshot is compiled in the current JavaScript engine without instantiation.
 
 An `absent` result means that no WASI Preview 1 import was observed; it does not establish the module's target ABI. A `present` result verifies the observed import signatures only. The browser host implements a subset of these functions, independently of the ABI signature table. Target provenance, feature detection, host implementation and runtime checks remain `not-run`.

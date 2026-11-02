@@ -75,8 +75,8 @@ jobs:
           python3 -B toolchains/lvw.py export-package --cache "$RUNNER_TEMP/lvw-tools" \
             --output target/feature-package --with-validator --json
           python3 -B toolchains/lvw.py verify-package --package target/feature-package --json
-          python3 -B validator/wasi-numeric-fixtures.py
-          python3 -B tests/feature_sdk_consumer.py target/feature-package/host-sdk --chromium "$LVW_TEST_BROWSER"
+          python3 -B tests/feature_sdk_consumer.py target/feature-package/host-sdk \
+            --ndk target/feature-package/ndk --chromium "$LVW_TEST_BROWSER"
       - name: Archive package
         run: |
           archive="liblvgl-wasm-${GITHUB_SHA}.tar.gz"

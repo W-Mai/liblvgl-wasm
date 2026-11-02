@@ -50,7 +50,10 @@ def check_result(result, core_sha, identity):
             or result["graphOrder"] != ["core", "lib", "app"] or result["graphChecks"] != [graph_checks] * 3
             or result["numericResult"] != 7 or result["numericState"] != "closed"
             or result["wasiResult"] != 6 or result["wasiState"] != "closed"
-            or result["wasiOutput"] != ["c:2:ci", "c:1:C!", "c:2:ce"] or not result["wasiIdentity"] or not result["wasiExit"]):
+            or result["wasiOutput"] != ["c:2:ci", "c:1:C!", "c:2:ce"] or not result["wasiIdentity"] or not result["wasiExit"]
+            or result["lvgl"] != {"values": [37, 81, 37, 81, 0x336699, 0x336699, -1], "green": [16, 48],
+                                   "environments": 2, "lifecycle": [10, 20, 10, 20, 21, 11, 21, 11], "callbacks": 0, "outputBytes": 0,
+                                   "survivesClose": 81, "closedRejected": True}):
         raise ValueError(f"unexpected feature SDK result: {result}")
 
 
@@ -269,11 +272,18 @@ def check_tampering(moved, work):
         raise ValueError("oversized feature bundle passed SDK verification")
 
 
-def check(sdk, chromium=None):
+def check(sdk, ndk, chromium=None):
     sdk = Path(sdk).resolve(strict=True)
+    ndk = Path(ndk).resolve(strict=True)
+    run(sys.executable, "-B", ROOT / "validator/wasi-numeric-fixtures.py")
+    run(sys.executable, "-B", ROOT / "examples/c/multimodule/build.py", "--ndk", ndk)
     wasi = ROOT / "target/validator/wasi-numeric-fixtures/c-app.wasm"
     if not wasi.is_file():
         raise ValueError("missing WASI fixture; run validator/wasi-numeric-fixtures.py")
+    examples = ROOT / "target/examples/c/multimodule"
+    lv_provider, lv_app = examples / "lv_provider.wasm", examples / "lv_app.wasm"
+    if not lv_provider.is_file() or not lv_app.is_file():
+        raise ValueError("missing LVGL numeric example; run examples/c/multimodule/build.py")
     with tempfile.TemporaryDirectory(prefix="lvw feature sdk ") as temporary:
         work = Path(temporary)
         moved = work / "moved package"
@@ -318,7 +328,7 @@ def check(sdk, chromium=None):
             (project / "package.json").write_text('{"type":"module"}\n')
             (project / "node_modules").mkdir()
             (project / "node_modules/liblvgl-wasm").symlink_to(typescript, target_is_directory=True)
-            for name in ("consumer.ts", "browser-worker.ts"):
+            for name in ("consumer.ts", "browser-worker.ts", "lvgl-module.ts"):
                 shutil.copyfile(ROOT / "tests/fixtures/feature-sdk" / name, project / name)
             for mode in ("Bundler", "NodeNext"):
                 config = {"compilerOptions": {"target": "ES2022", "strict": True, "noEmit": True,
@@ -328,12 +338,12 @@ def check(sdk, chromium=None):
                 run("bun", ROOT / "node_modules/typescript/bin/tsc", "--project", project / "tsconfig.json")
             (project / "runner.ts").write_text('''globalThis.fetch = (() => { throw new Error("network is unavailable"); }) as typeof fetch;
 const { exercise } = await import("./consumer.ts");
-const result = await exercise(await Bun.file(Bun.argv[2]!).arrayBuffer(), await Bun.file(Bun.argv[3]!).arrayBuffer());
+const result = await exercise(await Bun.file(Bun.argv[2]!).arrayBuffer(), await Bun.file(Bun.argv[3]!).arrayBuffer(), await Bun.file(Bun.argv[4]!).arrayBuffer(), await Bun.file(Bun.argv[5]!).arrayBuffer());
 console.log(JSON.stringify(result));
 ''')
             core = moved / "runtime/liblvgl.wasm"
             core_sha = hashlib.sha256(core.read_bytes()).hexdigest()
-            result = subprocess.run(["bun", "runner.ts", core, wasi], cwd=project, check=True, capture_output=True, text=True)
+            result = subprocess.run(["bun", "runner.ts", core, wasi, lv_provider, lv_app], cwd=project, check=True, capture_output=True, text=True)
             check_result(json.loads(result.stdout), core_sha, identity)
 
             packable = work / "packable typescript"
@@ -370,7 +380,7 @@ console.log(JSON.stringify(result));
                 noble = archive.extractfile("package/LICENSE-noble-hashes.txt").read()
                 if hashlib.sha256(noble).hexdigest() != notice_manifest["noble"]["license_sha256"]:
                     raise ValueError("packed noble license identity differs")
-            browser = run_browser(project, moved, work, chromium, wasi) if chromium else None
+            browser = run_browser(project, moved, work, chromium, wasi, lv_provider, lv_app) if chromium else None
             if browser is not None:
                 if browser.get("hasSubtle") is not False:
                     raise ValueError("browser worker did not use an opaque origin")
@@ -385,6 +395,7 @@ console.log(JSON.stringify(result));
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("sdk")
+    parser.add_argument("--ndk", required=True)
     parser.add_argument("--chromium")
     args = parser.parse_args()
-    check(args.sdk, args.chromium)
+    check(args.sdk, args.ndk, args.chromium)
