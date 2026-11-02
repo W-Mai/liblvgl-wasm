@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+- TypeScript inspection of WASI Preview 1 import signatures and entrypoint types.
 - Isolated Wasm resource topology inspection for owned memories, tables, and instance boundaries.
 - TypeScript module manifest identity, declaration, and provider interface validation.
 - TypeScript Wasm declaration inspection with binary identity, indexed types, and bounded parsing.

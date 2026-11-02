@@ -1,4 +1,4 @@
-import { LvglRuntime, LV_COLOR_T_SIZE, LV_PART_MAIN, inspectIsolatedResources, inspectWasmFacts, orderModuleGraph, validateModuleManifests, type UnsafePointer } from "liblvgl-wasm";
+import { LvglRuntime, LV_COLOR_T_SIZE, LV_PART_MAIN, inspectIsolatedResources, inspectWasiPreview1, inspectWasmFacts, orderModuleGraph, validateModuleManifests, type UnsafePointer } from "liblvgl-wasm";
 
 export async function exercise(bytes: ArrayBuffer, otherCore: ArrayBuffer, bitmap: Uint8Array) {
   const order = orderModuleGraph({ hostProviders: [], modules: [
@@ -22,6 +22,10 @@ export async function exercise(bytes: ArrayBuffer, otherCore: ArrayBuffer, bitma
     throw new Error("Invalid module manifest report");
   }
   const facts = inspectWasmFacts(bytes);
+  const wasi = inspectWasiPreview1(bytes);
+  if (wasi.sha256 !== facts.sha256 || wasi.checks.engine !== "passed" || wasi.checks.targetProvenance !== "not-run") {
+    throw new Error("Invalid WASI Preview 1 report");
+  }
   const runtime = await LvglRuntime.load(bytes);
   if (facts.sha256 !== runtime.identity.coreSha256) throw new Error("Wasm facts identity mismatch");
   const raw = runtime.unsafe;

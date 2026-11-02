@@ -18,6 +18,8 @@ export { validateModuleManifests, MODULE_MANIFEST_LIMITS } from "./module-manife
 export type { ModuleExternalType, ModuleExport, ModuleImport, ModuleInterface, ModuleManifest, ModuleHostProvider, ModuleManifestInput, ModuleManifestReport } from "./module-manifest.ts";
 export { inspectIsolatedResources } from "./isolated-resources.ts";
 export type { IsolatedResourceReport } from "./isolated-resources.ts";
+export { inspectWasiPreview1, WASI_PREVIEW1_IMPORT_NAMES } from "./wasi-preview1.ts";
+export type { WasiPreview1Report } from "./wasi-preview1.ts";
 export type { AnimationCallbacks, ObserverCallback };
 export type { ImageDecoderCallbacks, DecoderView, DecoderOutput } from "./decoder.ts";
 export type { UnsafeFunctionPointer, UnsafeLvglApi, UnsafePointer };
