@@ -234,8 +234,15 @@ function pairMap<T>(map: Map<string, Map<string, T>>, first: string, second: str
 }
 function location(id: string, module: string, name: string): string { return `${JSON.stringify(id)} import ${JSON.stringify(module)}.${JSON.stringify(name)}`; }
 
-/** Inspect static module declarations and compile their private byte snapshots without instantiating them. */
-export function validateModuleManifests(input: ModuleManifestInput): ModuleManifestReport {
+/** @internal A graph and the snapshots owned by its current inspection. */
+export interface PreparedModuleGraph {
+  readonly order: readonly string[];
+  readonly hosts: readonly ModuleHostProvider[];
+  readonly modules: readonly { readonly manifest: ModuleManifest; readonly bytes: Uint8Array<ArrayBuffer>; readonly facts: WasmFacts }[];
+}
+
+/** @internal Inspect the graph and retain its private input snapshots. */
+export function prepareModuleManifests(input: ModuleManifestInput): PreparedModuleGraph {
   const budget: Budget = { entries: 0, stringUnits: 0 };
   const root = object(input, ["modules", "hosts"], "environment");
   const moduleInputs = list(root.modules, budget, "environment.modules");
@@ -325,10 +332,21 @@ export function validateModuleManifests(input: ModuleManifestInput): ModuleManif
       if (!matches) return fail(`${location(current.id, item.module, item.name)} -> ${JSON.stringify(requirement.provider)} export ${JSON.stringify(item.provider_export)}: type mismatch; expected ${descriptorKey(item)}, actual ${actualKey}`);
     }
   }
-  for (const record of records) {
-    try { new WasmModule(record.bytes); } catch (error) { return fail(`${JSON.stringify(record.manifest.id)}: current engine compilation failed: ${String(error)}`); }
+  return { order, hosts, modules: records.map((record) => ({ ...record, facts: factsById.get(record.manifest.id)! })) };
+}
+
+/** @internal Compile the same snapshots without instantiating them. */
+export function compilePreparedModules(prepared: PreparedModuleGraph): void {
+  for (const record of prepared.modules) {
+    try { new WasmModule(record.bytes); } catch (error) { fail(`${JSON.stringify(record.manifest.id)}: current engine compilation failed: ${String(error)}`); }
   }
-  return { order, modules: records.map(({ manifest: current }) => ({ id: current.id, facts: factsById.get(current.id)!, checks: {
+}
+
+/** Inspect static module declarations and compile their private byte snapshots without instantiating them. */
+export function validateModuleManifests(input: ModuleManifestInput): ModuleManifestReport {
+  const prepared = prepareModuleManifests(input);
+  compilePreparedModules(prepared);
+  return { order: prepared.order, modules: prepared.modules.map(({ manifest: current, facts }) => ({ id: current.id, facts, checks: {
     declaration: "passed", identity: "passed", interface: "passed", engine: "passed", feature: "not-run", abi: "not-run",
     memoryIsolation: "not-run", hostImplementation: "not-run", runtime: "not-run",
   } })) };

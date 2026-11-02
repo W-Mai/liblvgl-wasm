@@ -43,6 +43,21 @@ export function inspectIsolatedResources(input: BufferSource): IsolatedResourceR
 /** @internal Inspect a snapshot owned by the caller for the entire synchronous call. */
 export function inspectIsolatedSnapshot(snapshot: Uint8Array<ArrayBuffer>): IsolatedResourceReport {
   const facts = inspectWasmSnapshot(snapshot);
+  const topology = inspectIsolatedFacts(facts);
+  try { new WasmModule(snapshot); } catch (error) { throw new Error(`current engine compilation failed: ${String(error)}`); }
+  return {
+    sha256: facts.sha256,
+    ...topology,
+    checks: {
+      resourceTopology: "passed", engine: "passed", feature: "not-run", wasiAbi: "not-run",
+      pointerContracts: "not-run", handleIsolation: "not-run", environmentIsolation: "not-run",
+      hostImplementation: "not-run", lifecycle: "not-run",
+    },
+  };
+}
+
+/** @internal Check topology against facts from a private snapshot. */
+export function inspectIsolatedFacts(facts: WasmFacts): Pick<IsolatedResourceReport, "memories" | "tables" | "usesWasi"> {
   if (facts.start !== null) throw new Error("isolated module cannot have a start section");
   const references = new Map<number, boolean>();
   for (const item of facts.imports) {
@@ -61,16 +76,5 @@ export function inspectIsolatedSnapshot(snapshot: Uint8Array<ArrayBuffer>): Isol
   if (usesWasi && (facts.memories.length !== 1 || !facts.exports.some((item) => item.kind === "memory" && item.name === "memory" && item.index === 0))) {
     throw new Error("isolated WASI module must export its own memory as memory");
   }
-  try { new WasmModule(snapshot); } catch (error) { throw new Error(`current engine compilation failed: ${String(error)}`); }
-  return {
-    sha256: facts.sha256,
-    memories: facts.memories.length,
-    tables: facts.tables.length,
-    usesWasi,
-    checks: {
-      resourceTopology: "passed", engine: "passed", feature: "not-run", wasiAbi: "not-run",
-      pointerContracts: "not-run", handleIsolation: "not-run", environmentIsolation: "not-run",
-      hostImplementation: "not-run", lifecycle: "not-run",
-    },
-  };
+  return { memories: facts.memories.length, tables: facts.tables.length, usesWasi };
 }

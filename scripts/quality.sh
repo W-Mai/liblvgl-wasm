@@ -27,7 +27,7 @@ wasm-tools validate --features=wasm1,bulk-memory,reference-types,sign-extension 
 bun run test
 python3 -B validator/fixtures.py
 bun test validator/feature-validator.test.ts
-bun test validator/feature-worker.test.ts validator/feature-worker-live.test.ts
+bun test validator/feature-worker.test.ts validator/feature-worker-live.test.ts validator/feature-graph.test.ts
 bun test validator/feature-sdk.test.ts
 python3 -B validator/build-data.test.py
 python3 -B validator/build-helper.test.py

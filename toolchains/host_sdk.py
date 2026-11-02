@@ -13,6 +13,10 @@ import sys
 import tempfile
 from pathlib import Path
 
+FEATURE_GRAPH_TYPE_DEPENDENCIES = {f"types/bindings/typescript/src/{name}.d.ts" for name in
+                                   ("module-manifest", "wasm-facts", "isolated-resources", "wasi-preview1")}
+LEGACY_FEATURE_BUILDER_SHA256 = "efee79b5e5055e03e74fdc1b4f53d8792b69b4f6eea1bbfd15a0c0f0fa306816"
+
 
 def read_limited(path, limit):
     flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
@@ -139,6 +143,15 @@ def build_feature_validator(project, typescript, validator, run):
             if not isinstance(expected, str) or not re.fullmatch(r"[0-9a-f]{64}", expected) or hashlib.sha256(value).hexdigest() != expected:
                 raise ValueError(f"feature validator artifact identity mismatch: {name}")
             artifacts[name] = value
+        dependencies = identity.get("typeDependencies")
+        if not isinstance(dependencies, dict) or set(dependencies) != FEATURE_GRAPH_TYPE_DEPENDENCIES:
+            raise ValueError("feature validator declaration dependencies are incomplete")
+        for name, expected in dependencies.items():
+            value = read_limited(staged / name, 1024 * 1024)
+            if (not isinstance(expected, str) or hashlib.sha256(value).hexdigest() != expected
+                    or read_limited(typescript / name, 1024 * 1024) != value):
+                raise ValueError(f"feature validator declaration dependency differs: {name}")
+            artifacts[name] = value
         hidden_roots = {str(project.resolve()), str(Path.home().resolve()), str(Path(temporary).resolve()), str(Path.cwd().resolve())}
         for name in ("CARGO_HOME", "RUSTUP_HOME", "TMPDIR"):
             if os.environ.get(name):
@@ -191,6 +204,30 @@ def verify_feature_validator(typescript, expected, source=None):
     if (hashlib.sha256(bundle).hexdigest() != identity.get("bundleSha256")
             or hashlib.sha256(types).hexdigest() != identity.get("typesSha256")):
         raise ValueError("feature validator bundle or types identity mismatch")
+    graph_types = set()
+    for index, line in enumerate(types.splitlines()):
+        if line.startswith(b"import "):
+            if index != len(graph_types):
+                raise ValueError("invalid feature validator declaration import")
+            match = re.fullmatch(rb'import (?:type )?\{[^{}]+\} from "\./types/bindings/typescript/src/(module-manifest|isolated-resources|wasi-preview1)\.ts";', line)
+            if match is None:
+                raise ValueError("invalid feature validator declaration import")
+            name = match.group(1).decode()
+            if name in graph_types:
+                raise ValueError("duplicate feature validator declaration import")
+            graph_types.add(name)
+            read_limited(typescript / f"types/bindings/typescript/src/{name}.d.ts", 1024 * 1024)
+    dependencies = identity.get("typeDependencies")
+    if graph_types:
+        if graph_types != {"module-manifest", "isolated-resources", "wasi-preview1"}:
+            raise ValueError("feature validator declaration imports are incomplete")
+        if not isinstance(dependencies, dict) or set(dependencies) != FEATURE_GRAPH_TYPE_DEPENDENCIES:
+            raise ValueError("feature validator declaration dependencies are incomplete")
+        for name, digest in dependencies.items():
+            if not isinstance(digest, str) or hashlib.sha256(read_limited(typescript / name, 1024 * 1024)).hexdigest() != digest:
+                raise ValueError(f"feature validator declaration dependency differs: {name}")
+    elif dependencies is not None:
+        raise ValueError("unexpected feature validator declaration dependencies")
     matches = re.findall(rb'["\']([A-Za-z0-9+/]{4096,}={0,2})["\']', bundle)
     if len(matches) != 1:
         raise ValueError("feature validator embedded helper is not unique")
@@ -283,6 +320,8 @@ def verify_feature_validator(typescript, expected, source=None):
                 if len(validator_files) > 4096:
                     raise ValueError("feature validator source inventory exceeds limit")
     worker_files = set(contracts["build-worker"].INPUTS)
+    graph_worker_files = {f"bindings/typescript/src/{name}.ts" for name in
+                          ("module-graph", "module-manifest", "isolated-resources", "wasi-preview1")}
     for files_key, tree_key, prefix in (("files", "treeSha256", "validator"),
                                         ("workerFiles", "workerTreeSha256", "")):
         entries = source_identity.get(files_key)
@@ -292,8 +331,13 @@ def verify_feature_validator(typescript, expected, source=None):
         if files_key == "files" and ((source is not None and names != validator_files)
                                       or (source is None and not validator_files <= names)):
             raise ValueError("feature validator source inventory is incomplete")
-        if files_key == "workerFiles" and names != worker_files:
-            raise ValueError("feature validator source inventory is incomplete")
+        if files_key == "workerFiles":
+            if names == worker_files:
+                if not graph_types:
+                    raise ValueError("feature validator declaration imports are incomplete")
+            elif (names != worker_files - graph_worker_files or graph_types
+                  or entries.get("validator/build-worker.py") != LEGACY_FEATURE_BUILDER_SHA256):
+                raise ValueError("feature validator source inventory is incomplete")
         tree = hashlib.sha256(json.dumps(entries, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
         if tree != source_identity.get(tree_key):
             raise ValueError("feature validator source tree identity mismatch")

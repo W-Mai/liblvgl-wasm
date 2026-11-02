@@ -1,6 +1,9 @@
 import { FEATURE_MASKS, HELPER_SHA256, POLICY_VERSION } from "../../../target/validator/generated/helper-data.ts";
 import { FEATURE_WORKER_SOURCE } from "../../../target/validator/generated/worker-source.ts";
 import { snapshotWasmBytes } from "./wasm-facts.ts";
+import { compilePreparedModules, prepareModuleManifests, type ModuleManifestInput } from "./module-manifest.ts";
+import { inspectIsolatedFacts, type IsolatedResourceReport } from "./isolated-resources.ts";
+import { inspectWasiFacts, type WasiPreview1Report } from "./wasi-preview1.ts";
 
 export type FeatureValidationErrorCode = "policy" | "invalid-input" | "input-limit" | "busy" | "aborted" | "timeout" | "worker-unavailable" | "helper-failed" | "reserve-failed" | "module-rejected";
 
@@ -28,8 +31,43 @@ export interface FeatureValidationReport {
   readonly checks: { readonly engine: "not-run"; readonly wasiAbi: "not-run"; readonly resourceTopology: "not-run"; readonly runtime: "not-run" };
 }
 
+export interface FeatureModuleGraphOptions {
+  readonly allowedFeatures: readonly string[];
+  readonly startupTimeoutMs: number;
+  readonly executionTimeoutMs: number;
+  readonly signal?: AbortSignal;
+}
+
+export interface FeatureModuleGraphReport {
+  readonly order: readonly string[];
+  readonly helperSha256: string;
+  readonly policyVersion: number;
+  readonly modules: readonly {
+    readonly id: string;
+    readonly sha256: string;
+    readonly declaredFeatures: readonly string[];
+    readonly wasi: Pick<WasiPreview1Report, "evidence" | "imports" | "entrypoints">;
+    readonly isolated: Pick<IsolatedResourceReport, "memories" | "tables" | "usesWasi">;
+    readonly checks: {
+      readonly declaration: "passed"; readonly identity: "passed"; readonly interface: "passed";
+      readonly feature: "passed"; readonly wasiAbi: "passed" | "not-observed"; readonly resourceTopology: "passed";
+      readonly engine: "passed"; readonly targetProvenance: "not-run"; readonly pointerContracts: "not-run";
+      readonly handleIsolation: "not-run"; readonly environmentIsolation: "not-run";
+      readonly hostImplementation: "not-run"; readonly lifecycle: "not-run"; readonly runtime: "not-run";
+    };
+  }[];
+}
+
+export class FeatureModuleGraphError extends Error {
+  constructor(readonly moduleId: string, readonly stage: "feature" | "wasi" | "resource", cause: unknown) {
+    super(`${JSON.stringify(moduleId)}: ${stage} inspection failed: ${String(cause)}`, { cause });
+    this.name = "FeatureModuleGraphError";
+  }
+}
+
 const MAX_WORKERS = 2;
 let activeWorkers = 0;
+let activeGraphs = 0;
 /** Optional names accepted by the feature policy validator. This list does not describe engine support. */
 export const WASM_FEATURE_POLICY_NAMES: readonly string[] = Object.freeze(Object.keys(FEATURE_MASKS));
 const signalAborted = Object.getOwnPropertyDescriptor(AbortSignal.prototype, "aborted")!.get!;
@@ -56,6 +94,62 @@ function deadline(value: number, label: string): number {
     throw new FeatureValidationError("policy", `invalid ${label} deadline`);
   }
   return value;
+}
+
+/** Inspect a module graph without instantiating it. The report is not an authorization to load the graph. */
+export async function inspectFeatureModuleGraph(input: ModuleManifestInput, options: FeatureModuleGraphOptions): Promise<FeatureModuleGraphReport> {
+  if (activeGraphs >= MAX_WORKERS) throw new FeatureValidationError("busy", "module graph inspection concurrency limit reached");
+  activeGraphs++;
+  try {
+    const prepared = prepareModuleManifests(input);
+    if (!Array.isArray(options.allowedFeatures) || options.allowedFeatures.length > WASM_FEATURE_POLICY_NAMES.length) {
+      throw new FeatureValidationError("policy", "invalid feature list");
+    }
+    const allowedFeatures = Object.freeze([...options.allowedFeatures]);
+    const allowed = featureMask(allowedFeatures, "host");
+    const startupTimeoutMs = deadline(options.startupTimeoutMs, "startup");
+    const executionTimeoutMs = deadline(options.executionTimeoutMs, "execution");
+    const signal = options.signal;
+    if (signal !== undefined) {
+      let aborted: boolean;
+      try { aborted = signalAborted.call(signal) as boolean; }
+      catch { throw new FeatureValidationError("invalid-input", "invalid abort signal"); }
+      if (aborted) throw new FeatureValidationError("aborted", "feature validation aborted");
+    }
+    const records = prepared.modules.map((record) => {
+      const id = record.manifest.id;
+      let isolated: Pick<IsolatedResourceReport, "memories" | "tables" | "usesWasi">;
+      let wasi: Pick<WasiPreview1Report, "evidence" | "imports" | "entrypoints">;
+      try { isolated = inspectIsolatedFacts(record.facts); }
+      catch (error) { throw new FeatureModuleGraphError(id, "resource", error); }
+      try { wasi = inspectWasiFacts(record.facts); }
+      catch (error) { throw new FeatureModuleGraphError(id, "wasi", error); }
+      try {
+        const declared = featureMask(record.manifest.target.features, "declared");
+        if ((declared & ~allowed) !== 0) throw new FeatureValidationError("policy", "declared feature is not allowed by the host");
+      } catch (error) { throw new FeatureModuleGraphError(id, "feature", error); }
+      return { record, isolated, wasi };
+    });
+    for (const { record } of records) {
+      try {
+        const feature = await validateWasmFeatures(record.bytes, { declaredFeatures: record.manifest.target.features,
+          allowedFeatures, startupTimeoutMs, executionTimeoutMs, signal });
+        if (feature.inputSha256 !== record.facts.sha256) throw new Error("feature validation snapshot identity mismatch");
+      } catch (error) { throw new FeatureModuleGraphError(record.manifest.id, "feature", error); }
+    }
+    if (signal && signalAborted.call(signal)) throw new FeatureValidationError("aborted", "feature validation aborted");
+    compilePreparedModules(prepared);
+    return { order: prepared.order, helperSha256: HELPER_SHA256, policyVersion: POLICY_VERSION,
+      modules: records.map(({ record, isolated, wasi }) => ({ id: record.manifest.id, sha256: record.facts.sha256,
+        declaredFeatures: record.manifest.target.features, wasi, isolated, checks: {
+          declaration: "passed", identity: "passed", interface: "passed", feature: "passed",
+          wasiAbi: wasi.evidence === "present" ? "passed" : "not-observed", resourceTopology: "passed", engine: "passed",
+          targetProvenance: "not-run", pointerContracts: "not-run", handleIsolation: "not-run", environmentIsolation: "not-run",
+          hostImplementation: "not-run", lifecycle: "not-run", runtime: "not-run",
+        } })) };
+  } finally {
+    activeGraphs--;
+  }
 }
 
 /** Validate an owned copy of the input against an explicit feature upper bound. This report does not authorize module loading. */

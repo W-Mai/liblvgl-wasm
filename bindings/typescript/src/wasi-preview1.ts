@@ -1,4 +1,4 @@
-import { inspectWasmSnapshot, snapshotWasmBytes, type WasmFunctionType, type WasmValueType } from "./wasm-facts.ts";
+import { inspectWasmSnapshot, snapshotWasmBytes, type WasmFacts, type WasmFunctionType, type WasmValueType } from "./wasm-facts.ts";
 
 const WasmModule = WebAssembly.Module;
 
@@ -59,6 +59,16 @@ function formatSignature(value: string): string {
 export function inspectWasiPreview1(input: BufferSource): WasiPreview1Report {
   const snapshot = snapshotWasmBytes(input);
   const facts = inspectWasmSnapshot(snapshot);
+  const result = inspectWasiFacts(facts);
+  try { new WasmModule(snapshot); } catch (error) { throw new Error(`current engine compilation failed: ${String(error)}`); }
+  return { sha256: facts.sha256, ...result, checks: {
+    importSignatures: result.evidence === "present" ? "passed" : "not-observed", engine: "passed",
+    targetProvenance: "not-run", feature: "not-run", hostImplementation: "not-run", runtime: "not-run",
+  } };
+}
+
+/** @internal Check WASI signatures against facts from a private snapshot. */
+export function inspectWasiFacts(facts: WasmFacts): Pick<WasiPreview1Report, "evidence" | "imports" | "entrypoints"> {
   const imports: string[] = [];
   const signatureCache = new Map<number, string>();
   const typeSignature = (index: number): string => {
@@ -93,10 +103,6 @@ export function inspectWasiPreview1(input: BufferSource): WasiPreview1Report {
     if (item.name === "_initialize") entrypoints.initialize = true;
     else entrypoints.start = true;
   }
-  try { new WasmModule(snapshot); } catch (error) { throw new Error(`current engine compilation failed: ${String(error)}`); }
   const evidence = imports.length ? "present" : "absent";
-  return { sha256: facts.sha256, evidence, imports, entrypoints, checks: {
-    importSignatures: evidence === "present" ? "passed" : "not-observed", engine: "passed",
-    targetProvenance: "not-run", feature: "not-run", hostImplementation: "not-run", runtime: "not-run",
-  } };
+  return { evidence, imports, entrypoints };
 }

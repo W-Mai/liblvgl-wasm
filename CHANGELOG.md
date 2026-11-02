@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+- TypeScript module graph inspection for feature policy, WASI signatures, and isolated resource topology.
 - Optional relocatable TypeScript feature validator SDK with bounded Worker execution and recorded dependency notices.
 - Internal TypeScript feature validation Worker with explicit policies and execution deadlines.
 - Standalone Wasm feature policy validator with bounded input and explicit host allowlists.

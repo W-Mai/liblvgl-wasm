@@ -7,6 +7,7 @@ import importlib.util
 import json
 import os
 from pathlib import Path
+import re
 import shutil
 import stat
 import subprocess
@@ -20,6 +21,10 @@ INPUTS = (
     "bindings/typescript/src/feature-validator.ts",
     "bindings/typescript/src/feature-validator-policy.ts",
     "bindings/typescript/src/wasm-facts.ts",
+    "bindings/typescript/src/module-graph.ts",
+    "bindings/typescript/src/module-manifest.ts",
+    "bindings/typescript/src/isolated-resources.ts",
+    "bindings/typescript/src/wasi-preview1.ts",
     "generator/wasm.py",
     "validator/build-worker.py",
     "validator/build-worker.sh",
@@ -214,12 +219,23 @@ def build(output, sdk=False):
             (generated / "worker-source.ts").write_text(worker_source)
             subprocess.run(["bun", tsc, "--project", "tsconfig.feature-validator.json"], cwd=stage, check=True)
             declaration = None
+            type_dependencies = {}
             if sdk:
                 types = stage / "types"
                 subprocess.run(["bun", tsc, "--project", "tsconfig.feature-validator.json", "--noEmit", "false",
                                 "--declaration", "--emitDeclarationOnly", "--outDir", types], cwd=stage, check=True)
-                declaration = (types / "bindings/typescript/src/feature-validator.d.ts").read_bytes()
-                if b"import " in declaration or b"target/validator" in declaration or os.fsencode(stage) in declaration or os.fsencode(ROOT) in declaration:
+                text = (types / "bindings/typescript/src/feature-validator.d.ts").read_text()
+                dependencies = ("module-manifest", "isolated-resources", "wasi-preview1")
+                for name in dependencies:
+                    text = text.replace(f'from "./{name}.ts"', f'from "./types/bindings/typescript/src/{name}.ts"')
+                for line in text.splitlines():
+                    if line.startswith("import ") and not re.fullmatch(r'import (?:type )?\{[^{}]+\} from "\./types/bindings/typescript/src/(?:module-manifest|isolated-resources|wasi-preview1)\.ts";', line):
+                        raise ValueError("feature declaration contains an unresolved import")
+                for name in ("module-manifest", "wasm-facts", "isolated-resources", "wasi-preview1"):
+                    path = f"types/bindings/typescript/src/{name}.d.ts"
+                    type_dependencies[path] = (stage / path).read_bytes()
+                declaration = text.encode()
+                if b"target/validator" in declaration or os.fsencode(stage) in declaration or os.fsencode(ROOT) in declaration:
                     raise ValueError("feature declaration contains an unresolved or local reference")
             bundle = stage / "feature-validator.js"
             bundle_meta = stage / "bundle-metafile.json"
@@ -250,7 +266,7 @@ def build(output, sdk=False):
                 helper_builder = importlib.util.module_from_spec(helper_spec)
                 helper_spec.loader.exec_module(helper_builder)
                 for prefix in (*helper_builder.path_prefixes(os.environ), str(stage)):
-                    if os.fsencode(prefix) in helper or os.fsencode(prefix) in bundle_bytes:
+                    if any(os.fsencode(prefix) in content for content in (helper, bundle_bytes, declaration, *type_dependencies.values())):
                         raise ValueError(f"feature SDK contains an unremapped build path: {prefix}")
                 worker_inputs = audit_metafile(worker_meta, stage, noble)
                 bundle_inputs = audit_metafile(bundle_meta, stage, noble)
@@ -260,12 +276,17 @@ def build(output, sdk=False):
                 (result / "feature-validator.js").write_bytes(bundle_bytes)
                 (result / "feature-validator.d.ts").write_bytes(declaration)
                 (result / "helper.wasm").write_bytes(helper)
+                for path, content in type_dependencies.items():
+                    destination = result / path
+                    destination.parent.mkdir(parents=True, exist_ok=True)
+                    destination.write_bytes(content)
                 identity = {
                     "schemaVersion": 1,
                     "helperSha256": digest,
                     "policyVersion": metadata["policyVersion"],
                     "bundleSha256": hashlib.sha256(bundle_bytes).hexdigest(),
                     "typesSha256": hashlib.sha256(declaration).hexdigest(),
+                    "typeDependencies": {path: hashlib.sha256(content).hexdigest() for path, content in type_dependencies.items()},
                     "sourceIdentity": sources,
                     "rustcVersion": compiler,
                     "rustcHost": host,

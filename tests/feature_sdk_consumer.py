@@ -37,12 +37,17 @@ def check_result(result, core_sha, identity):
     if "error" in result:
         raise ValueError(f"feature SDK worker failed: {result['error']}")
     report = result["report"]
+    graph_checks = {"declaration": "passed", "identity": "passed", "interface": "passed", "feature": "passed",
+                    "wasiAbi": "not-observed", "resourceTopology": "passed", "engine": "passed",
+                    "targetProvenance": "not-run", "pointerContracts": "not-run", "handleIsolation": "not-run",
+                    "environmentIsolation": "not-run", "hostImplementation": "not-run", "lifecycle": "not-run", "runtime": "not-run"}
     if (report["status"] != "passed" or report["inputSha256"] != core_sha
             or report["helperSha256"] != identity["helperSha256"] or report["policyVersion"] != identity["policyVersion"]
             or report["checks"] != {"engine": "not-run", "wasiAbi": "not-run", "resourceTopology": "not-run", "runtime": "not-run"}
             or result["coreDenied"] != "module-rejected" or result["simdStatus"] != "passed"
             or result["simdDenied"] != "module-rejected" or result["policyDenied"] != "policy"
-            or result["aborted"] != "aborted" or not result["knownFeatures"] or not result["rootExport"]):
+            or result["aborted"] != "aborted" or not result["knownFeatures"] or not result["rootExport"]
+            or result["graphOrder"] != ["core", "lib", "app"] or result["graphChecks"] != [graph_checks] * 3):
         raise ValueError(f"unexpected feature SDK result: {result}")
 
 
@@ -77,6 +82,67 @@ def check_tampering(moved, work):
             raise
     else:
         raise ValueError("altered embedded helper passed SDK identity verification")
+
+    for missing in (False, True):
+        shutil.rmtree(altered)
+        shutil.copytree(moved, altered)
+        readonly(altered, False)
+        typescript = altered / "typescript"
+        manifest_path = altered / "sdk.json"
+        manifest = json.loads(manifest_path.read_bytes())
+        dependency = typescript / "types/bindings/typescript/src/module-manifest.d.ts"
+        if missing:
+            dependency.unlink()
+        else:
+            dependency.write_bytes(dependency.read_bytes() + b"\n// changed\n")
+        inventory = file_inventory(altered)
+        inventory.pop("sdk.json")
+        manifest["files"] = inventory
+        manifest_path.write_text(json.dumps(manifest, indent=2) + "\n")
+        try:
+            verify_feature_validator(typescript, manifest["feature_validator"])
+        except (ValueError, FileNotFoundError):
+            pass
+        else:
+            raise ValueError("modified feature declaration dependency passed SDK identity verification")
+
+    for selected in (b"module-manifest", None, b"comments", b"block"):
+        shutil.rmtree(altered)
+        shutil.copytree(moved, altered)
+        readonly(altered, False)
+        typescript = altered / "typescript"
+        manifest_path = altered / "sdk.json"
+        manifest = json.loads(manifest_path.read_bytes())
+        identity_path = typescript / "feature-validator.identity.json"
+        identity = json.loads(identity_path.read_bytes())
+        declaration = typescript / "feature-validator.d.ts"
+        lines = declaration.read_bytes().splitlines(keepends=True)
+        if selected == b"block":
+            imports = b"".join(line for line in lines if line.startswith(b"import "))
+            updated = b"/*\n" + imports + b"*/\n" + b"".join(line for line in lines if not line.startswith(b"import "))
+        elif selected == b"comments":
+            updated = b"".join(b"// " + line if line.startswith(b"import ") else line for line in lines)
+        else:
+            updated = b"".join(line for line in lines if not (line.startswith(b"import ") and (selected is None or selected in line)))
+        if updated == declaration.read_bytes():
+            raise ValueError("expected feature declaration import is missing")
+        declaration.write_bytes(updated)
+        identity["typesSha256"] = hashlib.sha256(updated).hexdigest()
+        if selected is None or selected == b"comments":
+            identity.pop("typeDependencies")
+        identity_path.write_text(json.dumps(identity, indent=2) + "\n")
+        manifest["feature_validator"]["identity"] = identity
+        inventory = file_inventory(altered)
+        inventory.pop("sdk.json")
+        manifest["files"] = inventory
+        manifest_path.write_text(json.dumps(manifest, indent=2) + "\n")
+        try:
+            verify_feature_validator(typescript, manifest["feature_validator"])
+        except ValueError as error:
+            if "declaration import" not in str(error):
+                raise
+        else:
+            raise ValueError("incomplete feature declaration imports passed SDK verification")
 
     for files_key, tree_key, name in (("files", "treeSha256", "src/lib.rs"),
                                       ("workerFiles", "workerTreeSha256", "bindings/typescript/src/feature-validator-worker.ts"),
@@ -198,7 +264,8 @@ def check(sdk, chromium=None):
             for key in ("CARGO_HOME", "RUSTUP_HOME", "TMPDIR"):
                 if os.environ.get(key):
                     private_paths.add(os.environ[key])
-            if any(len(path) > 1 and path.encode() in content for path in private_paths for content in (helper, bundle, types)):
+            declarations = [(typescript / name).read_bytes() for name in identity.get("typeDependencies", {})]
+            if any(len(path) > 1 and path.encode() in content for path in private_paths for content in (helper, bundle, types, *declarations)):
                 raise ValueError("feature SDK contains a local build path")
             check_tampering(moved, work)
 
