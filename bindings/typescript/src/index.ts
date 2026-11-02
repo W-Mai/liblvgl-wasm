@@ -760,67 +760,83 @@ export class LvglRuntime {
 }
 
 /** A managed LVGL timer. Native deletion, automatic deletion, shutdown, and guest failure invalidate its handle. */
+// ECMAScript private fields keep the host runtime out of script-visible wrapper objects.
 export class Timer {
-  /** @internal Create timers through LvglRuntime.createTimer(). */
-  constructor(private readonly runtime: LvglRuntime) {}
+  #runtime: LvglRuntime;
 
-  get handle(): number { return this.runtime.timerHandle(this); }
-  cancel(): void { this.runtime.cancelTimer(this); }
+  /** @internal Create timers through LvglRuntime.createTimer(). */
+  constructor(runtime: LvglRuntime) { this.#runtime = runtime; }
+
+  get handle(): number { return this.#runtime.timerHandle(this); }
+  cancel(): void { this.#runtime.cancelTimer(this); }
 }
 
+// Display, pointer, and object wrappers cross the same editor boundary.
 export class Display {
-  private readonly check: () => void;
+  #runtime: LvglRuntime;
+  #check: () => void;
 
-  constructor(private readonly runtime: LvglRuntime, readonly handle: number) {
-    this.check = runtime.trackDisplay(handle);
+  constructor(runtime: LvglRuntime, readonly handle: number) {
+    this.#runtime = runtime;
+    this.#check = runtime.trackDisplay(handle);
   }
 
   assertOwner(runtime: LvglRuntime): void {
-    if (runtime !== this.runtime) throw new Error("invalid display reference");
-    this.check();
+    if (runtime !== this.#runtime) throw new Error("invalid display reference");
+    this.#check();
   }
 
   resize(width: number, height: number): void {
-    this.assertOwner(this.runtime);
-    this.runtime.resizeDisplay(this.handle, width, height);
+    this.assertOwner(this.#runtime);
+    this.#runtime.resizeDisplay(this.handle, width, height);
   }
 
   destroy(): void {
-    this.assertOwner(this.runtime);
-    this.runtime.destroyDisplay(this.handle);
+    this.assertOwner(this.#runtime);
+    this.#runtime.destroyDisplay(this.handle);
   }
 }
 
 export class PointerInput {
+  #runtime: LvglRuntime;
+  #handle: number;
+  #display: Display;
+
   constructor(
-    private readonly runtime: LvglRuntime,
-    private readonly handle: number,
-    private readonly display: Display,
-  ) {}
+    runtime: LvglRuntime,
+    handle: number,
+    display: Display,
+  ) {
+    this.#runtime = runtime;
+    this.#handle = handle;
+    this.#display = display;
+  }
 
   push(x: number, y: number, pressed: boolean): void {
-    this.display.assertOwner(this.runtime);
-    this.runtime.pushPointer(this.handle, x, y, pressed);
+    this.#display.assertOwner(this.#runtime);
+    this.#runtime.pushPointer(this.#handle, x, y, pressed);
   }
 }
 
 export class ObjectRef {
-  private readonly check: () => void;
+  #runtime: LvglRuntime;
+  #check: () => void;
 
-  constructor(private readonly runtime: LvglRuntime, readonly handle: number) {
+  constructor(runtime: LvglRuntime, readonly handle: number) {
+    this.#runtime = runtime;
     if (!handle) throw new Error("LVGL object creation failed");
-    this.check = runtime.trackObject(this);
+    this.#check = runtime.trackObject(this);
   }
 
   assertOwner(runtime: LvglRuntime): void {
-    if (runtime !== this.runtime) throw new Error("invalid LVGL object reference");
-    this.check();
+    if (runtime !== this.#runtime) throw new Error("invalid LVGL object reference");
+    this.#check();
   }
 
-  setSize(width: number, height: number): void { this.runtime.setObjectSize(this, width, height); }
-  setPosition(x: number, y: number): void { this.runtime.setObjectPosition(this, x, y); }
+  setSize(width: number, height: number): void { this.#runtime.setObjectSize(this, width, height); }
+  setPosition(x: number, y: number): void { this.#runtime.setObjectPosition(this, x, y); }
   on(code: number, callback: (code: number) => void): () => void {
-    return this.runtime.onEvent(this, code, callback);
+    return this.#runtime.onEvent(this, code, callback);
   }
-  delete(): void { this.runtime.deleteObject(this); }
+  delete(): void { this.#runtime.deleteObject(this); }
 }

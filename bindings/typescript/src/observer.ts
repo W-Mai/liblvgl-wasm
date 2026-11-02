@@ -31,14 +31,17 @@ interface Registration {
 }
 
 /** A synchronous native subscription. Native deletion, shutdown, and guest failure invalidate its handle. */
+// ECMAScript private fields keep the host registry out of script-visible wrapper objects.
 export class Observer {
-  /** @internal Use the runtime's observe methods. */
-  constructor(private readonly registry: ObserverRegistry) {}
+  #registry: ObserverRegistry;
 
-  get handle(): UnsafePointer { return this.registry.handle(this); }
+  /** @internal Use the runtime's observe methods. */
+  constructor(registry: ObserverRegistry) { this.#registry = registry; }
+
+  get handle(): UnsafePointer { return this.#registry.handle(this); }
 
   /** Cancel an ordinary subscription. Object-bound subscriptions require object or subject cleanup. */
-  cancel(): void { this.registry.cancel(this); }
+  cancel(): void { this.#registry.cancel(this); }
 }
 
 /** @internal */

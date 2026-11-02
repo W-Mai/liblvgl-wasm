@@ -91,25 +91,31 @@ function check(status: number, operation: string): void {
 }
 
 /** A native decoder registration. Cancellation requires all opened sessions to be closed. */
+// ECMAScript private fields keep the host registry out of script-visible wrapper objects.
 export class ImageDecoder {
-  /** @internal Use LvglRuntime.createImageDecoder(). */
-  constructor(private readonly registry: DecoderRegistry) {}
+  #registry: DecoderRegistry;
 
-  get handle(): UnsafePointer { return this.registry.handle(this); }
+  /** @internal Use LvglRuntime.createImageDecoder(). */
+  constructor(registry: DecoderRegistry) { this.#registry = registry; }
+
+  get handle(): UnsafePointer { return this.#registry.handle(this); }
 
   /** Repeated cancellation after native deletion, shutdown, or failure does not enter the guest. */
-  cancel(): void { this.registry.cancel(this); }
+  cancel(): void { this.#registry.cancel(this); }
 }
 
 /** Borrowed access to the innermost synchronous decoder callback. Saved sessions expire on return. */
+// ECMAScript private fields keep the host registry out of script-visible wrapper objects.
 export class DecoderSession {
-  /** @internal Sessions are supplied to image decoder callbacks. */
-  constructor(private readonly registry: DecoderRegistry) {}
+  #registry: DecoderRegistry;
 
-  get decoder(): ImageDecoder { return this.registry.frame(this).decoder; }
-  get pointer(): UnsafePointer { return this.registry.frame(this).pointer; }
-  read(): DecoderView { return this.registry.read(this); }
-  write(output: DecoderOutput): void { this.registry.write(this, output); }
+  /** @internal Sessions are supplied to image decoder callbacks. */
+  constructor(registry: DecoderRegistry) { this.#registry = registry; }
+
+  get decoder(): ImageDecoder { return this.#registry.frame(this).decoder; }
+  get pointer(): UnsafePointer { return this.#registry.frame(this).pointer; }
+  read(): DecoderView { return this.#registry.read(this); }
+  write(output: DecoderOutput): void { this.#registry.write(this, output); }
 }
 
 /** @internal */

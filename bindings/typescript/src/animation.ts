@@ -41,12 +41,15 @@ interface Registration {
 }
 
 /** A managed native animation. Completion, deletion, shutdown, and guest failure invalidate its handle. */
+// ECMAScript private fields keep the host registry out of script-visible wrapper objects.
 export class Animation {
-  /** @internal Use LvglRuntime.startAnimation(). */
-  constructor(private readonly registry: AnimationRegistry) {}
+  #registry: AnimationRegistry;
 
-  get handle(): number { return this.registry.handle(this); }
-  cancel(): void { this.registry.cancel(this); }
+  /** @internal Use LvglRuntime.startAnimation(). */
+  constructor(registry: AnimationRegistry) { this.#registry = registry; }
+
+  get handle(): number { return this.#registry.handle(this); }
+  cancel(): void { this.#registry.cancel(this); }
 }
 
 /** @internal */
