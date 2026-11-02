@@ -14,6 +14,8 @@ export { orderModuleGraph } from "./module-graph.ts";
 export type { ModuleDeclaration, ModuleGraph, ModuleRequirement } from "./module-graph.ts";
 export { inspectWasmFacts, WASM_FACTS_LIMITS } from "./wasm-facts.ts";
 export type { WasmValueType, WasmReferenceType, WasmFunctionType, WasmTableType, WasmMemoryType, WasmGlobalType, WasmExternal, WasmImportFact, WasmExportFact, WasmIndexedType, WasmIndexedFunction, WasmFacts } from "./wasm-facts.ts";
+export { validateModuleManifests, MODULE_MANIFEST_LIMITS } from "./module-manifest.ts";
+export type { ModuleExternalType, ModuleExport, ModuleImport, ModuleInterface, ModuleManifest, ModuleHostProvider, ModuleManifestInput, ModuleManifestReport } from "./module-manifest.ts";
 export type { AnimationCallbacks, ObserverCallback };
 export type { ImageDecoderCallbacks, DecoderView, DecoderOutput } from "./decoder.ts";
 export type { UnsafeFunctionPointer, UnsafeLvglApi, UnsafePointer };

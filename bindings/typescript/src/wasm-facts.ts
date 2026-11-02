@@ -190,13 +190,24 @@ function tagType(reader: Reader, types: readonly WasmFunctionType[]): number {
   return index;
 }
 
-/** Read supported declaration sections from a private byte snapshot. This is not complete Wasm validation or feature or ABI detection. */
-export function inspectWasmFacts(input: BufferSource): WasmFacts {
+/** @internal Copy a BufferSource using its internal slots and enforce the input limit. */
+export function snapshotWasmBytes(input: BufferSource, maximumBytes = WASM_FACTS_LIMITS.inputBytes): Uint8Array<ArrayBuffer> {
   const source = byteView(input);
   const length = typedLength.call(source) as number;
   if (length > WASM_FACTS_LIMITS.inputBytes) throw new Error("Wasm facts inspection limit: input bytes");
+  if (length > maximumBytes) throw new Error("Manifest inspection limit: total bytes");
   const snapshot = new Uint8Array(length);
   snapshot.set(source);
+  return snapshot;
+}
+
+/** Read supported declaration sections from a private byte snapshot. This is not complete Wasm validation or feature or ABI detection. */
+export function inspectWasmFacts(input: BufferSource): WasmFacts {
+  return inspectWasmSnapshot(snapshotWasmBytes(input));
+}
+
+/** @internal Inspect bytes owned by the caller for the entire duration of this synchronous call. */
+export function inspectWasmSnapshot(snapshot: Uint8Array<ArrayBuffer>): WasmFacts {
   const hash = Array.from(sha256(snapshot), (byte) => byte.toString(16).padStart(2, "0")).join("");
   const budget: Budget = { elements: 0, names: 0 };
   const module = new Reader(snapshot, "module", budget);

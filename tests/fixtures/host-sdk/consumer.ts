@@ -1,4 +1,4 @@
-import { LvglRuntime, LV_COLOR_T_SIZE, LV_PART_MAIN, inspectWasmFacts, orderModuleGraph, type UnsafePointer } from "liblvgl-wasm";
+import { LvglRuntime, LV_COLOR_T_SIZE, LV_PART_MAIN, inspectWasmFacts, orderModuleGraph, validateModuleManifests, type UnsafePointer } from "liblvgl-wasm";
 
 export async function exercise(bytes: ArrayBuffer, otherCore: ArrayBuffer, bitmap: Uint8Array) {
   const order = orderModuleGraph({ hostProviders: [], modules: [
@@ -6,6 +6,18 @@ export async function exercise(bytes: ArrayBuffer, otherCore: ArrayBuffer, bitma
     { id: "core", role: "lib", requires: [] },
   ] });
   if (order.join(",") !== "core,app") throw new Error("Invalid module graph order");
+  const emptyModule = new Uint8Array([0, 97, 115, 109, 1, 0, 0, 0]);
+  const manifestReport = validateModuleManifests({ modules: [{ bytes: emptyModule, manifest: {
+    schema_version: 1, kind: "wasm-module", id: "app", role: "app",
+    artifact: { path: "app.wasm", sha256: inspectWasmFacts(emptyModule).sha256 },
+    target: { abi: "wasip1", features: [] }, interface: { name: "app", version: 1 },
+    memory_model: "isolated", requires: [], exports: [], runtime_verification: "not-run",
+  } }], hosts: [] });
+  const checks = manifestReport.modules[0]?.checks;
+  if (manifestReport.order.join(",") !== "app" || checks?.identity !== "passed" || checks.interface !== "passed"
+      || checks.engine !== "passed" || checks.feature !== "not-run" || checks.runtime !== "not-run") {
+    throw new Error("Invalid module manifest report");
+  }
   const facts = inspectWasmFacts(bytes);
   const runtime = await LvglRuntime.load(bytes);
   if (facts.sha256 !== runtime.identity.coreSha256) throw new Error("Wasm facts identity mismatch");

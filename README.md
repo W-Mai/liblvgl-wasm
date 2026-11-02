@@ -242,6 +242,42 @@ The reader supports function types with numeric, `v128`, `funcref`, and `externr
 
 To bound inspection of uploaded files, `WASM_FACTS_LIMITS` exposes fixed limits of 64 MiB per input, 50,000 cumulative parsed vector elements, 4 MiB of cumulative UTF-8 name bytes, and 4,096 sections. Exceeding a limit rejects inspection without asserting that the Wasm is invalid.
 
+`validateModuleManifests` checks a module graph against the supplied Wasm bytes and host provider contracts. Each import selects an explicit `provider_export`:
+
+```ts
+import { validateModuleManifests } from "liblvgl-wasm";
+
+const bytes = Uint8Array.from([
+  0, 97, 115, 109, 1, 0, 0, 0, 1, 5, 1, 96, 0, 1, 127,
+  2, 13, 1, 5, 99, 108, 111, 99, 107, 3, 110, 111, 119, 0, 0,
+]);
+const report = validateModuleManifests({
+  modules: [{
+    bytes,
+    manifest: {
+      schema_version: 1, kind: "wasm-module", id: "app", role: "app",
+      artifact: { path: "app.wasm", sha256: "50e9d70ae87b2c17edb907057c96368801729c63c8afbbdf76468adab33233d6" },
+      target: { abi: "wasip1", features: [] },
+      interface: { name: "app", version: 1 }, memory_model: "isolated",
+      requires: [{
+        provider: "host.clock", interface: "clock", version: 1,
+        imports: [{ module: "clock", name: "now", provider_export: "now_ms", kind: "function", params: [], results: ["i32"] }],
+      }],
+      exports: [], runtime_verification: "not-run",
+    },
+  }],
+  hosts: [{
+    id: "host.clock", interface: { name: "clock", version: 1 },
+    exports: [{ name: "now_ms", kind: "function", params: [], results: ["i32"] }],
+  }],
+});
+console.log(report.order); // ["app"]
+```
+
+The validator checks the artifact SHA-256 against a private byte snapshot, matches the complete import and export declarations, checks provider interface versions and export types, and compiles each snapshot in the current JavaScript engine without instantiating it. The host entries are contracts; their implementations are not verified. Feature detection, ABI, memory isolation, host implementation and runtime checks remain `not-run`. The report is not authorization to load or execute the modules.
+
+`artifact.path` is checked as a safe relative path; the validator does not read the file. Memory and table limits are compared using static module declarations, which can reject an instance grown before linking. `MODULE_MANIFEST_LIMITS` bounds the provider count, total Wasm bytes, declaration entries and string sizes. Inputs must be plain data from a trusted JavaScript environment; this API does not sandbox hostile JavaScript or proxies in the same realm.
+
 The Rust directory is an independent library crate with its lockfile and `generated/raw.rs`. A consumer can use a path dependency:
 
 ```toml
