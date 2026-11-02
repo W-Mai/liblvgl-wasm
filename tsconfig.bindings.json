@@ -11,6 +11,7 @@
   },
   "files": [
     "bindings/typescript/src/index.ts",
+    "bindings/typescript/src/numeric-wasi.ts",
     "target/typescript/raw.ts",
     "target/typescript/values.ts"
   ]
