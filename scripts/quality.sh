@@ -29,8 +29,11 @@ bun run test
 python3 -B validator/fixtures.py
 python3 -B validator/numeric-fixtures.py
 python3 -B validator/wasi-numeric-fixtures.py
+python3 -B validator/lvgl-core-fixture.py
+python3 -B validator/lvgl-lifecycle-fixtures.py
 bun test validator/feature-validator.test.ts
 bun test validator/feature-worker.test.ts validator/feature-worker-live.test.ts validator/feature-graph.test.ts validator/numeric-environment.test.ts validator/wasi-numeric-loader.test.ts
+bun test validator/lvgl-core-profile.test.ts validator/lvgl-lifecycle.test.ts
 bun test validator/feature-sdk.test.ts
 bun test validator/bounded-core.test.ts
 python3 -B validator/bounded-core.test.py

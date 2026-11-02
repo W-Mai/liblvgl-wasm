@@ -15,9 +15,11 @@ import tempfile
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "toolchains"))
+sys.path.insert(0, str(ROOT / "generator"))
 from lvw import file_inventory
 from host_sdk import verify_feature_validator
 from feature_sdk_browser import run_browser
+from bounded_core import MAX_API_BYTES, MAX_CORE_BYTES, check_proof, read
 
 
 def run(*command, cwd=None, env=None):
@@ -51,6 +53,7 @@ def check_result(result, core_sha, identity):
             or result["numericResult"] != 7 or result["numericState"] != "closed"
             or result["wasiResult"] != 6 or result["wasiState"] != "closed"
             or result["wasiOutput"] != ["c:2:ci", "c:1:C!", "c:2:ce"] or not result["wasiIdentity"] or not result["wasiExit"]
+            or result["standalone"] != {"values": [5, 9, 7], "states": ["closed", "closed"]}
             or result["lvgl"] != {"values": [37, 81, 37, 81, 0x336699, 0x336699, -1], "green": [16, 48],
                                    "environments": 2, "lifecycle": [10, 20, 10, 20, 21, 11, 21, 11], "callbacks": 0, "outputBytes": 0,
                                    "survivesClose": 81, "closedRejected": True}):
@@ -284,8 +287,17 @@ def check(sdk, ndk, chromium=None):
     lv_provider, lv_app = examples / "lv_provider.wasm", examples / "lv_app.wasm"
     if not lv_provider.is_file() or not lv_app.is_file():
         raise ValueError("missing LVGL numeric example; run examples/c/multimodule/build.py")
-    with tempfile.TemporaryDirectory(prefix="lvw feature sdk ") as temporary:
+    with tempfile.TemporaryDirectory(prefix="lvw feature sdk ", dir=ROOT / "target/validator") as temporary:
         work = Path(temporary)
+        bounded = read(ROOT / "target/wasm/liblvgl-bounded.wasm", MAX_CORE_BYTES)
+        api = read(ROOT / "target/wasm/api.json", MAX_API_BYTES)
+        proof = read(ROOT / "target/wasm/api-verification-bounded.json", 1024 * 1024)
+        check_proof(api, bounded, proof)
+        standalone_core = work / "bounded.wasm"
+        standalone_core.write_bytes(bounded)
+        fixture_dir = work / "standalone-fixtures"
+        run(sys.executable, "-B", ROOT / "validator/lvgl-core-fixture.py", "--output", fixture_dir)
+        standalone_app = fixture_dir / "lvgl-core-app.wasm"
         moved = work / "moved package"
         shutil.copytree(sdk, moved)
         readonly(moved, True)
@@ -328,7 +340,7 @@ def check(sdk, ndk, chromium=None):
             (project / "package.json").write_text('{"type":"module"}\n')
             (project / "node_modules").mkdir()
             (project / "node_modules/liblvgl-wasm").symlink_to(typescript, target_is_directory=True)
-            for name in ("consumer.ts", "browser-worker.ts", "lvgl-module.ts"):
+            for name in ("consumer.ts", "browser-worker.ts", "lvgl-module.ts", "standalone-core.ts"):
                 shutil.copyfile(ROOT / "tests/fixtures/feature-sdk" / name, project / name)
             for mode in ("Bundler", "NodeNext"):
                 config = {"compilerOptions": {"target": "ES2022", "strict": True, "noEmit": True,
@@ -338,12 +350,12 @@ def check(sdk, ndk, chromium=None):
                 run("bun", ROOT / "node_modules/typescript/bin/tsc", "--project", project / "tsconfig.json")
             (project / "runner.ts").write_text('''globalThis.fetch = (() => { throw new Error("network is unavailable"); }) as typeof fetch;
 const { exercise } = await import("./consumer.ts");
-const result = await exercise(await Bun.file(Bun.argv[2]!).arrayBuffer(), await Bun.file(Bun.argv[3]!).arrayBuffer(), await Bun.file(Bun.argv[4]!).arrayBuffer(), await Bun.file(Bun.argv[5]!).arrayBuffer());
+const result = await exercise(await Bun.file(Bun.argv[2]!).arrayBuffer(), await Bun.file(Bun.argv[3]!).arrayBuffer(), await Bun.file(Bun.argv[4]!).arrayBuffer(), await Bun.file(Bun.argv[5]!).arrayBuffer(), await Bun.file(Bun.argv[6]!).arrayBuffer(), await Bun.file(Bun.argv[7]!).arrayBuffer());
 console.log(JSON.stringify(result));
 ''')
             core = moved / "runtime/liblvgl.wasm"
             core_sha = hashlib.sha256(core.read_bytes()).hexdigest()
-            result = subprocess.run(["bun", "runner.ts", core, wasi, lv_provider, lv_app], cwd=project, check=True, capture_output=True, text=True)
+            result = subprocess.run(["bun", "runner.ts", core, wasi, lv_provider, lv_app, standalone_core, standalone_app], cwd=project, check=True, capture_output=True, text=True)
             check_result(json.loads(result.stdout), core_sha, identity)
 
             packable = work / "packable typescript"
@@ -380,7 +392,7 @@ console.log(JSON.stringify(result));
                 noble = archive.extractfile("package/LICENSE-noble-hashes.txt").read()
                 if hashlib.sha256(noble).hexdigest() != notice_manifest["noble"]["license_sha256"]:
                     raise ValueError("packed noble license identity differs")
-            browser = run_browser(project, moved, work, chromium, wasi, lv_provider, lv_app) if chromium else None
+            browser = run_browser(project, moved, work, chromium, wasi, lv_provider, lv_app, standalone_core, standalone_app) if chromium else None
             if browser is not None:
                 if browser.get("hasSubtle") is not False:
                     raise ValueError("browser worker did not use an opaque origin")

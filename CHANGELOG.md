@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+- Trusted LVGL core lifecycle for isolated numeric module graphs.
 - Optional core build with a fixed-size function table and a separate signature proof.
 - C multi-module example with a statically linked LVGL provider and isolated numeric app.
 - Trusted WASI Preview 1 services for numeric environments with per-consumer memory binding and bounded output.

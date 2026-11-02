@@ -8,6 +8,13 @@ export type { NumericWasiOptions, NumericWasiService };
 const WasmModule = WebAssembly.Module;
 const WasmInstance = WebAssembly.Instance;
 const reserved = new Set(["_initialize", "_start", "module_init", "module_close", "app_run"]);
+const lvglLifecycle = new Set(["lvw_abi_version", "lvw_init", "lvw_shutdown"]);
+const lvglScalars = new Set(["lv_is_initialized", "lv_tick_get"]);
+const lvglCallbacks: Readonly<Record<string, string>> = Object.freeze({
+  event: "iii/", timer: "ii/", timer_release: "i/", anim_exec: "iii/", anim_query: "iii/i",
+  anim_notify: "iii/", anim_release: "i/", observer: "iii/", observer_release: "i/",
+  decoder_info: "iiii/i", decoder_open: "iii/i", decoder_area: "iiiii/i", decoder_close: "iii/", decoder_release: "i/",
+});
 
 export interface NumericFunctionContract {
   readonly name: string;
@@ -35,7 +42,8 @@ export interface NumericHostContract {
 }
 
 export interface NumericEnvironmentOptions {
-  readonly profile: "numeric-v1";
+  readonly profile: "numeric-v1" | "lvgl-core-v1";
+  readonly lvgl?: { readonly module: string; readonly id: string; readonly interface: ModuleInterface; readonly abiVersion: 1 };
   readonly modules: readonly NumericModuleContract[];
   readonly hosts: readonly NumericHostContract[];
   readonly wasi?: NumericWasiOptions;
@@ -54,6 +62,7 @@ interface NumericProfile {
   readonly modules: ReadonlyMap<string, NumericModuleContract>;
   readonly hosts: ReadonlyMap<string, NumericHostContract>;
   readonly wasi?: NumericWasiOptions;
+  readonly lvgl?: NonNullable<NumericEnvironmentOptions["lvgl"]>;
   readonly app: string;
   readonly featureOptions: Pick<NumericEnvironmentOptions, "allowedFeatures" | "startupTimeoutMs" | "executionTimeoutMs" | "signal">;
 }
@@ -127,6 +136,11 @@ function wasiSignature(service: NumericWasiService, value: ModuleExport): boolea
   const encode = (types: readonly string[]) => types.map((type) => type === "i32" ? "i" : type === "i64" ? "I" : "?").join("");
   return `${encode(value.params)}/${encode(value.results)}` === NUMERIC_WASI_SIGNATURES[service];
 }
+function lvglSignature(value: ModuleExport): boolean {
+  if (value.kind !== "function" || !Object.hasOwn(lvglCallbacks, value.name)) return false;
+  const encode = (types: readonly string[]) => types.map((type) => type === "i32" ? "i" : "?").join("");
+  return `${encode(value.params)}/${encode(value.results)}` === lvglCallbacks[value.name];
+}
 function ownEntrypoint(record: NumericRecord, entry: string, params: readonly string[], results: readonly string[], required: boolean): void {
   const item = record.facts.exports.find((value) => value.name === entry);
   if (!item) { if (required) fail(`${JSON.stringify(record.manifest.id)}: missing ${entry}`); return; }
@@ -138,8 +152,15 @@ function ownEntrypoint(record: NumericRecord, entry: string, params: readonly st
 /** @internal Snapshot the trusted numeric profile and match it to the prepared graph. */
 export function prepareNumericProfile(prepared: PreparedModuleGraph, options: NumericEnvironmentOptions): NumericProfile {
   const root = fields(options, ["profile", "modules", "hosts", "allowedFeatures", "startupTimeoutMs", "executionTimeoutMs",
-    "maxMemoryPages", "maxTotalMemoryPages", "maxTableElements", "maxTotalTableElements"], ["signal", "wasi"]);
-  if (root.profile !== "numeric-v1") return fail("unsupported numeric profile");
+    "maxMemoryPages", "maxTotalMemoryPages", "maxTableElements", "maxTotalTableElements"], ["signal", "wasi", "lvgl"]);
+  if (root.profile !== "numeric-v1" && root.profile !== "lvgl-core-v1") return fail("unsupported numeric profile");
+  if (root.profile === "numeric-v1" && Object.hasOwn(root, "lvgl")) return fail("numeric-v1 does not accept an LVGL core");
+  let lvgl: NumericProfile["lvgl"];
+  if (root.profile === "lvgl-core-v1") {
+    const value = fields(root.lvgl, ["module", "id", "interface", "abiVersion"]);
+    if (value.abiVersion !== 1) return fail("unsupported LVGL bridge ABI");
+    lvgl = { module: name(value.module), id: name(value.id), interface: interfaceContract(value.interface), abiVersion: 1 };
+  }
   const budget = { entries: 0 };
   const modules = new Map<string, NumericModuleContract>();
   for (const value of list(root.modules, 256)) {
@@ -155,14 +176,15 @@ export function prepareNumericProfile(prepared: PreparedModuleGraph, options: Nu
   }
   const wasi = root.wasi === undefined ? undefined : prepareNumericWasi(root.wasi);
   if (wasi && hosts.has(wasi.id)) fail("numeric WASI provider conflicts with a numeric host");
+  if (lvgl && (hosts.has(lvgl.id) || wasi?.id === lvgl.id || modules.has(lvgl.id))) fail("LVGL host provider identity conflicts");
   const allowedFeatures = list(root.allowedFeatures, 32).map(name);
   const featureOptions = { allowedFeatures, startupTimeoutMs: root.startupTimeoutMs as number, executionTimeoutMs: root.executionTimeoutMs as number,
     signal: root.signal as AbortSignal | undefined };
   const maxMemoryPages = limit(root.maxMemoryPages, 65536), maxTotalMemoryPages = limit(root.maxTotalMemoryPages, 65536 * 256);
   const maxTableElements = limit(root.maxTableElements, 0xffff_ffff), maxTotalTableElements = limit(root.maxTotalTableElements, 0xffff_ffff * 256);
-  if (modules.size !== prepared.modules.length || hosts.size + Number(wasi !== undefined) !== prepared.hosts.length) return fail("numeric profile provider inventory differs");
+  if (modules.size !== prepared.modules.length || hosts.size + Number(wasi !== undefined) + Number(lvgl !== undefined) !== prepared.hosts.length) return fail("numeric profile provider inventory differs");
   let totalMemory = 0, totalTables = 0;
-  let app: string | undefined;
+  let app: string | undefined, foundLvgl = false;
   for (const record of prepared.modules) {
     const current = record.manifest, contract = modules.get(current.id);
     if (!contract || contract.sha256 !== record.facts.sha256 || !sameInterface(contract.interface, current.interface)) fail(`${JSON.stringify(current.id)}: numeric module is not authorized`);
@@ -171,9 +193,21 @@ export function prepareNumericProfile(prepared: PreparedModuleGraph, options: Nu
       fail(`${JSON.stringify(current.id)}: WASI imports are unsupported by numeric-v1`);
     }
     if (record.facts.exports.some((item) => item.name === "_start")) fail(`${JSON.stringify(current.id)}: _start is unsupported by numeric-v1`);
-    ownEntrypoint(record, "_initialize", [], [], false);
-    ownEntrypoint(record, "module_init", [], ["i32"], true);
-    ownEntrypoint(record, "module_close", [], ["i32"], true);
+    const isLvgl = lvgl?.module === current.id;
+    if (isLvgl) {
+      if (current.role !== "lib") fail("LVGL core must be a library");
+      foundLvgl = true;
+      ownEntrypoint(record, "_initialize", [], [], true);
+      for (const entry of lvglLifecycle) ownEntrypoint(record, entry, [], ["i32"], true);
+      if (contract.exports.some((fn) => lvglLifecycle.has(fn.name))) fail("LVGL lifecycle exports cannot be authorized as business functions");
+      if (contract.exports.some((fn) => !lvglScalars.has(fn.name) || fn.params.length !== 0 || fn.results.length !== 1)) {
+        fail("unsupported LVGL scalar export");
+      }
+    } else {
+      ownEntrypoint(record, "_initialize", [], [], false);
+      ownEntrypoint(record, "module_init", [], ["i32"], true);
+      ownEntrypoint(record, "module_close", [], ["i32"], true);
+    }
     if (current.role === "app") ownEntrypoint(record, "app_run", ["i32"], ["i32"], true);
     for (const memory of record.facts.memories) {
       const max = memory.type.maximumPages;
@@ -190,9 +224,14 @@ export function prepareNumericProfile(prepared: PreparedModuleGraph, options: Nu
       if (!actual || !sameFunction(fn, actual)) fail(`${JSON.stringify(current.id)}: numeric export contract differs for ${JSON.stringify(fn.name)}`);
     }
   }
+  if (lvgl && !foundLvgl) return fail("LVGL core module is missing");
   if (app === undefined) return fail("numeric profile requires exactly one app");
   if (totalMemory > maxTotalMemoryPages || totalTables > maxTotalTableElements) return fail("numeric environment resource limit exceeded");
   for (const host of prepared.hosts) {
+    if (lvgl && host.id === lvgl.id) {
+      if (!sameInterface(lvgl.interface, host.interface) || host.exports.some((item) => !lvglSignature(item))) fail("LVGL host contract differs");
+      continue;
+    }
     if (wasi && host.id === wasi.id) {
       if (!sameInterface(wasi.interface, host.interface) || host.exports.length !== wasi.allowed.length) fail("numeric WASI host contract differs");
       for (const item of host.exports) {
@@ -208,19 +247,34 @@ export function prepareNumericProfile(prepared: PreparedModuleGraph, options: Nu
       if (!actual || !sameFunction(fn, actual)) fail(`${JSON.stringify(host.id)}: numeric host export differs for ${JSON.stringify(fn.name)}`);
     }
   }
-  for (const record of prepared.modules) for (const requirement of record.manifest.requires) for (const item of requirement.imports) {
-    if (item.module === "wasi_snapshot_preview1" || wasi && requirement.provider === wasi.id) {
-      const service = item.name as NumericWasiService;
-      if (!wasi || requirement.provider !== wasi.id || item.module !== "wasi_snapshot_preview1" || item.provider_export !== item.name
-          || !wasi.allowed.includes(service) || !wasiSignature(service, item)) fail(`${JSON.stringify(record.manifest.id)}: numeric WASI import is not authorized`);
-      continue;
+  const lvglImports = new Set<string>();
+  for (const record of prepared.modules) for (const requirement of record.manifest.requires) {
+    if (lvgl && requirement.provider === lvgl.id && record.manifest.id !== lvgl.module) fail("LVGL host is reserved for its core");
+    for (const item of requirement.imports) {
+      if (lvgl && (item.module === "lvw" || requirement.provider === lvgl.id)) {
+        if (record.manifest.id !== lvgl.module || requirement.provider !== lvgl.id || item.module !== "lvw"
+            || item.provider_export !== item.name || !lvglSignature(item)) fail(`${JSON.stringify(record.manifest.id)}: LVGL host import is not authorized`);
+        lvglImports.add(item.name);
+        continue;
+      }
+      if (item.module === "wasi_snapshot_preview1" || wasi && requirement.provider === wasi.id) {
+        const service = item.name as NumericWasiService;
+        if (!wasi || requirement.provider !== wasi.id || item.module !== "wasi_snapshot_preview1" || item.provider_export !== item.name
+            || !wasi.allowed.includes(service) || !wasiSignature(service, item)) fail(`${JSON.stringify(record.manifest.id)}: numeric WASI import is not authorized`);
+        continue;
+      }
+      if (item.kind !== "function" || reserved.has(item.provider_export)
+          || lvgl && requirement.provider === lvgl.module && lvglLifecycle.has(item.provider_export)) fail(`${JSON.stringify(record.manifest.id)}: unsupported numeric import`);
+      const provider = modules.get(requirement.provider) ?? hosts.get(requirement.provider);
+      const contract = provider?.exports.find((fn) => fn.name === item.provider_export);
+      if (!contract || !sameFunction(contract, { ...item, name: item.name })) fail(`${JSON.stringify(record.manifest.id)}: numeric import is not authorized`);
     }
-    if (item.kind !== "function" || reserved.has(item.provider_export)) fail(`${JSON.stringify(record.manifest.id)}: unsupported numeric import`);
-    const provider = modules.get(requirement.provider) ?? hosts.get(requirement.provider);
-    const contract = provider?.exports.find((fn) => fn.name === item.provider_export);
-    if (!contract || !sameFunction(contract, { ...item, name: item.name })) fail(`${JSON.stringify(record.manifest.id)}: numeric import is not authorized`);
   }
-  return { modules, hosts, wasi, app, featureOptions };
+  if (lvgl) {
+    const host = prepared.hosts.find((item) => item.id === lvgl!.id)!;
+    if (host.exports.length !== lvglImports.size || host.exports.some((item) => !lvglImports.has(item.name))) fail("LVGL host inventory differs from core imports");
+  }
+  return { modules, hosts, wasi, lvgl, app, featureOptions };
 }
 
 /** @internal Compile all private snapshots before creating any guest instance. */
@@ -256,8 +310,9 @@ class NumericRuntime {
   #initialized: LiveModule[] = [];
   #hosts: LiveHost[] = [];
   #app: string;
+  #lvgl?: string;
 
-  constructor(app: string) { this.#app = app; }
+  constructor(app: string, lvgl?: string) { this.#app = app; this.#lvgl = lvgl; }
   get state(): "loading" | "ready" | "closing" | "closed" | "poisoned" { return this.#state; }
 
   #poison(error: unknown): never {
@@ -309,9 +364,10 @@ class NumericRuntime {
   #closeInitialized(): void {
     while (this.#initialized.length) {
       const module = this.#initialized[this.#initialized.length - 1]!;
-      const close = module.instance!.exports.module_close as () => number;
+      const closeName = module.record.manifest.id === this.#lvgl ? "lvw_shutdown" : "module_close";
+      const close = module.instance!.exports[closeName] as () => number;
       const status = this.#enter(close);
-      if (status !== 0) this.#poison(new Error(`${JSON.stringify(module.record.manifest.id)}: module_close returned ${status}`));
+      if (status !== 0) this.#poison(new Error(`${JSON.stringify(module.record.manifest.id)}: ${closeName} returned ${status}`));
       this.#wasi.get(module.record.manifest.id)?.close();
       this.#wasi.delete(module.record.manifest.id);
       module.initialized = false;
@@ -347,7 +403,7 @@ class NumericRuntime {
 
   /** @internal Instantiate only after the complete graph has passed preflight and compilation. */
   static load(prepared: PreparedModuleGraph, profile: NumericProfile, compiled: ReadonlyMap<string, WebAssembly.Module>, beforeGuest: () => void): NumericRuntime {
-    const environment = new NumericRuntime(profile.app);
+    const environment = new NumericRuntime(profile.app, profile.lvgl?.module);
     const environmentId = Symbol("numeric environment");
     const wasiBudget = createNumericWasiBudget();
     const hostBindings = new Map<string, Map<string, LiveHost>>();
@@ -361,6 +417,7 @@ class NumericRuntime {
             if (requirement.imports.length && !environment.#wasi.has(id)) environment.#wasi.set(id, createNumericWasiConsumer(profile.wasi, id, wasiBudget, () => environment.#rethrow(), environmentId));
             continue;
           }
+          if (profile.lvgl && requirement.provider === profile.lvgl.id) continue;
           const contract = profile.hosts.get(requirement.provider);
           if (!contract || byHost.has(contract.id)) continue;
           const create = contract.create;
@@ -397,6 +454,10 @@ class NumericRuntime {
             namespace[item.name] = (...args: (number | bigint)[]) => environment.#enter(() => callback(...args));
             continue;
           }
+          if (profile.lvgl && requirement.provider === profile.lvgl.id) {
+            namespace[item.name] = () => environment.#enter(() => fail(`unsupported LVGL callback ${JSON.stringify(item.name)}`));
+            continue;
+          }
           const host = hostBindings.get(id)!.get(requirement.provider);
           const contract = (profile.modules.get(requirement.provider) ?? profile.hosts.get(requirement.provider))!.exports.find((fn) => fn.name === item.provider_export)!;
           if (host) {
@@ -423,15 +484,23 @@ class NumericRuntime {
         }
         const initialize = live.instance.exports._initialize;
         if (typeof initialize === "function") environment.#enter(() => initialize());
-        const status = environment.#enter(() => (live.instance!.exports.module_init as () => number)());
-        if (status !== 0) {
+        const isLvgl = id === profile.lvgl?.module;
+        const rollback = (failure: Error): never => {
           environment.#wasi.get(id)?.close();
           environment.#wasi.delete(id);
-          const failure = new Error(`${JSON.stringify(id)}: module_init returned ${status}`);
           environment.#state = "closing";
           try { environment.#closeInitialized(); }
           catch (error) { throw new AggregateError([failure, error], "numeric initialization rollback failed"); }
           throw failure;
+        };
+        if (isLvgl) {
+          const version = environment.#enter(() => (live.instance!.exports.lvw_abi_version as () => number)());
+          if (version !== profile.lvgl!.abiVersion) rollback(new Error(`${JSON.stringify(id)}: unsupported LVGL bridge ABI ${version}`));
+        }
+        const initName = isLvgl ? "lvw_init" : "module_init";
+        const status = environment.#enter(() => (live.instance!.exports[initName] as () => number)());
+        if (status !== 0) {
+          rollback(new Error(`${JSON.stringify(id)}: ${initName} returned ${status}`));
         }
         live.initialized = true;
         environment.#initialized.push(live);
