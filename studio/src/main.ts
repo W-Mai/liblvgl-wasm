@@ -7,7 +7,8 @@ import { renderHighlighted } from "./highlight.ts";
 import { loadResources, readResources, type ResourceFile } from "./resources.ts";
 import { assetUrl } from "./paths.ts";
 import { initI18n, t } from "./i18n.ts";
-import type { AppSource, RunnerOutput } from "./protocol.ts";
+import { createCodeEditor, type CodeEditor } from "./code-editor.ts";
+import type { AppSource, RunnerError, RunnerOutput } from "./protocol.ts";
 
 initI18n();
 document.addEventListener("lvgl-locale-change", () => {
@@ -15,11 +16,22 @@ document.addEventListener("lvgl-locale-change", () => {
   showAppSource();
   renderResources();
   showToolchain(selectedLanguage);
+  setEditorState(editorSaved ? "saved" : "dirty");
+  updateNativeApiControl();
+  updateZenLabel();
 });
 
 type Language = "js" | "ts" | "c" | "cpp" | "rust";
+const languageValues = ["js", "ts", "c", "cpp", "rust"] as const;
+
+function normalizeLanguage(value: string | undefined): Language {
+  return languageValues.includes(value as Language) ? value as Language : "js";
+}
+
 type Source = {
   name: string; origin: string; resources?: readonly ResourceFile[];
+  allowNativeApi?: boolean;
+  canEdit?: boolean;
   load(): Promise<AppSource>;
 };
 
@@ -152,6 +164,7 @@ const appName = element<HTMLElement>("#app-name");
 const appOrigin = element<HTMLElement>("#app-origin");
 const appPreflight = element<HTMLElement>("#app-preflight");
 const appDetails = element<HTMLButtonElement>("#app-details");
+const appEdit = element<HTMLButtonElement>("#app-edit");
 const coreDrop = element<HTMLLabelElement>("#core-drop");
 const coreFile = element<HTMLInputElement>("#core-file");
 const coreManifestFile = element<HTMLInputElement>("#core-manifest-file");
@@ -162,6 +175,158 @@ const resourceFiles = element<HTMLInputElement>("#resource-files");
 const resourceList = element<HTMLUListElement>("#resource-list");
 const clearResources = element<HTMLButtonElement>("#clear-resources");
 const tsSample = element<HTMLSelectElement>("#ts-sample");
+const jsEditor = element<HTMLElement>("#js-editor");
+const editorInput = element<HTMLElement>("#js-editor-input");
+const editorRun = element<HTMLButtonElement>("#editor-run");
+const editorSave = element<HTMLButtonElement>("#editor-save");
+const editorDownload = element<HTMLButtonElement>("#editor-download");
+const editorReset = element<HTMLButtonElement>("#editor-reset");
+const editorZen = element<HTMLButtonElement>("#editor-zen");
+const editorState = element<HTMLElement>("#editor-state");
+const editorNative = element<HTMLInputElement>("#editor-native");
+const editorNativeNote = element<HTMLElement>("#editor-native-note");
+const editorNativeExample = element<HTMLElement>("#editor-native-example");
+const editorError = element<HTMLElement>("#editor-error");
+let nativeApiAvailable = true;
+let codeEditor: CodeEditor;
+let editorSaved = true;
+
+const editorStorageKey = "lvgl-studio-js-source";
+const editorMaxSourceLength = 262144;
+const defaultEditorSource = `function main(api) {
+  const { runtime, screen } = api;
+  const label = runtime.createLabel(screen);
+  runtime.setText(label, "Hello LVGL");
+}
+`;
+
+function sourceByteLength(source: string): number {
+  return new TextEncoder().encode(source).byteLength;
+}
+
+function readEditorSource(): string {
+  try {
+    const saved = localStorage.getItem(editorStorageKey);
+    return saved === null || sourceByteLength(saved) > editorMaxSourceLength ? defaultEditorSource : saved;
+  }
+  catch { return defaultEditorSource; }
+}
+
+function setEditorState(state: "saved" | "dirty" | "running"): void {
+  editorState.dataset.state = state;
+  editorState.textContent = t(state === "saved" ? "studio.editorSaved" : state === "running" ? "studio.editorRunning" : "studio.editorDirty");
+}
+
+function clearEditorError(): void {
+  editorError.hidden = true;
+  editorError.textContent = "";
+}
+
+function editorText(): string {
+  return codeEditor?.getValue() ?? "";
+}
+
+function updateNativeApiControl(): void {
+  editorNative.disabled = !nativeApiAvailable;
+  if (!nativeApiAvailable) {
+    editorNative.checked = false;
+    editorNativeNote.textContent = t("studio.editorNativeUnavailable");
+  } else if (editorNative.checked) {
+    editorNativeNote.textContent = t("studio.editorNativeEnabledHint");
+  } else {
+    editorNativeNote.textContent = t("studio.editorNativeHint");
+  }
+  editorNativeExample.hidden = !editorNative.checked;
+}
+
+function saveEditorSource(): boolean {
+  if (sourceByteLength(editorText()) > editorMaxSourceLength) {
+    editorSaved = false;
+    setEditorState("dirty");
+    editorError.textContent = t("studio.editorTooLarge");
+    editorError.hidden = false;
+    return false;
+  }
+  try {
+    localStorage.setItem(editorStorageKey, editorText());
+    editorSaved = true;
+    setEditorState("saved");
+    return true;
+  } catch {
+    editorSaved = false;
+    setEditorState("dirty");
+    editorError.textContent = t("studio.editorSaveUnavailable");
+    editorError.hidden = false;
+    return false;
+  }
+}
+
+function setZenMode(enabled: boolean): void {
+  document.body.classList.toggle("zen-editor", enabled);
+  editorZen.setAttribute("aria-pressed", String(enabled));
+  updateZenLabel(enabled);
+  window.requestAnimationFrame(() => {
+    fitDevice();
+    if (enabled) codeEditor.focus();
+  });
+  window.setTimeout(fitDevice, 480);
+}
+
+function updateZenLabel(enabled: boolean = document.body.classList.contains("zen-editor")): void {
+  const label = t(enabled ? "studio.editorZenExit" : "studio.editorZenEnter");
+  editorZen.setAttribute("aria-label", label);
+  editorZen.setAttribute("title", label);
+}
+
+function editorSource(): Source {
+  return {
+    name: "editor.js", origin: "LOCAL EDITOR",
+    allowNativeApi: editorNative.checked,
+    canEdit: true,
+    load: async () => {
+      if (sourceByteLength(editorText()) > editorMaxSourceLength) throw new Error(t("studio.editorTooLarge"));
+      return { kind: "js", source: editorText() };
+    },
+  };
+}
+
+async function runEditor(): Promise<void> {
+  if (sourceByteLength(editorText()) > editorMaxSourceLength) {
+    editorError.textContent = t("studio.editorTooLarge");
+    editorError.hidden = false;
+    return;
+  }
+  clearEditorError();
+  saveEditorSource();
+  setEditorState("running");
+  selectedApp = editorSource();
+  selectedAppReport = undefined;
+  showAppSource();
+  const result = await run();
+  if (result !== "started") setEditorState(editorSaved ? "saved" : "dirty");
+}
+
+function downloadEditorSource(): void {
+  if (sourceByteLength(editorText()) > editorMaxSourceLength) {
+    editorError.textContent = t("studio.editorTooLarge");
+    editorError.hidden = false;
+    return;
+  }
+  const url = URL.createObjectURL(new Blob([editorText()], { type: "text/javascript;charset=utf-8" }));
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = "lvgl-app.js";
+  link.click();
+  window.setTimeout(() => URL.revokeObjectURL(url), 0);
+}
+
+codeEditor = createCodeEditor(editorInput, readEditorSource(), () => {
+  editorSaved = false;
+  setEditorState("dirty");
+  clearEditorError();
+}, () => { void runEditor(); });
+setEditorState("saved");
+updateNativeApiControl();
 for (const [value, sample] of Object.entries(tsSamples)) {
   tsSample.add(new Option(sample.sampleName, value));
 }
@@ -252,11 +417,16 @@ function artifactSummary(report: ArtifactReport): string {
 function onOutput(message: RunnerOutput): void {
   if (message.type === "ready") {
     running = true;
+    if (selectedApp.origin === "LOCAL EDITOR") setEditorState(editorSaved ? "saved" : "dirty");
     if (message.mode === "firmware") {
+      nativeApiAvailable = false;
+      updateNativeApiControl();
       renderCore();
       setStatus("running", t("status.firmware"));
       appendLog(t("status.firmwareReady", { abi: message.firmware.abi, width: message.width, height: message.height }), "success");
     } else {
+      nativeApiAvailable = message.core.identity.sdk.status === "matched";
+      updateNativeApiControl();
       renderCore(message.core);
       setStatus("running", t("status.running"));
       appendLog(t("status.coreReady", { abi: message.core.identity.bridgeAbi, exports: message.core.exports, width: message.width, height: message.height }), "success");
@@ -277,6 +447,18 @@ function onOutput(message: RunnerOutput): void {
     renderCore();
     controller.stop();
     setStatus("error", t("status.error"));
+    if (selectedApp.origin === "LOCAL EDITOR") {
+      setEditorState(editorSaved ? "saved" : "dirty");
+      if (message.detail.code === "unsupported") {
+        nativeApiAvailable = false;
+        updateNativeApiControl();
+      }
+      const location = message.detail.line
+        ? `${t("studio.editorError", { line: message.detail.line, column: message.detail.column ?? 1 })} · ` : "";
+      editorError.textContent = `${location}${message.message}`;
+      editorError.hidden = false;
+      if (message.detail.line) codeEditor.reveal(message.detail.line, message.detail.column);
+    }
     appendLog(message.message, "error");
   }
 }
@@ -318,7 +500,8 @@ async function run(): Promise<"started" | "failed" | "cancelled"> {
       await controller.start({ mode: "firmware", firmware: app.bytes, width, height });
     } else {
       const core = await (library ? library.arrayBuffer() : fetchBuffer("/target/wasm/liblvgl.wasm"));
-      await controller.start({ mode: "lvgl-app", core, app, resources: assets, width, height });
+      await controller.start({ mode: "lvgl-app", core, app, resources: assets, width, height,
+        allowNativeApi: source.allowNativeApi });
     }
     return runId === generation ? "started" : "cancelled";
   } catch (error) {
@@ -326,7 +509,16 @@ async function run(): Promise<"started" | "failed" | "cancelled"> {
     controller.stop();
     renderCore();
     setStatus("error", t("status.appFailed"));
-    appendLog(error instanceof Error ? error.message : String(error), "error");
+    const message = error instanceof Error ? error.message : String(error);
+    if (selectedApp.origin === "LOCAL EDITOR") {
+      const detail = (error as { detail?: RunnerError } | undefined)?.detail;
+      const location = detail?.line
+        ? `${t("studio.editorError", { line: detail.line, column: detail.column ?? 1 })} · ` : "";
+      editorError.textContent = `${location}${message}`;
+      editorError.hidden = false;
+      if (detail?.line) codeEditor.reveal(detail.line, detail.column);
+    }
+    appendLog(message, "error");
     return "failed";
   }
 }
@@ -370,14 +562,21 @@ async function chooseCore(file: File): Promise<void> {
   const previous = selectedCore;
   const previousReport = selectedCoreReport;
   const previousManifest = selectedCoreManifest;
+  const previousNativeApiAvailable = nativeApiAvailable;
+  const previousNativeApiChecked = editorNative.checked;
   selectedCore = file;
   selectedCoreReport = report;
   selectedCoreManifest = undefined;
+  nativeApiAvailable = false;
+  updateNativeApiControl();
   showCoreSource();
   if (await run() === "failed" && selectedCore === file) {
     selectedCore = previous;
     selectedCoreReport = previousReport;
     selectedCoreManifest = previousManifest;
+    nativeApiAvailable = previousNativeApiAvailable;
+    editorNative.checked = previousNativeApiChecked;
+    updateNativeApiControl();
     showCoreSource();
     await run();
   }
@@ -418,15 +617,23 @@ async function chooseApp(file: File): Promise<void> {
       return;
     }
   }
+  const jsSource = kind === "js" ? await file.text() : undefined;
   const candidate: Source = {
     name: file.name, origin: "LOCAL FILE",
-    load: async () => kind === "js" ? { kind, source: await file.text() }
+    canEdit: kind === "js" && sourceByteLength(jsSource ?? "") <= editorMaxSourceLength,
+    load: async () => kind === "js" ? { kind, source: jsSource! }
       : { kind, bytes: wasmBytes!.slice(0) },
   };
   const previous = selectedApp;
   const previousReport = selectedAppReport;
   selectedApp = candidate;
   selectedAppReport = report;
+  if (kind === "js" && jsSource !== undefined && sourceByteLength(jsSource) <= editorMaxSourceLength) {
+    codeEditor.setValue(jsSource);
+    clearEditorError();
+    editorSaved = editorText() === readEditorSource();
+    setEditorState(editorSaved ? "saved" : "dirty");
+  }
   showAppSource();
   if (await run() === "failed" && selectedApp === candidate) {
     selectedApp = previous;
@@ -461,7 +668,15 @@ function showAppSource(): void {
   appOrigin.textContent = selectedApp.origin;
   appPreflight.textContent = selectedAppReport ? artifactSummary(selectedAppReport) : t("studio.jsAppMode");
   appDetails.disabled = !selectedAppReport;
+  updateAppEditVisibility();
   renderResources();
+}
+
+function updateAppEditVisibility(): void {
+  appEdit.hidden = selectedLanguage !== "js"
+    || selectedApp.canEdit === false
+    || selectedAppReport?.kind === "lvw-app"
+    || selectedAppReport?.kind === "firmware";
 }
 
 function renderResources(): void {
@@ -506,7 +721,7 @@ async function chooseResources(files: File[]): Promise<void> {
 }
 
 function currentToolchain(language: Language): Toolchain {
-  return language === "ts" ? tsSamples[tsSample.value] ?? toolchains.ts : toolchains[language];
+  return language === "ts" ? tsSamples[tsSample.value] ?? toolchains.ts : toolchains[language] ?? toolchains.js;
 }
 
 function renderSourceLinks(container: HTMLElement, links: Toolchain["links"]): void {
@@ -522,8 +737,12 @@ function renderSourceLinks(container: HTMLElement, links: Toolchain["links"]): v
 }
 
 function showToolchain(language: Language): void {
+  if (language !== "js" && document.body.classList.contains("zen-editor")) setZenMode(false);
   selectedLanguage = language;
   const tool = currentToolchain(language);
+  jsEditor.hidden = language !== "js";
+  element<HTMLElement>(".toolchain-detail").hidden = language === "js";
+  updateAppEditVisibility();
   element<HTMLElement>("#sample-picker").hidden = language !== "ts";
   for (const button of document.querySelectorAll<HTMLButtonElement>("[data-language]")) {
     const active = button.dataset.language === language;
@@ -561,10 +780,19 @@ function showToolchain(language: Language): void {
 
 async function chooseSample(language: Language): Promise<void> {
   const tool = currentToolchain(language);
+  let sampleSource: AppSource | undefined;
+  if (language === "js") {
+    sampleSource = await fetchApp(tool.sample, tool.kind);
+    if (sampleSource.kind === "js") {
+      codeEditor.setValue(sampleSource.source);
+      clearEditorError();
+      saveEditorSource();
+    }
+  }
   selectedApp = {
     name: t("language.sampleApplication", { name: `${t(`tool.${tool.i18nKey}`)}${tool.sampleName ? ` ${tool.sampleName === "API button" ? t("tool.apiButton") : tool.sampleName}` : ""}` }), origin: t("artifact.sample"),
     resources: tool.resources,
-    load: () => fetchApp(tool.sample, tool.kind),
+    load: async () => sampleSource ?? await fetchApp(tool.sample, tool.kind),
   };
   selectedAppReport = undefined;
   showAppSource();
@@ -575,6 +803,8 @@ element<HTMLButtonElement>("#core-default").addEventListener("click", () => {
   selectedCore = undefined;
   selectedCoreReport = undefined;
   selectedCoreManifest = undefined;
+  nativeApiAvailable = true;
+  updateNativeApiControl();
   showCoreSource();
   void run();
 });
@@ -613,6 +843,20 @@ clearResources.addEventListener("click", () => {
   void run();
 });
 tsSample.addEventListener("change", () => showToolchain(selectedLanguage));
+appEdit.addEventListener("click", () => {
+  showToolchain("js");
+  jsEditor.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  codeEditor.focus();
+});
+editorRun.addEventListener("click", () => { void runEditor(); });
+editorSave.addEventListener("click", saveEditorSource);
+editorDownload.addEventListener("click", downloadEditorSource);
+editorReset.addEventListener("click", () => {
+  codeEditor.setValue(defaultEditorSource);
+  saveEditorSource();
+});
+editorNative.addEventListener("change", updateNativeApiControl);
+editorZen.addEventListener("click", () => setZenMode(!document.body.classList.contains("zen-editor")));
 const resourceCard = element<HTMLElement>(".resources-card");
 resourceCard.addEventListener("dragover", (event) => { event.preventDefault(); resourceCard.classList.add("dragging"); });
 resourceCard.addEventListener("dragleave", () => resourceCard.classList.remove("dragging"));
@@ -643,8 +887,9 @@ viewportSelect.addEventListener("change", () => {
   }
 });
 window.addEventListener("resize", fitDevice);
+new ResizeObserver(fitDevice).observe(stage);
 for (const button of document.querySelectorAll<HTMLButtonElement>("[data-language]")) {
-  button.addEventListener("click", () => showToolchain(button.dataset.language as Language));
+  button.addEventListener("click", () => showToolchain(normalizeLanguage(button.dataset.language)));
 }
 element<HTMLButtonElement>("#sample-button").addEventListener("click", () => { void chooseSample(selectedLanguage); });
 const sidePanel = element<HTMLElement>("#side-panel");

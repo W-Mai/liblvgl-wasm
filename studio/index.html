@@ -86,6 +86,7 @@
             <div class="file-state"><span class="file-dot app-dot"></span><span id="app-name" data-i18n="studio.jsSample">JavaScript sample application</span><span id="app-origin">SAMPLE</span></div>
             <p id="app-preflight" class="artifact-status" data-i18n="studio.jsAppMode">JavaScript · LVGL app mode</p>
             <button id="app-details" class="core-details" type="button" aria-label="Application preflight details" disabled><span data-i18n="studio.preflight">Preflight report</span><span aria-hidden="true">→</span></button>
+            <button id="app-edit" class="text-action" type="button" data-i18n="studio.openEditor">Open JavaScript editor</button>
             <button id="app-reset" class="text-action" type="button">↺ &nbsp;<span data-i18n="studio.restoreSample">Restore sample app</span></button>
           </section>
 
@@ -151,6 +152,37 @@
             <button data-language="cpp" type="button" aria-pressed="false">C++</button>
             <button data-language="rust" type="button" aria-pressed="false">Rust</button>
           </div>
+          <section id="js-editor" class="js-editor" aria-labelledby="js-editor-title" hidden>
+            <div class="editor-heading">
+              <div>
+                <h3 id="js-editor-title" data-i18n="studio.editorTitle">JavaScript editor</h3>
+                <p data-i18n="studio.editorHint">Write a main(api) function and run it in the local preview.</p>
+              </div>
+              <button id="editor-zen" class="icon-button editor-zen" type="button" aria-pressed="false" aria-label="Enter Zen mode" title="Enter Zen mode" data-i18n-aria-label="studio.editorZenEnter" data-i18n-title="studio.editorZenEnter">⛶</button>
+            </div>
+            <div class="editor-actions">
+              <button id="editor-run" class="run-button" type="button"><span aria-hidden="true">▶</span> <span data-i18n="studio.editorRun">Run code</span></button>
+              <button id="editor-save" class="editor-action" type="button" data-i18n="studio.editorSave">Save locally</button>
+              <button id="editor-download" class="editor-action" type="button" data-i18n="studio.editorDownload">Download .js</button>
+              <button id="editor-reset" class="editor-action" type="button" data-i18n="studio.editorReset">Reset sample</button>
+              <span id="editor-state" class="editor-state" role="status" aria-live="polite" data-i18n="studio.editorSaved">Saved locally</span>
+            </div>
+            <label class="editor-native-toggle">
+              <input id="editor-native" type="checkbox" role="switch" aria-describedby="editor-native-note">
+              <span class="editor-native-switch" aria-hidden="true"></span>
+              <span data-i18n="studio.editorNative">Advanced LVGL API</span>
+            </label>
+            <p id="editor-native-note" class="editor-native-note" data-i18n="studio.editorNativeHint">Enable to use native LVGL calls in your code, then run it.</p>
+            <pre id="editor-native-example" class="editor-native-example" hidden><code>function main(api) {
+  const label = api.runtime.createLabel(api.screen);
+  api.runtime.setText(label, "Hello LVGL");
+  lv_obj_set_pos(label.handle, 24, 32);
+}</code></pre>
+            <span id="js-editor-input-label" class="sr-only" data-i18n="studio.editorInputLabel">JavaScript application source</span>
+            <div id="js-editor-input" class="js-editor-input" role="textbox" aria-multiline="true" aria-labelledby="js-editor-input-label" aria-label="JavaScript application source" data-i18n-aria-label="studio.editorInputLabel"></div>
+            <p id="editor-error" class="editor-error" role="alert" hidden></p>
+            <p class="editor-footnote" data-i18n="studio.editorLocalOnly">Runs in this browser. Source is saved in local storage.</p>
+          </section>
           <div class="toolchain-detail">
             <div class="toolchain-badge"><span id="language-symbol">JS</span><div><strong id="language-name">JavaScript</strong><small id="language-output">Upload .js</small></div></div>
             <div id="sample-picker" class="sample-picker" hidden><label for="ts-sample" data-i18n="studio.sample">Sample</label><select id="ts-sample" aria-label="TypeScript sample" data-i18n-aria-label="studio.sample"></select></div>

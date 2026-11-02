@@ -21,6 +21,8 @@ export interface LvglAppRun {
   resources: ResourceSource[];
   width: number;
   height: number;
+  /** Existing uploaded JS applications keep native API access unless explicitly disabled. */
+  allowNativeApi?: boolean;
 }
 
 export type RunnerInput =
@@ -34,9 +36,25 @@ export interface FirmwareRuntimeReport {
   sha256: string;
 }
 
+export type RunnerErrorCode =
+  | "library-load"
+  | "application-syntax"
+  | "application-start"
+  | "application-async"
+  | "runtime"
+  | "unsupported";
+
+export interface RunnerError {
+  code: RunnerErrorCode;
+  phase: "load" | "compile" | "start" | "runtime";
+  message: string;
+  line?: number;
+  column?: number;
+}
+
 export type RunnerOutput =
   | { type: "ready"; mode: "lvgl-app"; width: number; height: number; core: CoreReport }
   | { type: "ready"; mode: "firmware"; width: number; height: number; firmware: FirmwareRuntimeReport }
   | { type: "frame"; width: number; height: number; frameId: number; pixels: ArrayBuffer }
   | { type: "log"; message: string }
-  | { type: "error"; message: string };
+  | { type: "error"; message: string; detail: RunnerError };

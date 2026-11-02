@@ -6,6 +6,7 @@
 - Wasm metadata inspection records imported and defined memory limits, shared flags, and export indices for capability reports.
 - Complete packages include `liblvgl.manifest.json`, binding exact source/config/API/core hashes, target/toolchain, adapter inputs, and Wasm shapes to declared, enabled, adapted, and runtime-verification states.
 - Studio artifact preflight validates required Wasm export kinds, including linear memory.
+- Studio JavaScript editor with CodeMirror editing, local Save/Run persistence, Zen layout, structured source errors, and matching-core native API gating.
 - Release package acceptance runs the relocated TypeScript SDK in headless Chrome before archive upload.
 - Studio can load a matching capability manifest for a custom core and display its version, configuration identity, and capability states.
 - WASI realtime and monotonic clock imports for TypeScript and Rust hosts.

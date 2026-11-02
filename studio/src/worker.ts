@@ -1,8 +1,9 @@
 import { LvglRuntime, type Display, type ObjectRef, type PointerInput } from "../../bindings/typescript/src/index.ts";
 import type { AppApi } from "../../toolchains/ts/api.ts";
 import { describeCore, inspectCore } from "./core.ts";
+import { createEditorApi, editorModuleSource, type EditorApi } from "./editor-api.ts";
 import { FirmwareRuntime } from "./firmware.ts";
-import type { AppSource, RunnerInput, RunnerOutput } from "./protocol.ts";
+import type { AppSource, RunnerError, RunnerInput, RunnerOutput } from "./protocol.ts";
 
 const worker = self as DedicatedWorkerGlobalScope;
 let runtime: LvglRuntime | undefined;
@@ -17,10 +18,36 @@ function send(message: RunnerOutput, transfer: Transferable[] = []): void {
   worker.postMessage(message, transfer);
 }
 
+type ErrorWithDetail = Error & { detail?: RunnerError };
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function errorDetail(error: unknown, code: RunnerError["code"], phase: RunnerError["phase"]): RunnerError {
+  const detail = (error as ErrorWithDetail | undefined)?.detail;
+  if (detail) return detail;
+  return { code, phase, message: errorMessage(error), ...syntaxLocation(error) };
+}
+
+function failure(detail: RunnerError): ErrorWithDetail {
+  const error = new Error(detail.message) as ErrorWithDetail;
+  error.detail = detail;
+  return error;
+}
+
+function syntaxLocation(error: unknown): Pick<RunnerError, "line" | "column"> {
+  const text = error instanceof Error ? `${error.message}\n${error.stack ?? ""}` : String(error);
+  const match = text.match(/(?:lvgl-editor\.js|<anonymous>):(\d+)(?::(\d+))?/);
+  if (!match) return {};
+  return { line: Number(match[1]), ...(match[2] ? { column: Number(match[2]) } : {}) };
+}
+
 function fail(error: unknown): void {
   if (timer) clearTimeout(timer);
   timer = undefined;
-  send({ type: "error", message: error instanceof Error ? error.message : String(error) });
+  const detail = errorDetail(error, "runtime", "runtime");
+  send({ type: "error", message: detail.message, detail });
 }
 
 function frame(): void {
@@ -58,11 +85,44 @@ function tick(): void {
   }
 }
 
-function runJavaScript(source: string, api: AppApi): void {
-  const entry = new Function("api", `${source}\nconst fn = typeof main === "function" ? main : globalThis.main;
-    if (typeof fn !== "function") throw new Error("Application must define main(api)");
-    return fn(api);`);
-  entry(api);
+async function runJavaScript(source: string, api: AppApi, allowNativeApi?: boolean): Promise<void> {
+  const nativeNames = allowNativeApi === true ? Object.keys(api.runtime.unsafe) : [];
+  const moduleSource = editorModuleSource(source, nativeNames);
+  const url = URL.createObjectURL(new Blob([moduleSource], { type: "text/javascript" }));
+  let result: unknown;
+  try {
+    let entry: (api: AppApi | EditorApi) => unknown;
+    try {
+      const module = await import(url) as { default?: unknown };
+      if (typeof module.default !== "function") throw new Error("Application module has no main(api) entry point");
+      entry = module.default as (api: AppApi | EditorApi) => unknown;
+    } catch (error) {
+      const location = syntaxLocation(error);
+      throw failure({
+        code: "application-syntax",
+        phase: "compile",
+        message: errorMessage(error),
+        ...(location.line ? { line: Math.max(1, location.line - 1), ...(location.column ? { column: location.column } : {}) } : {}),
+      });
+    }
+    try {
+      const executionApi = allowNativeApi === undefined ? api : createEditorApi(api, allowNativeApi);
+      result = entry(executionApi);
+    } catch (error) {
+      const detail = errorDetail(error, "application-start", "start");
+      throw failure(detail);
+    }
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+  if (result && typeof (result as { then?: unknown }).then === "function") {
+    Promise.resolve(result).catch(() => undefined);
+    throw failure({
+      code: "application-async",
+      phase: "start",
+      message: "Application main(api) must complete synchronously; return a value instead of a Promise",
+    });
+  }
 }
 
 const appImports = new Set([
@@ -131,9 +191,9 @@ async function runWasm(bytes: ArrayBuffer, api: AppApi): Promise<void> {
   exports.app_init();
 }
 
-async function runApplication(app: AppSource, api: AppApi): Promise<void> {
+async function runApplication(app: AppSource, api: AppApi, allowNativeApi?: boolean): Promise<void> {
   if (app.kind === "js") {
-    runJavaScript(app.source, api);
+    await runJavaScript(app.source, api, allowNativeApi);
     return;
   }
   await runWasm(app.bytes, api);
@@ -155,7 +215,7 @@ async function start(input: Extract<RunnerInput, { type: "start" }>): Promise<vo
     runtime = await LvglRuntime.load(input.core);
     info = describeCore(runtime.identity, preflight);
   } catch (error) {
-    throw new Error(`Library failed to load: ${error instanceof Error ? error.message : String(error)}`);
+    throw failure({ code: "library-load", phase: "load", message: `Library failed to load: ${errorMessage(error)}` });
   }
   display = runtime.createDisplay(input.width, input.height);
   pointer = runtime.createPointer(display);
@@ -169,9 +229,17 @@ async function start(input: Extract<RunnerInput, { type: "start" }>): Promise<vo
     log: (message) => send({ type: "log", message: String(message) }),
   };
   try {
-    await runApplication(input.app, api);
+    if (input.allowNativeApi === true && runtime.identity.sdk.status !== "matched") {
+      throw failure({
+        code: "unsupported",
+        phase: "start",
+        message: "Advanced LVGL API requires a core that matches the generated SDK",
+      });
+    }
+    await runApplication(input.app, api, input.allowNativeApi);
   } catch (error) {
-    throw new Error(`Application failed to start: ${error instanceof Error ? error.message : String(error)}`);
+    if ((error as ErrorWithDetail | undefined)?.detail) throw error;
+    throw failure({ code: "application-start", phase: "start", message: `Application failed to start: ${errorMessage(error)}` });
   }
   send({ type: "ready", mode: "lvgl-app", width: input.width, height: input.height, core: info });
   last = performance.now();

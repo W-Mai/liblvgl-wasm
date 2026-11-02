@@ -1,4 +1,4 @@
-import type { LvglAppRun, RunnerInput, RunnerOutput, FirmwareRun } from "./protocol.ts";
+import type { LvglAppRun, RunnerError, RunnerInput, RunnerOutput, FirmwareRun } from "./protocol.ts";
 import { assetUrl } from "./paths.ts";
 
 export type RunConfig = LvglAppRun | FirmwareRun;
@@ -13,6 +13,12 @@ export class StudioController {
   private onMessage?: (event: MessageEvent<FrameMessage>) => void;
   private generation = 0;
   private rejectStart?: (error: Error) => void;
+  private startTimeout?: ReturnType<typeof setTimeout>;
+
+  private clearStartTimeout(): void {
+    if (this.startTimeout) clearTimeout(this.startTimeout);
+    this.startTimeout = undefined;
+  }
 
   constructor(private readonly onOutput: (output: RunnerOutput) => void) {}
 
@@ -30,54 +36,96 @@ export class StudioController {
     frame.setAttribute("sandbox", "allow-scripts");
     frame.setAttribute("aria-hidden", "true");
     frame.style.display = "none";
-    frame.srcdoc = `<script>
+    frame.srcdoc = `<!doctype html><html><head><meta http-equiv="Content-Security-Policy" content="default-src 'none'; base-uri 'none'; form-action 'none'; connect-src 'none'; script-src 'unsafe-inline' blob: 'wasm-unsafe-eval'; worker-src blob:"></head><body><script>
       const token = ${JSON.stringify(token)};
       let worker;
+      let workerUrl;
+      const disposeWorker = () => {
+        worker?.terminate();
+        worker = undefined;
+        if (workerUrl) URL.revokeObjectURL(workerUrl);
+        workerUrl = undefined;
+      };
+      addEventListener("pagehide", disposeWorker);
+      const reportError = (error) => {
+        const detail = {
+          code: "runtime",
+          phase: "runtime",
+          message: error?.message || String(error) || "Application worker failed",
+        };
+        parent.postMessage({ token, type: "runner", data: { type: "error", message: detail.message, detail } }, "*");
+      };
       addEventListener("message", (event) => {
         if (event.source !== parent || event.data?.token !== token) return;
         if (event.data.type === "boot") {
-          const url = URL.createObjectURL(new Blob([event.data.workerSource], { type: "text/javascript" }));
-          worker = new Worker(url);
-          worker.onmessage = (result) => {
-            const value = result.data;
-            const transfer = value.type === "frame" ? [value.pixels] : [];
-            parent.postMessage({ token, type: "runner", data: value }, "*", transfer);
-          };
-          worker.onerror = (error) => {
-            parent.postMessage({ token, type: "runner", data: { type: "error", message: error.message } }, "*");
-          };
-          worker.postMessage(event.data.start);
+          try {
+            const url = URL.createObjectURL(new Blob([event.data.workerSource], { type: "text/javascript" }));
+            workerUrl = url;
+            worker = new Worker(url);
+            worker.onmessage = (result) => {
+              const value = result.data;
+              const transfer = value.type === "frame" ? [value.pixels] : [];
+              parent.postMessage({ token, type: "runner", data: value }, "*", transfer);
+            };
+            worker.onerror = reportError;
+            worker.postMessage(event.data.start);
+          } catch (error) {
+            reportError(error);
+            disposeWorker();
+          }
         } else if (event.data.type === "command") {
+          if (event.data.command?.type === "stop") {
+            disposeWorker();
+            return;
+          }
           worker?.postMessage(event.data.command);
         }
       });
       parent.postMessage({ token, type: "frame-ready" }, "*");
-    </script>`;
+    </script></body></html>`;
     this.frame = frame;
 
     const startMessage: RunnerInput = { type: "start", ...config };
     return new Promise<void>((resolve, reject) => {
       this.rejectStart = reject;
+      let booted = false;
+      const boot = (): void => {
+        if (booted) return;
+        booted = true;
+        frame.contentWindow?.postMessage({ token, type: "boot", workerSource, start: startMessage }, "*");
+      };
       this.onMessage = (event) => {
         if (generation !== this.generation) return;
         if (event.source !== frame.contentWindow || event.data?.token !== token) return;
         if (event.data.type === "frame-ready") {
-          frame.contentWindow?.postMessage({ token, type: "boot", workerSource, start: startMessage }, "*");
+          boot();
         } else if (event.data.type === "runner") {
           const output = event.data.data;
           if (output.type === "ready") {
+            this.clearStartTimeout();
             this.rejectStart = undefined;
             resolve();
           }
           if (output.type === "error") {
+            this.clearStartTimeout();
             this.rejectStart = undefined;
-            reject(new Error(output.message));
+            const error = new Error(output.message) as Error & { detail?: RunnerError };
+            error.detail = output.detail;
+            reject(error);
           }
           this.onOutput(output);
         }
       };
       window.addEventListener("message", this.onMessage);
+      frame.addEventListener("load", boot, { once: true });
       document.body.append(frame);
+      this.startTimeout = setTimeout(() => {
+        if (generation !== this.generation || this.rejectStart !== reject) return;
+        this.clearStartTimeout();
+        this.rejectStart = undefined;
+        reject(new Error("Runner timed out while starting"));
+        this.stop();
+      }, 15_000);
     });
   }
 
@@ -95,6 +143,10 @@ export class StudioController {
 
   stop(): void {
     this.generation++;
+    this.clearStartTimeout();
+    if (this.frame && this.token) {
+      this.frame.contentWindow?.postMessage({ token: this.token, type: "command", command: { type: "stop" } }, "*");
+    }
     this.rejectStart?.(new DOMException("Run cancelled", "AbortError"));
     this.rejectStart = undefined;
     if (this.onMessage) window.removeEventListener("message", this.onMessage);
