@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+- Wasmtime compilation checks for authorized module graph features.
 - Rust module graph inspection with feature, WASI and resource topology checks.
 - Native Rust Wasm feature validation with an explicit host allowlist.
 - Rust isolated Wasm resource topology inspection.

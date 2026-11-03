@@ -3,9 +3,9 @@ use liblvgl_wasm_host::{
     ManifestCheck, ManifestRequirement, ModuleArtifact, ModuleArtifactInput, ModuleDeclaration,
     ModuleExport, ModuleExternalType, ModuleGraph, ModuleHostProvider, ModuleImport,
     ModuleInterface, ModuleManifest, ModuleManifestInput, ModuleRole, ModuleTarget, WasiEvidence,
-    WasmCheck, WasmExternal, WasmFacts, inspect_feature_module_graph, inspect_isolated_resources,
-    inspect_module_manifests, inspect_wasi_preview1, inspect_wasm_facts, order_module_graph,
-    validate_wasm_features,
+    WasmCheck, WasmExternal, WasmFacts, compile_feature_module_graph, inspect_feature_module_graph,
+    inspect_isolated_resources, inspect_module_manifests, inspect_wasi_preview1, inspect_wasm_facts,
+    order_module_graph, validate_wasm_features,
 };
 use std::collections::BTreeMap;
 
@@ -67,7 +67,7 @@ fn inspect_real_graph(bytes: &[u8], facts: &WasmFacts, expected_sha: &str) {
             .map(|(name, ty)| ModuleExport { name, ty })
             .collect(),
     };
-    let input = ModuleManifestInput {
+    let mut input = ModuleManifestInput {
         modules: vec![ModuleArtifactInput {
             manifest: ModuleManifest {
                 schema_version: 1,
@@ -117,6 +117,20 @@ fn inspect_real_graph(bytes: &[u8], facts: &WasmFacts, expected_sha: &str) {
     );
     assert_eq!(item.checks().engine(), WasmCheck::NotRun);
     assert_eq!(item.checks().runtime(), WasmCheck::NotRun);
+    let compile_allowed = [
+        "exceptions",
+        "bulk-memory",
+        "reference-types",
+        "sign-extension",
+        "saturating-float-to-int",
+        "multi-value",
+    ];
+    input.modules[0].manifest.target.features =
+        compile_allowed.iter().map(|name| (*name).into()).collect();
+    let compiled = compile_feature_module_graph(&input, &compile_allowed).unwrap();
+    assert_eq!(compiled.modules()[0].sha256(), expected_sha);
+    assert_eq!(compiled.modules()[0].checks().engine(), ManifestCheck::Passed);
+    assert_eq!(compiled.modules()[0].checks().runtime(), WasmCheck::NotRun);
 }
 
 fn main() {

@@ -568,6 +568,8 @@ liblvgl-wasm-host = { path = "/path/to/liblvgl-wasm/bindings/rust" }
 
 `inspect_feature_module_graph` combines manifest identity and interface checks with feature, WASI Preview 1 and isolated topology checks on the same module snapshots. It does not compile or execute modules. Feature validation is synchronous without an execution deadline or CPU and memory limits; the report does not authorize loading.
 
+`compile_feature_module_graph` applies the same checks and compiles the snapshots with Wasmtime using their authorized feature declarations. It does not instantiate or execute modules. Compilation is synchronous without an execution deadline or CPU and memory limits; the report does not authorize loading.
+
 ```rust
 use liblvgl_wasm_host::{Result, Runtime, UnsafePointer, values};
 

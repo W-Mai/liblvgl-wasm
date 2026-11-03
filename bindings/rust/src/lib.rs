@@ -43,8 +43,10 @@ pub use module_manifest::{
 };
 mod module_graph_check;
 pub use module_graph_check::{
-    FeatureModuleGraphChecks, FeatureModuleGraphError, FeatureModuleGraphModuleReport,
-    FeatureModuleGraphReport, inspect_feature_module_graph,
+    CompiledModuleGraphChecks, CompiledModuleGraphError, CompiledModuleGraphModuleReport,
+    CompiledModuleGraphReport, FeatureModuleGraphChecks, FeatureModuleGraphError,
+    FeatureModuleGraphModuleReport, FeatureModuleGraphReport, compile_feature_module_graph,
+    inspect_feature_module_graph,
 };
 mod wasm_facts;
 pub use wasm_facts::{

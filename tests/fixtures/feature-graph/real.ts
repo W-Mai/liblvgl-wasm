@@ -1,8 +1,8 @@
 import { inspectWasmFacts, type WasmExternal } from "../../../bindings/typescript/src/wasm-facts.ts";
 import { inspectFeatureModuleGraph, WASM_FEATURE_POLICY_NAMES } from "../../../target/validator/feature-validator.js";
 
-const [input, output] = process.argv.slice(2);
-if (!input || !output) throw new Error("usage: bun real.ts INPUT.wasm OUTPUT.json");
+const [input, output, featureList] = process.argv.slice(2);
+if (!input || !output) throw new Error("usage: bun real.ts INPUT.wasm OUTPUT.json [FEATURES|-]");
 const bytes = new Uint8Array(await Bun.file(input).arrayBuffer());
 const facts = inspectWasmFacts(bytes);
 function descriptor(item: WasmExternal): object {
@@ -21,7 +21,7 @@ const imports = facts.imports.map((item) => {
   }
   return { module: item.module, name: item.name, provider_export: binding.name, ...type };
 });
-const allowedFeatures = [...WASM_FEATURE_POLICY_NAMES];
+const allowedFeatures = featureList === undefined ? [...WASM_FEATURE_POLICY_NAMES] : featureList === "-" ? [] : featureList.split(",");
 const manifest = {
   schema_version: 1 as const, kind: "wasm-module" as const, id: "app", role: "app" as const,
   artifact: { path: "app.wasm", sha256: facts.sha256 }, target: { abi: "wasip1" as const, features: allowedFeatures },

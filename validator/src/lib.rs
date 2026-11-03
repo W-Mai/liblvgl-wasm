@@ -90,13 +90,8 @@ pub enum ValidationError {
     InvalidModule(String),
 }
 
-/// Validate every section and function body against WASM1 and the policy mask. A successful validation does not identify which allowed features were used.
-///
-/// Call `policy_mask` with a trusted allowlist before using a module's declared features. This native function does not enforce a CPU or memory execution budget.
-pub fn validate(bytes: &[u8], mask: u32) -> Result<(), ValidationError> {
-    if bytes.len() > MAX_INPUT_BYTES {
-        return Err(ValidationError::InputTooLarge);
-    }
+/// Convert a policy mask to the exact validator features, including the WASM1 baseline. The mask must be authorized separately with `policy_mask`.
+pub fn policy_features(mask: u32) -> Result<WasmFeatures, ValidationError> {
     let mut supported = 0;
     let mut features = WasmFeatures::WASM1;
     for feature in FEATURES {
@@ -108,6 +103,17 @@ pub fn validate(bytes: &[u8], mask: u32) -> Result<(), ValidationError> {
     if mask & !supported != 0 {
         return Err(ValidationError::InvalidPolicy);
     }
+    Ok(features)
+}
+
+/// Validate every section and function body against WASM1 and the policy mask. A successful validation does not identify which allowed features were used.
+///
+/// Call `policy_mask` with a trusted allowlist before using a module's declared features. This native function does not enforce a CPU or memory execution budget.
+pub fn validate(bytes: &[u8], mask: u32) -> Result<(), ValidationError> {
+    if bytes.len() > MAX_INPUT_BYTES {
+        return Err(ValidationError::InputTooLarge);
+    }
+    let features = policy_features(mask)?;
     Validator::new_with_features(features)
         .validate_all(bytes)
         .map(|_| ())

@@ -10,7 +10,8 @@ use crate::isolated_resources::{
     IsolatedResourceError, IsolatedResourceReport, IsolatedTopologyCheck, inspect_isolated_facts,
 };
 use crate::module_manifest::{
-    ManifestCheck, ModuleManifestError, ModuleManifestInput, prepare_module_manifests,
+    ManifestCheck, ModuleManifestError, ModuleManifestInput, PreparedModuleGraph,
+    prepare_module_manifests,
 };
 use crate::wasi_preview1::{
     WasiImportCheck, WasiPreview1Error, WasiPreview1Report, inspect_wasi_facts,
@@ -158,10 +159,10 @@ impl fmt::Display for FeatureModuleGraphError {
 impl std::error::Error for FeatureModuleGraphError {}
 
 /// Inspect a graph on private snapshots with a trusted host feature allowlist. Native feature validation is synchronous without CPU, memory, or time limits; the report does not authorize execution.
-pub fn inspect_feature_module_graph(
-    input: &ModuleManifestInput<'_>,
+fn prepare_feature_module_graph<'a>(
+    input: &'a ModuleManifestInput<'a>,
     allowed: &[&str],
-) -> Result<FeatureModuleGraphReport, FeatureModuleGraphError> {
+) -> Result<(PreparedModuleGraph<'a>, FeatureModuleGraphReport, u32), FeatureModuleGraphError> {
     let prepared = prepare_module_manifests(input).map_err(FeatureModuleGraphError::Manifest)?;
     feature_mask(&[], allowed).map_err(FeatureModuleGraphError::Policy)?;
     let mut allowed_snapshot = Vec::new();
@@ -219,6 +220,7 @@ pub fn inspect_feature_module_graph(
     reports
         .try_reserve_exact(prepared.modules.len())
         .map_err(|_| FeatureModuleGraphError::Allocation)?;
+    let mut union_mask = 0;
     for (module, (isolated, wasi)) in prepared.modules.iter().zip(observations) {
         let id = &module.manifest.id;
         let declared: Vec<&str> = module
@@ -233,6 +235,12 @@ pub fn inspect_feature_module_graph(
                 module: id.clone(),
                 source,
             })?;
+        union_mask |= feature_mask(&declared, &allowed_snapshot).map_err(|source| {
+            FeatureModuleGraphError::Feature {
+                module: id.clone(),
+                source,
+            }
+        })?;
         if feature.sha256() != module.facts.sha256
             || wasi.sha256() != module.facts.sha256
             || isolated.sha256() != module.facts.sha256
@@ -251,8 +259,177 @@ pub fn inspect_feature_module_graph(
             checks,
         });
     }
-    Ok(FeatureModuleGraphReport {
-        order: prepared.order,
+    let report = FeatureModuleGraphReport {
+        order: prepared.order.clone(),
         modules: reports,
+    };
+    Ok((prepared, report, union_mask))
+}
+
+/// Inspect a graph on private snapshots with a trusted host feature allowlist. Native feature validation is synchronous without CPU, memory, or time limits; the report does not authorize execution.
+pub fn inspect_feature_module_graph(
+    input: &ModuleManifestInput<'_>,
+    allowed: &[&str],
+) -> Result<FeatureModuleGraphReport, FeatureModuleGraphError> {
+    let (_, report, _) = prepare_feature_module_graph(input, allowed)?;
+    Ok(report)
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CompiledModuleGraphChecks {
+    precheck: FeatureModuleGraphChecks,
+}
+impl CompiledModuleGraphChecks {
+    pub fn declaration(&self) -> ManifestCheck {
+        self.precheck.declaration()
+    }
+    pub fn identity(&self) -> ManifestCheck {
+        self.precheck.identity()
+    }
+    pub fn interface(&self) -> ManifestCheck {
+        self.precheck.interface()
+    }
+    pub fn feature(&self) -> FeatureValidationCheck {
+        self.precheck.feature()
+    }
+    pub fn resource_topology(&self) -> IsolatedTopologyCheck {
+        self.precheck.resource_topology()
+    }
+    pub fn wasi_abi(&self) -> WasiImportCheck {
+        self.precheck.wasi_abi()
+    }
+    pub fn engine(&self) -> ManifestCheck {
+        ManifestCheck::Passed
+    }
+    pub fn target_provenance(&self) -> WasmCheck {
+        WasmCheck::NotRun
+    }
+    pub fn pointer_contracts(&self) -> WasmCheck {
+        WasmCheck::NotRun
+    }
+    pub fn handle_isolation(&self) -> WasmCheck {
+        WasmCheck::NotRun
+    }
+    pub fn environment_isolation(&self) -> WasmCheck {
+        WasmCheck::NotRun
+    }
+    pub fn host_implementation(&self) -> WasmCheck {
+        WasmCheck::NotRun
+    }
+    pub fn lifecycle(&self) -> WasmCheck {
+        WasmCheck::NotRun
+    }
+    pub fn runtime(&self) -> WasmCheck {
+        WasmCheck::NotRun
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CompiledModuleGraphModuleReport {
+    precheck: FeatureModuleGraphModuleReport,
+    checks: CompiledModuleGraphChecks,
+}
+impl CompiledModuleGraphModuleReport {
+    pub fn id(&self) -> &str {
+        self.precheck.id()
+    }
+    pub fn sha256(&self) -> &str {
+        self.precheck.sha256()
+    }
+    pub fn declared_features(&self) -> &[&'static str] {
+        self.precheck.declared_features()
+    }
+    pub fn wasi(&self) -> &WasiPreview1Report {
+        self.precheck.wasi()
+    }
+    pub fn isolated(&self) -> &IsolatedResourceReport {
+        self.precheck.isolated()
+    }
+    pub fn checks(&self) -> &CompiledModuleGraphChecks {
+        &self.checks
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CompiledModuleGraphReport {
+    order: Vec<String>,
+    modules: Vec<CompiledModuleGraphModuleReport>,
+}
+impl CompiledModuleGraphReport {
+    pub fn order(&self) -> &[String] {
+        &self.order
+    }
+    pub fn modules(&self) -> &[CompiledModuleGraphModuleReport] {
+        &self.modules
+    }
+    pub fn policy_version(&self) -> u32 {
+        FEATURE_POLICY_VERSION
+    }
+}
+
+#[derive(Debug)]
+pub enum CompiledModuleGraphError {
+    Precheck(FeatureModuleGraphError),
+    EngineConfig(String),
+    EngineModule { module: String, source: String },
+    InvalidPolicy,
+    Allocation,
+}
+impl fmt::Display for CompiledModuleGraphError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Precheck(error) => write!(f, "module graph precheck failed: {error}"),
+            Self::EngineConfig(error) => write!(f, "engine configuration failed: {error}"),
+            Self::EngineModule { module, source } => {
+                write!(f, "{module:?}: engine compilation failed: {source}")
+            }
+            Self::InvalidPolicy => write!(f, "invalid validated feature policy"),
+            Self::Allocation => write!(f, "module graph compilation allocation failed"),
+        }
+    }
+}
+impl std::error::Error for CompiledModuleGraphError {}
+
+/// Compile a fully inspected graph from its private snapshots with one feature-restricted Wasmtime engine. This synchronous operation has no CPU, memory, or time limit and does not instantiate modules or authorize execution.
+pub fn compile_feature_module_graph(
+    input: &ModuleManifestInput<'_>,
+    allowed: &[&str],
+) -> Result<CompiledModuleGraphReport, CompiledModuleGraphError> {
+    let (prepared, report, mask) =
+        prepare_feature_module_graph(input, allowed).map_err(CompiledModuleGraphError::Precheck)?;
+    let features = lvw_feature_validator::policy_features(mask)
+        .map_err(|_| CompiledModuleGraphError::InvalidPolicy)?;
+    let mut config = wasmtime::Config::new();
+    config.wasm_features(wasmparser::WasmFeatures::all(), false);
+    config.wasm_features(features, true);
+    let engine = wasmtime::Engine::new(&config)
+        .map_err(|error| CompiledModuleGraphError::EngineConfig(format!("{error:#}")))?;
+    let mut compiled = Vec::new();
+    compiled
+        .try_reserve_exact(prepared.modules.len())
+        .map_err(|_| CompiledModuleGraphError::Allocation)?;
+    for module in &prepared.modules {
+        compiled.push(
+            wasmtime::Module::from_binary(&engine, &module.bytes).map_err(|error| {
+                CompiledModuleGraphError::EngineModule {
+                    module: module.manifest.id.clone(),
+                    source: format!("{error:#}"),
+                }
+            })?,
+        );
+    }
+    let mut modules = Vec::new();
+    modules
+        .try_reserve_exact(report.modules.len())
+        .map_err(|_| CompiledModuleGraphError::Allocation)?;
+    for precheck in report.modules {
+        let checks = CompiledModuleGraphChecks {
+            precheck: precheck.checks.clone(),
+        };
+        modules.push(CompiledModuleGraphModuleReport { precheck, checks });
+    }
+    Ok(CompiledModuleGraphReport {
+        order: report.order,
+        modules,
     })
 }
