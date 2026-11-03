@@ -103,7 +103,10 @@ pub fn validate_wasm_features(
     validate_snapshot(&snapshot, declared, mask)
 }
 
-fn feature_mask(declared: &[&str], allowed: &[&str]) -> Result<u32, FeatureValidationError> {
+pub(crate) fn feature_mask(
+    declared: &[&str],
+    allowed: &[&str],
+) -> Result<u32, FeatureValidationError> {
     if declared.len() > FEATURE_POLICY.len()
         || allowed.len() > FEATURE_POLICY.len()
         || declared.iter().chain(allowed).any(|name| name.len() > 128)
@@ -111,6 +114,15 @@ fn feature_mask(declared: &[&str], allowed: &[&str]) -> Result<u32, FeatureValid
         return Err(FeatureValidationError::InvalidFeatureList);
     }
     lvw_feature_validator::policy_mask(declared, allowed).map_err(FeatureValidationError::Policy)
+}
+
+pub(crate) fn validate_features_snapshot(
+    bytes: &[u8],
+    declared: &[&str],
+    allowed: &[&str],
+) -> Result<FeatureValidationReport, FeatureValidationError> {
+    let mask = feature_mask(declared, allowed)?;
+    validate_snapshot(bytes, declared, mask)
 }
 
 fn validate_snapshot(

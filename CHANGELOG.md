@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+- Rust module graph inspection with feature, WASI and resource topology checks.
 - Native Rust Wasm feature validation with an explicit host allowlist.
 - Rust isolated Wasm resource topology inspection.
 - Rust WASI Preview 1 import signature inspection.

@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { afterEach, expect, test as bunTest } from "bun:test";
 import { inspectFeatureModuleGraph as inspectGraph } from "../target/validator/feature-validator.js";
+import sharedCases from "../tests/fixtures/feature-graph/cases.json";
 
 type Operation = { controller: AbortController; promise: ReturnType<typeof inspectGraph> };
 type Context = { ending: boolean; active: Set<Operation>; worker?: typeof Worker };
@@ -103,6 +104,41 @@ function fixture(): any {
 
 const options = { allowedFeatures: [] as string[], startupTimeoutMs: 30_000, executionTimeoutMs: 30_000 };
 const byId = (input: any, id: string) => input.modules.find((item: any) => item.manifest.id === id);
+
+for (const fixture of sharedCases) {
+  test(`shared feature graph: ${fixture.name}`, async () => {
+    const value = structuredClone(fixture.input);
+    const modules = value.modules.map(({ manifest, hex }) => ({
+      manifest, bytes: Uint8Array.from(hex.match(/../g) ?? [], (pair) => Number.parseInt(pair, 16)),
+    }));
+    const input = { modules, hosts: value.hosts } as Parameters<typeof inspectGraph>[0];
+    const pending = inspectFeatureModuleGraph(input, { ...options, allowedFeatures: fixture.allowedFeatures });
+    if (!fixture.accepted) {
+      if (fixture.stage === "manifest") await expect(pending).rejects.toThrow();
+      else if (fixture.stage === "policy") await expect(pending).rejects.toMatchObject({ code: "policy" });
+      else await expect(pending).rejects.toMatchObject({ moduleId: fixture.module, stage: fixture.stage });
+      return;
+    }
+    const report = await pending;
+    expect(report.policyVersion).toBe(1);
+    expect(report.order).toEqual(modules.length === 1 ? ["app"] : modules.length === 2 ? ["lib", "app"] : ["core", "lib", "app"]);
+    for (const item of report.modules) {
+      const source = modules.find((module) => module.manifest.id === item.id)!;
+      expect(item.sha256).toBe(hash(source.bytes));
+      expect(item.declaredFeatures).toEqual(source.manifest.target.features);
+      expect(item.checks).toMatchObject({ declaration: "passed", identity: "passed", interface: "passed", feature: "passed",
+        resourceTopology: "passed", engine: "passed", targetProvenance: "not-run", pointerContracts: "not-run", handleIsolation: "not-run",
+        environmentIsolation: "not-run", hostImplementation: "not-run", lifecycle: "not-run", runtime: "not-run" });
+      expect(item.checks.wasiAbi).toBe(item.wasi.evidence === "present" ? "passed" : "not-observed");
+    }
+  });
+}
+
+test("feature graph rejects a module above the input size limit", async () => {
+  const input = fixture();
+  byId(input, "app").bytes = new Uint8Array(64 * 1024 * 1024 + 1);
+  await expect(inspectFeatureModuleGraph(input, options)).rejects.toThrow("input bytes");
+});
 
 test("one snapshot connects graph identity, feature, WASI and isolated facts", async () => {
   const input = fixture();

@@ -438,10 +438,10 @@ fn fact_matches(
     }
 }
 
-struct SnapshotModule<'a> {
-    manifest: &'a ModuleManifest,
-    _bytes: Vec<u8>,
-    facts: WasmFacts,
+pub(crate) struct SnapshotModule<'a> {
+    pub(crate) manifest: &'a ModuleManifest,
+    pub(crate) bytes: Vec<u8>,
+    pub(crate) facts: WasmFacts,
 }
 struct SnapshotInputs<'a> {
     order: Vec<String>,
@@ -536,7 +536,7 @@ fn snapshot_inputs<'a>(input: &'a ModuleManifestInput<'a>) -> Result<SnapshotInp
         }
         modules.push(SnapshotModule {
             manifest: &module.manifest,
-            _bytes: bytes,
+            bytes,
             facts,
         });
     }
@@ -547,8 +547,14 @@ fn snapshot_inputs<'a>(input: &'a ModuleManifestInput<'a>) -> Result<SnapshotInp
     })
 }
 
-/// Inspect declared identities and interfaces against private Wasm snapshots without compiling or executing modules. The report is not execution authorization.
-pub fn inspect_module_manifests(input: &ModuleManifestInput<'_>) -> Result<ModuleManifestReport> {
+pub(crate) struct PreparedModuleGraph<'a> {
+    pub(crate) order: Vec<String>,
+    pub(crate) modules: Vec<SnapshotModule<'a>>,
+}
+
+pub(crate) fn prepare_module_manifests<'a>(
+    input: &'a ModuleManifestInput<'a>,
+) -> Result<PreparedModuleGraph<'a>> {
     let snapshots = snapshot_inputs(input)?;
     let modules: HashMap<&str, &SnapshotModule<'_>> = snapshots
         .modules
@@ -750,6 +756,15 @@ pub fn inspect_module_manifests(input: &ModuleManifestInput<'_>) -> Result<Modul
             checked_providers.insert(key);
         }
     }
+    Ok(PreparedModuleGraph {
+        order: snapshots.order,
+        modules: snapshots.modules,
+    })
+}
+
+/// Inspect declared identities and interfaces against private Wasm snapshots without compiling or executing modules. The report is not execution authorization.
+pub fn inspect_module_manifests(input: &ModuleManifestInput<'_>) -> Result<ModuleManifestReport> {
+    let snapshots = prepare_module_manifests(input)?;
     Ok(ModuleManifestReport {
         order: snapshots.order,
         modules: snapshots

@@ -85,6 +85,10 @@ do
         LVW_TEST_ISOLATED_REAL_REFERENCE="$facts_tmp/isolated.json" \
         CARGO_TARGET_DIR="$root/target/rust" \
         cargo test --manifest-path bindings/rust/Cargo.toml --locked --test isolated_resources real_isolated_resources
+    bun tests/fixtures/feature-graph/real.ts "$module" "$facts_tmp/feature-graph.json"
+    LVW_TEST_FEATURE_GRAPH_REAL="$facts_tmp/feature-graph.json" \
+        CARGO_TARGET_DIR="$root/target/rust" \
+        cargo test --manifest-path bindings/rust/Cargo.toml --locked --test feature_graph real_feature_graph
 done
 wasi_sdk=$(sh "$root/scripts/resolve-wasi-sdk.sh" "$root")
 "$wasi_sdk/bin/clang" --target=wasm32-wasip1 -std=c11 -O0 -Werror \

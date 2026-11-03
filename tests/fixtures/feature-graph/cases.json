@@ -1,0 +1,3273 @@
+[
+  {
+    "name": "three-module DAG",
+    "input": {
+      "modules": [
+        {
+          "manifest": {
+            "schema_version": 1,
+            "kind": "wasm-module",
+            "id": "app",
+            "role": "app",
+            "artifact": {
+              "path": "app.wasm",
+              "sha256": "2206e38514eb1cc44e967dbcc600176b160c3ca33cb5bb819bbcf9dfc6802290"
+            },
+            "target": {
+              "abi": "wasip1",
+              "features": []
+            },
+            "interface": {
+              "name": "app",
+              "version": 1
+            },
+            "memory_model": "isolated",
+            "requires": [
+              {
+                "provider": "core",
+                "interface": "core",
+                "version": 1,
+                "imports": [
+                  {
+                    "module": "core",
+                    "name": "get",
+                    "provider_export": "get",
+                    "kind": "function",
+                    "params": [],
+                    "results": [
+                      "i32"
+                    ]
+                  }
+                ]
+              },
+              {
+                "provider": "lib",
+                "interface": "lib",
+                "version": 1,
+                "imports": [
+                  {
+                    "module": "lib",
+                    "name": "get",
+                    "provider_export": "get",
+                    "kind": "function",
+                    "params": [],
+                    "results": [
+                      "i32"
+                    ]
+                  }
+                ]
+              }
+            ],
+            "exports": [
+              {
+                "name": "run",
+                "kind": "function",
+                "params": [],
+                "results": [
+                  "i32"
+                ]
+              },
+              {
+                "name": "memory",
+                "kind": "memory",
+                "minimumPages": 1,
+                "maximumPages": 4,
+                "shared": false
+              }
+            ],
+            "runtime_verification": "not-run"
+          },
+          "hex": "0061736d01000000010d026000017f60047f7f7f7f017f02160204636f7265036765740000036c6962036765740000030201000504010101040710020372756e0002066d656d6f727902000a09010700100010016a0b"
+        },
+        {
+          "manifest": {
+            "schema_version": 1,
+            "kind": "wasm-module",
+            "id": "lib",
+            "role": "lib",
+            "artifact": {
+              "path": "lib.wasm",
+              "sha256": "883db35af17b11ddc7dc26f0924bf888cf66bacb0fe8a4063064675953c8e0d5"
+            },
+            "target": {
+              "abi": "wasip1",
+              "features": []
+            },
+            "interface": {
+              "name": "lib",
+              "version": 1
+            },
+            "memory_model": "isolated",
+            "requires": [
+              {
+                "provider": "core",
+                "interface": "core",
+                "version": 1,
+                "imports": [
+                  {
+                    "module": "core",
+                    "name": "get",
+                    "provider_export": "get",
+                    "kind": "function",
+                    "params": [],
+                    "results": [
+                      "i32"
+                    ]
+                  }
+                ]
+              }
+            ],
+            "exports": [
+              {
+                "name": "get",
+                "kind": "function",
+                "params": [],
+                "results": [
+                  "i32"
+                ]
+              },
+              {
+                "name": "memory",
+                "kind": "memory",
+                "minimumPages": 1,
+                "maximumPages": 4,
+                "shared": false
+              }
+            ],
+            "runtime_verification": "not-run"
+          },
+          "hex": "0061736d01000000010d026000017f60047f7f7f7f017f020c0104636f726503676574000003020100050401010104071002036765740001066d656d6f727902000a09010700100041016a0b"
+        },
+        {
+          "manifest": {
+            "schema_version": 1,
+            "kind": "wasm-module",
+            "id": "core",
+            "role": "lib",
+            "artifact": {
+              "path": "core.wasm",
+              "sha256": "dc7d40d02322053498140bafed3868e53fddd45259d26ed1b54dabb0ca16a316"
+            },
+            "target": {
+              "abi": "wasip1",
+              "features": []
+            },
+            "interface": {
+              "name": "core",
+              "version": 1
+            },
+            "memory_model": "isolated",
+            "requires": [
+              {
+                "provider": "host.wasi",
+                "interface": "wasi",
+                "version": 1,
+                "imports": [
+                  {
+                    "module": "wasi_snapshot_preview1",
+                    "name": "fd_write",
+                    "provider_export": "fd_write",
+                    "kind": "function",
+                    "params": [
+                      "i32",
+                      "i32",
+                      "i32",
+                      "i32"
+                    ],
+                    "results": [
+                      "i32"
+                    ]
+                  }
+                ]
+              }
+            ],
+            "exports": [
+              {
+                "name": "get",
+                "kind": "function",
+                "params": [],
+                "results": [
+                  "i32"
+                ]
+              },
+              {
+                "name": "memory",
+                "kind": "memory",
+                "minimumPages": 1,
+                "maximumPages": 4,
+                "shared": false
+              }
+            ],
+            "runtime_verification": "not-run"
+          },
+          "hex": "0061736d01000000010d026000017f60047f7f7f7f017f02230116776173695f736e617073686f745f70726576696577310866645f7772697465000103020100050401010104071002036765740001066d656d6f727902000a06010400412a0b"
+        }
+      ],
+      "hosts": [
+        {
+          "id": "host.wasi",
+          "interface": {
+            "name": "wasi",
+            "version": 1
+          },
+          "exports": [
+            {
+              "name": "fd_write",
+              "kind": "function",
+              "params": [
+                "i32",
+                "i32",
+                "i32",
+                "i32"
+              ],
+              "results": [
+                "i32"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "allowedFeatures": [],
+    "accepted": true
+  },
+  {
+    "name": "different per-module declarations",
+    "input": {
+      "modules": [
+        {
+          "manifest": {
+            "schema_version": 1,
+            "kind": "wasm-module",
+            "id": "app",
+            "role": "app",
+            "artifact": {
+              "path": "app.wasm",
+              "sha256": "2206e38514eb1cc44e967dbcc600176b160c3ca33cb5bb819bbcf9dfc6802290"
+            },
+            "target": {
+              "abi": "wasip1",
+              "features": [
+                "simd"
+              ]
+            },
+            "interface": {
+              "name": "app",
+              "version": 1
+            },
+            "memory_model": "isolated",
+            "requires": [
+              {
+                "provider": "core",
+                "interface": "core",
+                "version": 1,
+                "imports": [
+                  {
+                    "module": "core",
+                    "name": "get",
+                    "provider_export": "get",
+                    "kind": "function",
+                    "params": [],
+                    "results": [
+                      "i32"
+                    ]
+                  }
+                ]
+              },
+              {
+                "provider": "lib",
+                "interface": "lib",
+                "version": 1,
+                "imports": [
+                  {
+                    "module": "lib",
+                    "name": "get",
+                    "provider_export": "get",
+                    "kind": "function",
+                    "params": [],
+                    "results": [
+                      "i32"
+                    ]
+                  }
+                ]
+              }
+            ],
+            "exports": [
+              {
+                "name": "run",
+                "kind": "function",
+                "params": [],
+                "results": [
+                  "i32"
+                ]
+              },
+              {
+                "name": "memory",
+                "kind": "memory",
+                "minimumPages": 1,
+                "maximumPages": 4,
+                "shared": false
+              }
+            ],
+            "runtime_verification": "not-run"
+          },
+          "hex": "0061736d01000000010d026000017f60047f7f7f7f017f02160204636f7265036765740000036c6962036765740000030201000504010101040710020372756e0002066d656d6f727902000a09010700100010016a0b"
+        },
+        {
+          "manifest": {
+            "schema_version": 1,
+            "kind": "wasm-module",
+            "id": "lib",
+            "role": "lib",
+            "artifact": {
+              "path": "lib.wasm",
+              "sha256": "883db35af17b11ddc7dc26f0924bf888cf66bacb0fe8a4063064675953c8e0d5"
+            },
+            "target": {
+              "abi": "wasip1",
+              "features": []
+            },
+            "interface": {
+              "name": "lib",
+              "version": 1
+            },
+            "memory_model": "isolated",
+            "requires": [
+              {
+                "provider": "core",
+                "interface": "core",
+                "version": 1,
+                "imports": [
+                  {
+                    "module": "core",
+                    "name": "get",
+                    "provider_export": "get",
+                    "kind": "function",
+                    "params": [],
+                    "results": [
+                      "i32"
+                    ]
+                  }
+                ]
+              }
+            ],
+            "exports": [
+              {
+                "name": "get",
+                "kind": "function",
+                "params": [],
+                "results": [
+                  "i32"
+                ]
+              },
+              {
+                "name": "memory",
+                "kind": "memory",
+                "minimumPages": 1,
+                "maximumPages": 4,
+                "shared": false
+              }
+            ],
+            "runtime_verification": "not-run"
+          },
+          "hex": "0061736d01000000010d026000017f60047f7f7f7f017f020c0104636f726503676574000003020100050401010104071002036765740001066d656d6f727902000a09010700100041016a0b"
+        },
+        {
+          "manifest": {
+            "schema_version": 1,
+            "kind": "wasm-module",
+            "id": "core",
+            "role": "lib",
+            "artifact": {
+              "path": "core.wasm",
+              "sha256": "dc7d40d02322053498140bafed3868e53fddd45259d26ed1b54dabb0ca16a316"
+            },
+            "target": {
+              "abi": "wasip1",
+              "features": []
+            },
+            "interface": {
+              "name": "core",
+              "version": 1
+            },
+            "memory_model": "isolated",
+            "requires": [
+              {
+                "provider": "host.wasi",
+                "interface": "wasi",
+                "version": 1,
+                "imports": [
+                  {
+                    "module": "wasi_snapshot_preview1",
+                    "name": "fd_write",
+                    "provider_export": "fd_write",
+                    "kind": "function",
+                    "params": [
+                      "i32",
+                      "i32",
+                      "i32",
+                      "i32"
+                    ],
+                    "results": [
+                      "i32"
+                    ]
+                  }
+                ]
+              }
+            ],
+            "exports": [
+              {
+                "name": "get",
+                "kind": "function",
+                "params": [],
+                "results": [
+                  "i32"
+                ]
+              },
+              {
+                "name": "memory",
+                "kind": "memory",
+                "minimumPages": 1,
+                "maximumPages": 4,
+                "shared": false
+              }
+            ],
+            "runtime_verification": "not-run"
+          },
+          "hex": "0061736d01000000010d026000017f60047f7f7f7f017f02230116776173695f736e617073686f745f70726576696577310866645f7772697465000103020100050401010104071002036765740001066d656d6f727902000a06010400412a0b"
+        }
+      ],
+      "hosts": [
+        {
+          "id": "host.wasi",
+          "interface": {
+            "name": "wasi",
+            "version": 1
+          },
+          "exports": [
+            {
+              "name": "fd_write",
+              "kind": "function",
+              "params": [
+                "i32",
+                "i32",
+                "i32",
+                "i32"
+              ],
+              "results": [
+                "i32"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "allowedFeatures": [
+      "simd"
+    ],
+    "accepted": true
+  },
+  {
+    "name": "unknown host feature",
+    "input": {
+      "modules": [
+        {
+          "manifest": {
+            "schema_version": 1,
+            "kind": "wasm-module",
+            "id": "app",
+            "role": "app",
+            "artifact": {
+              "path": "app.wasm",
+              "sha256": "2206e38514eb1cc44e967dbcc600176b160c3ca33cb5bb819bbcf9dfc6802290"
+            },
+            "target": {
+              "abi": "wasip1",
+              "features": []
+            },
+            "interface": {
+              "name": "app",
+              "version": 1
+            },
+            "memory_model": "isolated",
+            "requires": [
+              {
+                "provider": "core",
+                "interface": "core",
+                "version": 1,
+                "imports": [
+                  {
+                    "module": "core",
+                    "name": "get",
+                    "provider_export": "get",
+                    "kind": "function",
+                    "params": [],
+                    "results": [
+                      "i32"
+                    ]
+                  }
+                ]
+              },
+              {
+                "provider": "lib",
+                "interface": "lib",
+                "version": 1,
+                "imports": [
+                  {
+                    "module": "lib",
+                    "name": "get",
+                    "provider_export": "get",
+                    "kind": "function",
+                    "params": [],
+                    "results": [
+                      "i32"
+                    ]
+                  }
+                ]
+              }
+            ],
+            "exports": [
+              {
+                "name": "run",
+                "kind": "function",
+                "params": [],
+                "results": [
+                  "i32"
+                ]
+              },
+              {
+                "name": "memory",
+                "kind": "memory",
+                "minimumPages": 1,
+                "maximumPages": 4,
+                "shared": false
+              }
+            ],
+            "runtime_verification": "not-run"
+          },
+          "hex": "0061736d01000000010d026000017f60047f7f7f7f017f02160204636f7265036765740000036c6962036765740000030201000504010101040710020372756e0002066d656d6f727902000a09010700100010016a0b"
+        },
+        {
+          "manifest": {
+            "schema_version": 1,
+            "kind": "wasm-module",
+            "id": "lib",
+            "role": "lib",
+            "artifact": {
+              "path": "lib.wasm",
+              "sha256": "883db35af17b11ddc7dc26f0924bf888cf66bacb0fe8a4063064675953c8e0d5"
+            },
+            "target": {
+              "abi": "wasip1",
+              "features": []
+            },
+            "interface": {
+              "name": "lib",
+              "version": 1
+            },
+            "memory_model": "isolated",
+            "requires": [
+              {
+                "provider": "core",
+                "interface": "core",
+                "version": 1,
+                "imports": [
+                  {
+                    "module": "core",
+                    "name": "get",
+                    "provider_export": "get",
+                    "kind": "function",
+                    "params": [],
+                    "results": [
+                      "i32"
+                    ]
+                  }
+                ]
+              }
+            ],
+            "exports": [
+              {
+                "name": "get",
+                "kind": "function",
+                "params": [],
+                "results": [
+                  "i32"
+                ]
+              },
+              {
+                "name": "memory",
+                "kind": "memory",
+                "minimumPages": 1,
+                "maximumPages": 4,
+                "shared": false
+              }
+            ],
+            "runtime_verification": "not-run"
+          },
+          "hex": "0061736d01000000010d026000017f60047f7f7f7f017f020c0104636f726503676574000003020100050401010104071002036765740001066d656d6f727902000a09010700100041016a0b"
+        },
+        {
+          "manifest": {
+            "schema_version": 1,
+            "kind": "wasm-module",
+            "id": "core",
+            "role": "lib",
+            "artifact": {
+              "path": "core.wasm",
+              "sha256": "dc7d40d02322053498140bafed3868e53fddd45259d26ed1b54dabb0ca16a316"
+            },
+            "target": {
+              "abi": "wasip1",
+              "features": []
+            },
+            "interface": {
+              "name": "core",
+              "version": 1
+            },
+            "memory_model": "isolated",
+            "requires": [
+              {
+                "provider": "host.wasi",
+                "interface": "wasi",
+                "version": 1,
+                "imports": [
+                  {
+                    "module": "wasi_snapshot_preview1",
+                    "name": "fd_write",
+                    "provider_export": "fd_write",
+                    "kind": "function",
+                    "params": [
+                      "i32",
+                      "i32",
+                      "i32",
+                      "i32"
+                    ],
+                    "results": [
+                      "i32"
+                    ]
+                  }
+                ]
+              }
+            ],
+            "exports": [
+              {
+                "name": "get",
+                "kind": "function",
+                "params": [],
+                "results": [
+                  "i32"
+                ]
+              },
+              {
+                "name": "memory",
+                "kind": "memory",
+                "minimumPages": 1,
+                "maximumPages": 4,
+                "shared": false
+              }
+            ],
+            "runtime_verification": "not-run"
+          },
+          "hex": "0061736d01000000010d026000017f60047f7f7f7f017f02230116776173695f736e617073686f745f70726576696577310866645f7772697465000103020100050401010104071002036765740001066d656d6f727902000a06010400412a0b"
+        }
+      ],
+      "hosts": [
+        {
+          "id": "host.wasi",
+          "interface": {
+            "name": "wasi",
+            "version": 1
+          },
+          "exports": [
+            {
+              "name": "fd_write",
+              "kind": "function",
+              "params": [
+                "i32",
+                "i32",
+                "i32",
+                "i32"
+              ],
+              "results": [
+                "i32"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "allowedFeatures": [
+      "unknown"
+    ],
+    "accepted": false,
+    "stage": "policy"
+  },
+  {
+    "name": "duplicate host feature",
+    "input": {
+      "modules": [
+        {
+          "manifest": {
+            "schema_version": 1,
+            "kind": "wasm-module",
+            "id": "app",
+            "role": "app",
+            "artifact": {
+              "path": "app.wasm",
+              "sha256": "2206e38514eb1cc44e967dbcc600176b160c3ca33cb5bb819bbcf9dfc6802290"
+            },
+            "target": {
+              "abi": "wasip1",
+              "features": []
+            },
+            "interface": {
+              "name": "app",
+              "version": 1
+            },
+            "memory_model": "isolated",
+            "requires": [
+              {
+                "provider": "core",
+                "interface": "core",
+                "version": 1,
+                "imports": [
+                  {
+                    "module": "core",
+                    "name": "get",
+                    "provider_export": "get",
+                    "kind": "function",
+                    "params": [],
+                    "results": [
+                      "i32"
+                    ]
+                  }
+                ]
+              },
+              {
+                "provider": "lib",
+                "interface": "lib",
+                "version": 1,
+                "imports": [
+                  {
+                    "module": "lib",
+                    "name": "get",
+                    "provider_export": "get",
+                    "kind": "function",
+                    "params": [],
+                    "results": [
+                      "i32"
+                    ]
+                  }
+                ]
+              }
+            ],
+            "exports": [
+              {
+                "name": "run",
+                "kind": "function",
+                "params": [],
+                "results": [
+                  "i32"
+                ]
+              },
+              {
+                "name": "memory",
+                "kind": "memory",
+                "minimumPages": 1,
+                "maximumPages": 4,
+                "shared": false
+              }
+            ],
+            "runtime_verification": "not-run"
+          },
+          "hex": "0061736d01000000010d026000017f60047f7f7f7f017f02160204636f7265036765740000036c6962036765740000030201000504010101040710020372756e0002066d656d6f727902000a09010700100010016a0b"
+        },
+        {
+          "manifest": {
+            "schema_version": 1,
+            "kind": "wasm-module",
+            "id": "lib",
+            "role": "lib",
+            "artifact": {
+              "path": "lib.wasm",
+              "sha256": "883db35af17b11ddc7dc26f0924bf888cf66bacb0fe8a4063064675953c8e0d5"
+            },
+            "target": {
+              "abi": "wasip1",
+              "features": []
+            },
+            "interface": {
+              "name": "lib",
+              "version": 1
+            },
+            "memory_model": "isolated",
+            "requires": [
+              {
+                "provider": "core",
+                "interface": "core",
+                "version": 1,
+                "imports": [
+                  {
+                    "module": "core",
+                    "name": "get",
+                    "provider_export": "get",
+                    "kind": "function",
+                    "params": [],
+                    "results": [
+                      "i32"
+                    ]
+                  }
+                ]
+              }
+            ],
+            "exports": [
+              {
+                "name": "get",
+                "kind": "function",
+                "params": [],
+                "results": [
+                  "i32"
+                ]
+              },
+              {
+                "name": "memory",
+                "kind": "memory",
+                "minimumPages": 1,
+                "maximumPages": 4,
+                "shared": false
+              }
+            ],
+            "runtime_verification": "not-run"
+          },
+          "hex": "0061736d01000000010d026000017f60047f7f7f7f017f020c0104636f726503676574000003020100050401010104071002036765740001066d656d6f727902000a09010700100041016a0b"
+        },
+        {
+          "manifest": {
+            "schema_version": 1,
+            "kind": "wasm-module",
+            "id": "core",
+            "role": "lib",
+            "artifact": {
+              "path": "core.wasm",
+              "sha256": "dc7d40d02322053498140bafed3868e53fddd45259d26ed1b54dabb0ca16a316"
+            },
+            "target": {
+              "abi": "wasip1",
+              "features": []
+            },
+            "interface": {
+              "name": "core",
+              "version": 1
+            },
+            "memory_model": "isolated",
+            "requires": [
+              {
+                "provider": "host.wasi",
+                "interface": "wasi",
+                "version": 1,
+                "imports": [
+                  {
+                    "module": "wasi_snapshot_preview1",
+                    "name": "fd_write",
+                    "provider_export": "fd_write",
+                    "kind": "function",
+                    "params": [
+                      "i32",
+                      "i32",
+                      "i32",
+                      "i32"
+                    ],
+                    "results": [
+                      "i32"
+                    ]
+                  }
+                ]
+              }
+            ],
+            "exports": [
+              {
+                "name": "get",
+                "kind": "function",
+                "params": [],
+                "results": [
+                  "i32"
+                ]
+              },
+              {
+                "name": "memory",
+                "kind": "memory",
+                "minimumPages": 1,
+                "maximumPages": 4,
+                "shared": false
+              }
+            ],
+            "runtime_verification": "not-run"
+          },
+          "hex": "0061736d01000000010d026000017f60047f7f7f7f017f02230116776173695f736e617073686f745f70726576696577310866645f7772697465000103020100050401010104071002036765740001066d656d6f727902000a06010400412a0b"
+        }
+      ],
+      "hosts": [
+        {
+          "id": "host.wasi",
+          "interface": {
+            "name": "wasi",
+            "version": 1
+          },
+          "exports": [
+            {
+              "name": "fd_write",
+              "kind": "function",
+              "params": [
+                "i32",
+                "i32",
+                "i32",
+                "i32"
+              ],
+              "results": [
+                "i32"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "allowedFeatures": [
+      "simd",
+      "simd"
+    ],
+    "accepted": false,
+    "stage": "policy"
+  },
+  {
+    "name": "wrong hash",
+    "input": {
+      "modules": [
+        {
+          "manifest": {
+            "schema_version": 1,
+            "kind": "wasm-module",
+            "id": "app",
+            "role": "app",
+            "artifact": {
+              "path": "app.wasm",
+              "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+            },
+            "target": {
+              "abi": "wasip1",
+              "features": []
+            },
+            "interface": {
+              "name": "app",
+              "version": 1
+            },
+            "memory_model": "isolated",
+            "requires": [
+              {
+                "provider": "core",
+                "interface": "core",
+                "version": 1,
+                "imports": [
+                  {
+                    "module": "core",
+                    "name": "get",
+                    "provider_export": "get",
+                    "kind": "function",
+                    "params": [],
+                    "results": [
+                      "i32"
+                    ]
+                  }
+                ]
+              },
+              {
+                "provider": "lib",
+                "interface": "lib",
+                "version": 1,
+                "imports": [
+                  {
+                    "module": "lib",
+                    "name": "get",
+                    "provider_export": "get",
+                    "kind": "function",
+                    "params": [],
+                    "results": [
+                      "i32"
+                    ]
+                  }
+                ]
+              }
+            ],
+            "exports": [
+              {
+                "name": "run",
+                "kind": "function",
+                "params": [],
+                "results": [
+                  "i32"
+                ]
+              },
+              {
+                "name": "memory",
+                "kind": "memory",
+                "minimumPages": 1,
+                "maximumPages": 4,
+                "shared": false
+              }
+            ],
+            "runtime_verification": "not-run"
+          },
+          "hex": "0061736d01000000010d026000017f60047f7f7f7f017f02160204636f7265036765740000036c6962036765740000030201000504010101040710020372756e0002066d656d6f727902000a09010700100010016a0b"
+        },
+        {
+          "manifest": {
+            "schema_version": 1,
+            "kind": "wasm-module",
+            "id": "lib",
+            "role": "lib",
+            "artifact": {
+              "path": "lib.wasm",
+              "sha256": "883db35af17b11ddc7dc26f0924bf888cf66bacb0fe8a4063064675953c8e0d5"
+            },
+            "target": {
+              "abi": "wasip1",
+              "features": []
+            },
+            "interface": {
+              "name": "lib",
+              "version": 1
+            },
+            "memory_model": "isolated",
+            "requires": [
+              {
+                "provider": "core",
+                "interface": "core",
+                "version": 1,
+                "imports": [
+                  {
+                    "module": "core",
+                    "name": "get",
+                    "provider_export": "get",
+                    "kind": "function",
+                    "params": [],
+                    "results": [
+                      "i32"
+                    ]
+                  }
+                ]
+              }
+            ],
+            "exports": [
+              {
+                "name": "get",
+                "kind": "function",
+                "params": [],
+                "results": [
+                  "i32"
+                ]
+              },
+              {
+                "name": "memory",
+                "kind": "memory",
+                "minimumPages": 1,
+                "maximumPages": 4,
+                "shared": false
+              }
+            ],
+            "runtime_verification": "not-run"
+          },
+          "hex": "0061736d01000000010d026000017f60047f7f7f7f017f020c0104636f726503676574000003020100050401010104071002036765740001066d656d6f727902000a09010700100041016a0b"
+        },
+        {
+          "manifest": {
+            "schema_version": 1,
+            "kind": "wasm-module",
+            "id": "core",
+            "role": "lib",
+            "artifact": {
+              "path": "core.wasm",
+              "sha256": "dc7d40d02322053498140bafed3868e53fddd45259d26ed1b54dabb0ca16a316"
+            },
+            "target": {
+              "abi": "wasip1",
+              "features": []
+            },
+            "interface": {
+              "name": "core",
+              "version": 1
+            },
+            "memory_model": "isolated",
+            "requires": [
+              {
+                "provider": "host.wasi",
+                "interface": "wasi",
+                "version": 1,
+                "imports": [
+                  {
+                    "module": "wasi_snapshot_preview1",
+                    "name": "fd_write",
+                    "provider_export": "fd_write",
+                    "kind": "function",
+                    "params": [
+                      "i32",
+                      "i32",
+                      "i32",
+                      "i32"
+                    ],
+                    "results": [
+                      "i32"
+                    ]
+                  }
+                ]
+              }
+            ],
+            "exports": [
+              {
+                "name": "get",
+                "kind": "function",
+                "params": [],
+                "results": [
+                  "i32"
+                ]
+              },
+              {
+                "name": "memory",
+                "kind": "memory",
+                "minimumPages": 1,
+                "maximumPages": 4,
+                "shared": false
+              }
+            ],
+            "runtime_verification": "not-run"
+          },
+          "hex": "0061736d01000000010d026000017f60047f7f7f7f017f02230116776173695f736e617073686f745f70726576696577310866645f7772697465000103020100050401010104071002036765740001066d656d6f727902000a06010400412a0b"
+        }
+      ],
+      "hosts": [
+        {
+          "id": "host.wasi",
+          "interface": {
+            "name": "wasi",
+            "version": 1
+          },
+          "exports": [
+            {
+              "name": "fd_write",
+              "kind": "function",
+              "params": [
+                "i32",
+                "i32",
+                "i32",
+                "i32"
+              ],
+              "results": [
+                "i32"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "allowedFeatures": [],
+    "accepted": false,
+    "stage": "manifest"
+  },
+  {
+    "name": "wrong interface",
+    "input": {
+      "modules": [
+        {
+          "manifest": {
+            "schema_version": 1,
+            "kind": "wasm-module",
+            "id": "app",
+            "role": "app",
+            "artifact": {
+              "path": "app.wasm",
+              "sha256": "2206e38514eb1cc44e967dbcc600176b160c3ca33cb5bb819bbcf9dfc6802290"
+            },
+            "target": {
+              "abi": "wasip1",
+              "features": []
+            },
+            "interface": {
+              "name": "app",
+              "version": 1
+            },
+            "memory_model": "isolated",
+            "requires": [
+              {
+                "provider": "core",
+                "interface": "core",
+                "version": 1,
+                "imports": [
+                  {
+                    "module": "core",
+                    "name": "get",
+                    "provider_export": "get",
+                    "kind": "function",
+                    "params": [],
+                    "results": [
+                      "i32"
+                    ]
+                  }
+                ]
+              },
+              {
+                "provider": "lib",
+                "interface": "lib",
+                "version": 2,
+                "imports": [
+                  {
+                    "module": "lib",
+                    "name": "get",
+                    "provider_export": "get",
+                    "kind": "function",
+                    "params": [],
+                    "results": [
+                      "i32"
+                    ]
+                  }
+                ]
+              }
+            ],
+            "exports": [
+              {
+                "name": "run",
+                "kind": "function",
+                "params": [],
+                "results": [
+                  "i32"
+                ]
+              },
+              {
+                "name": "memory",
+                "kind": "memory",
+                "minimumPages": 1,
+                "maximumPages": 4,
+                "shared": false
+              }
+            ],
+            "runtime_verification": "not-run"
+          },
+          "hex": "0061736d01000000010d026000017f60047f7f7f7f017f02160204636f7265036765740000036c6962036765740000030201000504010101040710020372756e0002066d656d6f727902000a09010700100010016a0b"
+        },
+        {
+          "manifest": {
+            "schema_version": 1,
+            "kind": "wasm-module",
+            "id": "lib",
+            "role": "lib",
+            "artifact": {
+              "path": "lib.wasm",
+              "sha256": "883db35af17b11ddc7dc26f0924bf888cf66bacb0fe8a4063064675953c8e0d5"
+            },
+            "target": {
+              "abi": "wasip1",
+              "features": []
+            },
+            "interface": {
+              "name": "lib",
+              "version": 1
+            },
+            "memory_model": "isolated",
+            "requires": [
+              {
+                "provider": "core",
+                "interface": "core",
+                "version": 1,
+                "imports": [
+                  {
+                    "module": "core",
+                    "name": "get",
+                    "provider_export": "get",
+                    "kind": "function",
+                    "params": [],
+                    "results": [
+                      "i32"
+                    ]
+                  }
+                ]
+              }
+            ],
+            "exports": [
+              {
+                "name": "get",
+                "kind": "function",
+                "params": [],
+                "results": [
+                  "i32"
+                ]
+              },
+              {
+                "name": "memory",
+                "kind": "memory",
+                "minimumPages": 1,
+                "maximumPages": 4,
+                "shared": false
+              }
+            ],
+            "runtime_verification": "not-run"
+          },
+          "hex": "0061736d01000000010d026000017f60047f7f7f7f017f020c0104636f726503676574000003020100050401010104071002036765740001066d656d6f727902000a09010700100041016a0b"
+        },
+        {
+          "manifest": {
+            "schema_version": 1,
+            "kind": "wasm-module",
+            "id": "core",
+            "role": "lib",
+            "artifact": {
+              "path": "core.wasm",
+              "sha256": "dc7d40d02322053498140bafed3868e53fddd45259d26ed1b54dabb0ca16a316"
+            },
+            "target": {
+              "abi": "wasip1",
+              "features": []
+            },
+            "interface": {
+              "name": "core",
+              "version": 1
+            },
+            "memory_model": "isolated",
+            "requires": [
+              {
+                "provider": "host.wasi",
+                "interface": "wasi",
+                "version": 1,
+                "imports": [
+                  {
+                    "module": "wasi_snapshot_preview1",
+                    "name": "fd_write",
+                    "provider_export": "fd_write",
+                    "kind": "function",
+                    "params": [
+                      "i32",
+                      "i32",
+                      "i32",
+                      "i32"
+                    ],
+                    "results": [
+                      "i32"
+                    ]
+                  }
+                ]
+              }
+            ],
+            "exports": [
+              {
+                "name": "get",
+                "kind": "function",
+                "params": [],
+                "results": [
+                  "i32"
+                ]
+              },
+              {
+                "name": "memory",
+                "kind": "memory",
+                "minimumPages": 1,
+                "maximumPages": 4,
+                "shared": false
+              }
+            ],
+            "runtime_verification": "not-run"
+          },
+          "hex": "0061736d01000000010d026000017f60047f7f7f7f017f02230116776173695f736e617073686f745f70726576696577310866645f7772697465000103020100050401010104071002036765740001066d656d6f727902000a06010400412a0b"
+        }
+      ],
+      "hosts": [
+        {
+          "id": "host.wasi",
+          "interface": {
+            "name": "wasi",
+            "version": 1
+          },
+          "exports": [
+            {
+              "name": "fd_write",
+              "kind": "function",
+              "params": [
+                "i32",
+                "i32",
+                "i32",
+                "i32"
+              ],
+              "results": [
+                "i32"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "allowedFeatures": [],
+    "accepted": false,
+    "stage": "manifest"
+  },
+  {
+    "name": "dependency cycle",
+    "input": {
+      "modules": [
+        {
+          "manifest": {
+            "schema_version": 1,
+            "kind": "wasm-module",
+            "id": "app",
+            "role": "app",
+            "artifact": {
+              "path": "app.wasm",
+              "sha256": "2206e38514eb1cc44e967dbcc600176b160c3ca33cb5bb819bbcf9dfc6802290"
+            },
+            "target": {
+              "abi": "wasip1",
+              "features": []
+            },
+            "interface": {
+              "name": "app",
+              "version": 1
+            },
+            "memory_model": "isolated",
+            "requires": [
+              {
+                "provider": "core",
+                "interface": "core",
+                "version": 1,
+                "imports": [
+                  {
+                    "module": "core",
+                    "name": "get",
+                    "provider_export": "get",
+                    "kind": "function",
+                    "params": [],
+                    "results": [
+                      "i32"
+                    ]
+                  }
+                ]
+              },
+              {
+                "provider": "lib",
+                "interface": "lib",
+                "version": 1,
+                "imports": [
+                  {
+                    "module": "lib",
+                    "name": "get",
+                    "provider_export": "get",
+                    "kind": "function",
+                    "params": [],
+                    "results": [
+                      "i32"
+                    ]
+                  }
+                ]
+              }
+            ],
+            "exports": [
+              {
+                "name": "run",
+                "kind": "function",
+                "params": [],
+                "results": [
+                  "i32"
+                ]
+              },
+              {
+                "name": "memory",
+                "kind": "memory",
+                "minimumPages": 1,
+                "maximumPages": 4,
+                "shared": false
+              }
+            ],
+            "runtime_verification": "not-run"
+          },
+          "hex": "0061736d01000000010d026000017f60047f7f7f7f017f02160204636f7265036765740000036c6962036765740000030201000504010101040710020372756e0002066d656d6f727902000a09010700100010016a0b"
+        },
+        {
+          "manifest": {
+            "schema_version": 1,
+            "kind": "wasm-module",
+            "id": "lib",
+            "role": "lib",
+            "artifact": {
+              "path": "lib.wasm",
+              "sha256": "883db35af17b11ddc7dc26f0924bf888cf66bacb0fe8a4063064675953c8e0d5"
+            },
+            "target": {
+              "abi": "wasip1",
+              "features": []
+            },
+            "interface": {
+              "name": "lib",
+              "version": 1
+            },
+            "memory_model": "isolated",
+            "requires": [
+              {
+                "provider": "core",
+                "interface": "core",
+                "version": 1,
+                "imports": [
+                  {
+                    "module": "core",
+                    "name": "get",
+                    "provider_export": "get",
+                    "kind": "function",
+                    "params": [],
+                    "results": [
+                      "i32"
+                    ]
+                  }
+                ]
+              }
+            ],
+            "exports": [
+              {
+                "name": "get",
+                "kind": "function",
+                "params": [],
+                "results": [
+                  "i32"
+                ]
+              },
+              {
+                "name": "memory",
+                "kind": "memory",
+                "minimumPages": 1,
+                "maximumPages": 4,
+                "shared": false
+              }
+            ],
+            "runtime_verification": "not-run"
+          },
+          "hex": "0061736d01000000010d026000017f60047f7f7f7f017f020c0104636f726503676574000003020100050401010104071002036765740001066d656d6f727902000a09010700100041016a0b"
+        },
+        {
+          "manifest": {
+            "schema_version": 1,
+            "kind": "wasm-module",
+            "id": "core",
+            "role": "lib",
+            "artifact": {
+              "path": "core.wasm",
+              "sha256": "dc7d40d02322053498140bafed3868e53fddd45259d26ed1b54dabb0ca16a316"
+            },
+            "target": {
+              "abi": "wasip1",
+              "features": []
+            },
+            "interface": {
+              "name": "core",
+              "version": 1
+            },
+            "memory_model": "isolated",
+            "requires": [
+              {
+                "provider": "host.wasi",
+                "interface": "wasi",
+                "version": 1,
+                "imports": [
+                  {
+                    "module": "wasi_snapshot_preview1",
+                    "name": "fd_write",
+                    "provider_export": "fd_write",
+                    "kind": "function",
+                    "params": [
+                      "i32",
+                      "i32",
+                      "i32",
+                      "i32"
+                    ],
+                    "results": [
+                      "i32"
+                    ]
+                  }
+                ]
+              },
+              {
+                "provider": "lib",
+                "interface": "lib",
+                "version": 1,
+                "imports": []
+              }
+            ],
+            "exports": [
+              {
+                "name": "get",
+                "kind": "function",
+                "params": [],
+                "results": [
+                  "i32"
+                ]
+              },
+              {
+                "name": "memory",
+                "kind": "memory",
+                "minimumPages": 1,
+                "maximumPages": 4,
+                "shared": false
+              }
+            ],
+            "runtime_verification": "not-run"
+          },
+          "hex": "0061736d01000000010d026000017f60047f7f7f7f017f02230116776173695f736e617073686f745f70726576696577310866645f7772697465000103020100050401010104071002036765740001066d656d6f727902000a06010400412a0b"
+        }
+      ],
+      "hosts": [
+        {
+          "id": "host.wasi",
+          "interface": {
+            "name": "wasi",
+            "version": 1
+          },
+          "exports": [
+            {
+              "name": "fd_write",
+              "kind": "function",
+              "params": [
+                "i32",
+                "i32",
+                "i32",
+                "i32"
+              ],
+              "results": [
+                "i32"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "allowedFeatures": [],
+    "accepted": false,
+    "stage": "manifest"
+  },
+  {
+    "name": "declared feature disallowed",
+    "input": {
+      "modules": [
+        {
+          "manifest": {
+            "schema_version": 1,
+            "kind": "wasm-module",
+            "id": "app",
+            "role": "app",
+            "artifact": {
+              "path": "app.wasm",
+              "sha256": "2206e38514eb1cc44e967dbcc600176b160c3ca33cb5bb819bbcf9dfc6802290"
+            },
+            "target": {
+              "abi": "wasip1",
+              "features": [
+                "simd"
+              ]
+            },
+            "interface": {
+              "name": "app",
+              "version": 1
+            },
+            "memory_model": "isolated",
+            "requires": [
+              {
+                "provider": "core",
+                "interface": "core",
+                "version": 1,
+                "imports": [
+                  {
+                    "module": "core",
+                    "name": "get",
+                    "provider_export": "get",
+                    "kind": "function",
+                    "params": [],
+                    "results": [
+                      "i32"
+                    ]
+                  }
+                ]
+              },
+              {
+                "provider": "lib",
+                "interface": "lib",
+                "version": 1,
+                "imports": [
+                  {
+                    "module": "lib",
+                    "name": "get",
+                    "provider_export": "get",
+                    "kind": "function",
+                    "params": [],
+                    "results": [
+                      "i32"
+                    ]
+                  }
+                ]
+              }
+            ],
+            "exports": [
+              {
+                "name": "run",
+                "kind": "function",
+                "params": [],
+                "results": [
+                  "i32"
+                ]
+              },
+              {
+                "name": "memory",
+                "kind": "memory",
+                "minimumPages": 1,
+                "maximumPages": 4,
+                "shared": false
+              }
+            ],
+            "runtime_verification": "not-run"
+          },
+          "hex": "0061736d01000000010d026000017f60047f7f7f7f017f02160204636f7265036765740000036c6962036765740000030201000504010101040710020372756e0002066d656d6f727902000a09010700100010016a0b"
+        },
+        {
+          "manifest": {
+            "schema_version": 1,
+            "kind": "wasm-module",
+            "id": "lib",
+            "role": "lib",
+            "artifact": {
+              "path": "lib.wasm",
+              "sha256": "883db35af17b11ddc7dc26f0924bf888cf66bacb0fe8a4063064675953c8e0d5"
+            },
+            "target": {
+              "abi": "wasip1",
+              "features": []
+            },
+            "interface": {
+              "name": "lib",
+              "version": 1
+            },
+            "memory_model": "isolated",
+            "requires": [
+              {
+                "provider": "core",
+                "interface": "core",
+                "version": 1,
+                "imports": [
+                  {
+                    "module": "core",
+                    "name": "get",
+                    "provider_export": "get",
+                    "kind": "function",
+                    "params": [],
+                    "results": [
+                      "i32"
+                    ]
+                  }
+                ]
+              }
+            ],
+            "exports": [
+              {
+                "name": "get",
+                "kind": "function",
+                "params": [],
+                "results": [
+                  "i32"
+                ]
+              },
+              {
+                "name": "memory",
+                "kind": "memory",
+                "minimumPages": 1,
+                "maximumPages": 4,
+                "shared": false
+              }
+            ],
+            "runtime_verification": "not-run"
+          },
+          "hex": "0061736d01000000010d026000017f60047f7f7f7f017f020c0104636f726503676574000003020100050401010104071002036765740001066d656d6f727902000a09010700100041016a0b"
+        },
+        {
+          "manifest": {
+            "schema_version": 1,
+            "kind": "wasm-module",
+            "id": "core",
+            "role": "lib",
+            "artifact": {
+              "path": "core.wasm",
+              "sha256": "dc7d40d02322053498140bafed3868e53fddd45259d26ed1b54dabb0ca16a316"
+            },
+            "target": {
+              "abi": "wasip1",
+              "features": []
+            },
+            "interface": {
+              "name": "core",
+              "version": 1
+            },
+            "memory_model": "isolated",
+            "requires": [
+              {
+                "provider": "host.wasi",
+                "interface": "wasi",
+                "version": 1,
+                "imports": [
+                  {
+                    "module": "wasi_snapshot_preview1",
+                    "name": "fd_write",
+                    "provider_export": "fd_write",
+                    "kind": "function",
+                    "params": [
+                      "i32",
+                      "i32",
+                      "i32",
+                      "i32"
+                    ],
+                    "results": [
+                      "i32"
+                    ]
+                  }
+                ]
+              }
+            ],
+            "exports": [
+              {
+                "name": "get",
+                "kind": "function",
+                "params": [],
+                "results": [
+                  "i32"
+                ]
+              },
+              {
+                "name": "memory",
+                "kind": "memory",
+                "minimumPages": 1,
+                "maximumPages": 4,
+                "shared": false
+              }
+            ],
+            "runtime_verification": "not-run"
+          },
+          "hex": "0061736d01000000010d026000017f60047f7f7f7f017f02230116776173695f736e617073686f745f70726576696577310866645f7772697465000103020100050401010104071002036765740001066d656d6f727902000a06010400412a0b"
+        }
+      ],
+      "hosts": [
+        {
+          "id": "host.wasi",
+          "interface": {
+            "name": "wasi",
+            "version": 1
+          },
+          "exports": [
+            {
+              "name": "fd_write",
+              "kind": "function",
+              "params": [
+                "i32",
+                "i32",
+                "i32",
+                "i32"
+              ],
+              "results": [
+                "i32"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "allowedFeatures": [],
+    "accepted": false,
+    "stage": "feature",
+    "module": "app"
+  },
+  {
+    "name": "unknown feature",
+    "input": {
+      "modules": [
+        {
+          "manifest": {
+            "schema_version": 1,
+            "kind": "wasm-module",
+            "id": "app",
+            "role": "app",
+            "artifact": {
+              "path": "app.wasm",
+              "sha256": "2206e38514eb1cc44e967dbcc600176b160c3ca33cb5bb819bbcf9dfc6802290"
+            },
+            "target": {
+              "abi": "wasip1",
+              "features": [
+                "unknown"
+              ]
+            },
+            "interface": {
+              "name": "app",
+              "version": 1
+            },
+            "memory_model": "isolated",
+            "requires": [
+              {
+                "provider": "core",
+                "interface": "core",
+                "version": 1,
+                "imports": [
+                  {
+                    "module": "core",
+                    "name": "get",
+                    "provider_export": "get",
+                    "kind": "function",
+                    "params": [],
+                    "results": [
+                      "i32"
+                    ]
+                  }
+                ]
+              },
+              {
+                "provider": "lib",
+                "interface": "lib",
+                "version": 1,
+                "imports": [
+                  {
+                    "module": "lib",
+                    "name": "get",
+                    "provider_export": "get",
+                    "kind": "function",
+                    "params": [],
+                    "results": [
+                      "i32"
+                    ]
+                  }
+                ]
+              }
+            ],
+            "exports": [
+              {
+                "name": "run",
+                "kind": "function",
+                "params": [],
+                "results": [
+                  "i32"
+                ]
+              },
+              {
+                "name": "memory",
+                "kind": "memory",
+                "minimumPages": 1,
+                "maximumPages": 4,
+                "shared": false
+              }
+            ],
+            "runtime_verification": "not-run"
+          },
+          "hex": "0061736d01000000010d026000017f60047f7f7f7f017f02160204636f7265036765740000036c6962036765740000030201000504010101040710020372756e0002066d656d6f727902000a09010700100010016a0b"
+        },
+        {
+          "manifest": {
+            "schema_version": 1,
+            "kind": "wasm-module",
+            "id": "lib",
+            "role": "lib",
+            "artifact": {
+              "path": "lib.wasm",
+              "sha256": "883db35af17b11ddc7dc26f0924bf888cf66bacb0fe8a4063064675953c8e0d5"
+            },
+            "target": {
+              "abi": "wasip1",
+              "features": []
+            },
+            "interface": {
+              "name": "lib",
+              "version": 1
+            },
+            "memory_model": "isolated",
+            "requires": [
+              {
+                "provider": "core",
+                "interface": "core",
+                "version": 1,
+                "imports": [
+                  {
+                    "module": "core",
+                    "name": "get",
+                    "provider_export": "get",
+                    "kind": "function",
+                    "params": [],
+                    "results": [
+                      "i32"
+                    ]
+                  }
+                ]
+              }
+            ],
+            "exports": [
+              {
+                "name": "get",
+                "kind": "function",
+                "params": [],
+                "results": [
+                  "i32"
+                ]
+              },
+              {
+                "name": "memory",
+                "kind": "memory",
+                "minimumPages": 1,
+                "maximumPages": 4,
+                "shared": false
+              }
+            ],
+            "runtime_verification": "not-run"
+          },
+          "hex": "0061736d01000000010d026000017f60047f7f7f7f017f020c0104636f726503676574000003020100050401010104071002036765740001066d656d6f727902000a09010700100041016a0b"
+        },
+        {
+          "manifest": {
+            "schema_version": 1,
+            "kind": "wasm-module",
+            "id": "core",
+            "role": "lib",
+            "artifact": {
+              "path": "core.wasm",
+              "sha256": "dc7d40d02322053498140bafed3868e53fddd45259d26ed1b54dabb0ca16a316"
+            },
+            "target": {
+              "abi": "wasip1",
+              "features": []
+            },
+            "interface": {
+              "name": "core",
+              "version": 1
+            },
+            "memory_model": "isolated",
+            "requires": [
+              {
+                "provider": "host.wasi",
+                "interface": "wasi",
+                "version": 1,
+                "imports": [
+                  {
+                    "module": "wasi_snapshot_preview1",
+                    "name": "fd_write",
+                    "provider_export": "fd_write",
+                    "kind": "function",
+                    "params": [
+                      "i32",
+                      "i32",
+                      "i32",
+                      "i32"
+                    ],
+                    "results": [
+                      "i32"
+                    ]
+                  }
+                ]
+              }
+            ],
+            "exports": [
+              {
+                "name": "get",
+                "kind": "function",
+                "params": [],
+                "results": [
+                  "i32"
+                ]
+              },
+              {
+                "name": "memory",
+                "kind": "memory",
+                "minimumPages": 1,
+                "maximumPages": 4,
+                "shared": false
+              }
+            ],
+            "runtime_verification": "not-run"
+          },
+          "hex": "0061736d01000000010d026000017f60047f7f7f7f017f02230116776173695f736e617073686f745f70726576696577310866645f7772697465000103020100050401010104071002036765740001066d656d6f727902000a06010400412a0b"
+        }
+      ],
+      "hosts": [
+        {
+          "id": "host.wasi",
+          "interface": {
+            "name": "wasi",
+            "version": 1
+          },
+          "exports": [
+            {
+              "name": "fd_write",
+              "kind": "function",
+              "params": [
+                "i32",
+                "i32",
+                "i32",
+                "i32"
+              ],
+              "results": [
+                "i32"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "allowedFeatures": [],
+    "accepted": false,
+    "stage": "feature",
+    "module": "app"
+  },
+  {
+    "name": "duplicate declaration",
+    "input": {
+      "modules": [
+        {
+          "manifest": {
+            "schema_version": 1,
+            "kind": "wasm-module",
+            "id": "app",
+            "role": "app",
+            "artifact": {
+              "path": "app.wasm",
+              "sha256": "2206e38514eb1cc44e967dbcc600176b160c3ca33cb5bb819bbcf9dfc6802290"
+            },
+            "target": {
+              "abi": "wasip1",
+              "features": [
+                "simd",
+                "simd"
+              ]
+            },
+            "interface": {
+              "name": "app",
+              "version": 1
+            },
+            "memory_model": "isolated",
+            "requires": [
+              {
+                "provider": "core",
+                "interface": "core",
+                "version": 1,
+                "imports": [
+                  {
+                    "module": "core",
+                    "name": "get",
+                    "provider_export": "get",
+                    "kind": "function",
+                    "params": [],
+                    "results": [
+                      "i32"
+                    ]
+                  }
+                ]
+              },
+              {
+                "provider": "lib",
+                "interface": "lib",
+                "version": 1,
+                "imports": [
+                  {
+                    "module": "lib",
+                    "name": "get",
+                    "provider_export": "get",
+                    "kind": "function",
+                    "params": [],
+                    "results": [
+                      "i32"
+                    ]
+                  }
+                ]
+              }
+            ],
+            "exports": [
+              {
+                "name": "run",
+                "kind": "function",
+                "params": [],
+                "results": [
+                  "i32"
+                ]
+              },
+              {
+                "name": "memory",
+                "kind": "memory",
+                "minimumPages": 1,
+                "maximumPages": 4,
+                "shared": false
+              }
+            ],
+            "runtime_verification": "not-run"
+          },
+          "hex": "0061736d01000000010d026000017f60047f7f7f7f017f02160204636f7265036765740000036c6962036765740000030201000504010101040710020372756e0002066d656d6f727902000a09010700100010016a0b"
+        },
+        {
+          "manifest": {
+            "schema_version": 1,
+            "kind": "wasm-module",
+            "id": "lib",
+            "role": "lib",
+            "artifact": {
+              "path": "lib.wasm",
+              "sha256": "883db35af17b11ddc7dc26f0924bf888cf66bacb0fe8a4063064675953c8e0d5"
+            },
+            "target": {
+              "abi": "wasip1",
+              "features": []
+            },
+            "interface": {
+              "name": "lib",
+              "version": 1
+            },
+            "memory_model": "isolated",
+            "requires": [
+              {
+                "provider": "core",
+                "interface": "core",
+                "version": 1,
+                "imports": [
+                  {
+                    "module": "core",
+                    "name": "get",
+                    "provider_export": "get",
+                    "kind": "function",
+                    "params": [],
+                    "results": [
+                      "i32"
+                    ]
+                  }
+                ]
+              }
+            ],
+            "exports": [
+              {
+                "name": "get",
+                "kind": "function",
+                "params": [],
+                "results": [
+                  "i32"
+                ]
+              },
+              {
+                "name": "memory",
+                "kind": "memory",
+                "minimumPages": 1,
+                "maximumPages": 4,
+                "shared": false
+              }
+            ],
+            "runtime_verification": "not-run"
+          },
+          "hex": "0061736d01000000010d026000017f60047f7f7f7f017f020c0104636f726503676574000003020100050401010104071002036765740001066d656d6f727902000a09010700100041016a0b"
+        },
+        {
+          "manifest": {
+            "schema_version": 1,
+            "kind": "wasm-module",
+            "id": "core",
+            "role": "lib",
+            "artifact": {
+              "path": "core.wasm",
+              "sha256": "dc7d40d02322053498140bafed3868e53fddd45259d26ed1b54dabb0ca16a316"
+            },
+            "target": {
+              "abi": "wasip1",
+              "features": []
+            },
+            "interface": {
+              "name": "core",
+              "version": 1
+            },
+            "memory_model": "isolated",
+            "requires": [
+              {
+                "provider": "host.wasi",
+                "interface": "wasi",
+                "version": 1,
+                "imports": [
+                  {
+                    "module": "wasi_snapshot_preview1",
+                    "name": "fd_write",
+                    "provider_export": "fd_write",
+                    "kind": "function",
+                    "params": [
+                      "i32",
+                      "i32",
+                      "i32",
+                      "i32"
+                    ],
+                    "results": [
+                      "i32"
+                    ]
+                  }
+                ]
+              }
+            ],
+            "exports": [
+              {
+                "name": "get",
+                "kind": "function",
+                "params": [],
+                "results": [
+                  "i32"
+                ]
+              },
+              {
+                "name": "memory",
+                "kind": "memory",
+                "minimumPages": 1,
+                "maximumPages": 4,
+                "shared": false
+              }
+            ],
+            "runtime_verification": "not-run"
+          },
+          "hex": "0061736d01000000010d026000017f60047f7f7f7f017f02230116776173695f736e617073686f745f70726576696577310866645f7772697465000103020100050401010104071002036765740001066d656d6f727902000a06010400412a0b"
+        }
+      ],
+      "hosts": [
+        {
+          "id": "host.wasi",
+          "interface": {
+            "name": "wasi",
+            "version": 1
+          },
+          "exports": [
+            {
+              "name": "fd_write",
+              "kind": "function",
+              "params": [
+                "i32",
+                "i32",
+                "i32",
+                "i32"
+              ],
+              "results": [
+                "i32"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "allowedFeatures": [],
+    "accepted": false,
+    "stage": "manifest"
+  },
+  {
+    "name": "invalid code",
+    "input": {
+      "modules": [
+        {
+          "manifest": {
+            "schema_version": 1,
+            "kind": "wasm-module",
+            "id": "app",
+            "role": "app",
+            "artifact": {
+              "path": "app.wasm",
+              "sha256": "37b44c52ab3f43b70c936bc80bcbca37d709c68279e574044bd6a641b5a7de4c"
+            },
+            "target": {
+              "abi": "wasip1",
+              "features": []
+            },
+            "interface": {
+              "name": "app",
+              "version": 1
+            },
+            "memory_model": "isolated",
+            "requires": [
+              {
+                "provider": "core",
+                "interface": "core",
+                "version": 1,
+                "imports": [
+                  {
+                    "module": "core",
+                    "name": "get",
+                    "provider_export": "get",
+                    "kind": "function",
+                    "params": [],
+                    "results": [
+                      "i32"
+                    ]
+                  }
+                ]
+              },
+              {
+                "provider": "lib",
+                "interface": "lib",
+                "version": 1,
+                "imports": [
+                  {
+                    "module": "lib",
+                    "name": "get",
+                    "provider_export": "get",
+                    "kind": "function",
+                    "params": [],
+                    "results": [
+                      "i32"
+                    ]
+                  }
+                ]
+              }
+            ],
+            "exports": [
+              {
+                "name": "run",
+                "kind": "function",
+                "params": [],
+                "results": [
+                  "i32"
+                ]
+              },
+              {
+                "name": "memory",
+                "kind": "memory",
+                "minimumPages": 1,
+                "maximumPages": 4,
+                "shared": false
+              }
+            ],
+            "runtime_verification": "not-run"
+          },
+          "hex": "0061736d01000000010d026000017f60047f7f7f7f017f02160204636f7265036765740000036c6962036765740000030201000504010101040710020372756e0002066d656d6f727902000a09010700100010016a00"
+        },
+        {
+          "manifest": {
+            "schema_version": 1,
+            "kind": "wasm-module",
+            "id": "lib",
+            "role": "lib",
+            "artifact": {
+              "path": "lib.wasm",
+              "sha256": "883db35af17b11ddc7dc26f0924bf888cf66bacb0fe8a4063064675953c8e0d5"
+            },
+            "target": {
+              "abi": "wasip1",
+              "features": []
+            },
+            "interface": {
+              "name": "lib",
+              "version": 1
+            },
+            "memory_model": "isolated",
+            "requires": [
+              {
+                "provider": "core",
+                "interface": "core",
+                "version": 1,
+                "imports": [
+                  {
+                    "module": "core",
+                    "name": "get",
+                    "provider_export": "get",
+                    "kind": "function",
+                    "params": [],
+                    "results": [
+                      "i32"
+                    ]
+                  }
+                ]
+              }
+            ],
+            "exports": [
+              {
+                "name": "get",
+                "kind": "function",
+                "params": [],
+                "results": [
+                  "i32"
+                ]
+              },
+              {
+                "name": "memory",
+                "kind": "memory",
+                "minimumPages": 1,
+                "maximumPages": 4,
+                "shared": false
+              }
+            ],
+            "runtime_verification": "not-run"
+          },
+          "hex": "0061736d01000000010d026000017f60047f7f7f7f017f020c0104636f726503676574000003020100050401010104071002036765740001066d656d6f727902000a09010700100041016a0b"
+        },
+        {
+          "manifest": {
+            "schema_version": 1,
+            "kind": "wasm-module",
+            "id": "core",
+            "role": "lib",
+            "artifact": {
+              "path": "core.wasm",
+              "sha256": "dc7d40d02322053498140bafed3868e53fddd45259d26ed1b54dabb0ca16a316"
+            },
+            "target": {
+              "abi": "wasip1",
+              "features": []
+            },
+            "interface": {
+              "name": "core",
+              "version": 1
+            },
+            "memory_model": "isolated",
+            "requires": [
+              {
+                "provider": "host.wasi",
+                "interface": "wasi",
+                "version": 1,
+                "imports": [
+                  {
+                    "module": "wasi_snapshot_preview1",
+                    "name": "fd_write",
+                    "provider_export": "fd_write",
+                    "kind": "function",
+                    "params": [
+                      "i32",
+                      "i32",
+                      "i32",
+                      "i32"
+                    ],
+                    "results": [
+                      "i32"
+                    ]
+                  }
+                ]
+              }
+            ],
+            "exports": [
+              {
+                "name": "get",
+                "kind": "function",
+                "params": [],
+                "results": [
+                  "i32"
+                ]
+              },
+              {
+                "name": "memory",
+                "kind": "memory",
+                "minimumPages": 1,
+                "maximumPages": 4,
+                "shared": false
+              }
+            ],
+            "runtime_verification": "not-run"
+          },
+          "hex": "0061736d01000000010d026000017f60047f7f7f7f017f02230116776173695f736e617073686f745f70726576696577310866645f7772697465000103020100050401010104071002036765740001066d656d6f727902000a06010400412a0b"
+        }
+      ],
+      "hosts": [
+        {
+          "id": "host.wasi",
+          "interface": {
+            "name": "wasi",
+            "version": 1
+          },
+          "exports": [
+            {
+              "name": "fd_write",
+              "kind": "function",
+              "params": [
+                "i32",
+                "i32",
+                "i32",
+                "i32"
+              ],
+              "results": [
+                "i32"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "allowedFeatures": [],
+    "accepted": false,
+    "stage": "feature",
+    "module": "app"
+  },
+  {
+    "name": "interface before invalid code",
+    "input": {
+      "modules": [
+        {
+          "manifest": {
+            "schema_version": 1,
+            "kind": "wasm-module",
+            "id": "app",
+            "role": "app",
+            "artifact": {
+              "path": "app.wasm",
+              "sha256": "37b44c52ab3f43b70c936bc80bcbca37d709c68279e574044bd6a641b5a7de4c"
+            },
+            "target": {
+              "abi": "wasip1",
+              "features": []
+            },
+            "interface": {
+              "name": "app",
+              "version": 1
+            },
+            "memory_model": "isolated",
+            "requires": [
+              {
+                "provider": "core",
+                "interface": "core",
+                "version": 1,
+                "imports": [
+                  {
+                    "module": "core",
+                    "name": "get",
+                    "provider_export": "get",
+                    "kind": "function",
+                    "params": [],
+                    "results": [
+                      "i32"
+                    ]
+                  }
+                ]
+              },
+              {
+                "provider": "lib",
+                "interface": "lib",
+                "version": 2,
+                "imports": [
+                  {
+                    "module": "lib",
+                    "name": "get",
+                    "provider_export": "get",
+                    "kind": "function",
+                    "params": [],
+                    "results": [
+                      "i32"
+                    ]
+                  }
+                ]
+              }
+            ],
+            "exports": [
+              {
+                "name": "run",
+                "kind": "function",
+                "params": [],
+                "results": [
+                  "i32"
+                ]
+              },
+              {
+                "name": "memory",
+                "kind": "memory",
+                "minimumPages": 1,
+                "maximumPages": 4,
+                "shared": false
+              }
+            ],
+            "runtime_verification": "not-run"
+          },
+          "hex": "0061736d01000000010d026000017f60047f7f7f7f017f02160204636f7265036765740000036c6962036765740000030201000504010101040710020372756e0002066d656d6f727902000a09010700100010016a00"
+        },
+        {
+          "manifest": {
+            "schema_version": 1,
+            "kind": "wasm-module",
+            "id": "lib",
+            "role": "lib",
+            "artifact": {
+              "path": "lib.wasm",
+              "sha256": "883db35af17b11ddc7dc26f0924bf888cf66bacb0fe8a4063064675953c8e0d5"
+            },
+            "target": {
+              "abi": "wasip1",
+              "features": []
+            },
+            "interface": {
+              "name": "lib",
+              "version": 1
+            },
+            "memory_model": "isolated",
+            "requires": [
+              {
+                "provider": "core",
+                "interface": "core",
+                "version": 1,
+                "imports": [
+                  {
+                    "module": "core",
+                    "name": "get",
+                    "provider_export": "get",
+                    "kind": "function",
+                    "params": [],
+                    "results": [
+                      "i32"
+                    ]
+                  }
+                ]
+              }
+            ],
+            "exports": [
+              {
+                "name": "get",
+                "kind": "function",
+                "params": [],
+                "results": [
+                  "i32"
+                ]
+              },
+              {
+                "name": "memory",
+                "kind": "memory",
+                "minimumPages": 1,
+                "maximumPages": 4,
+                "shared": false
+              }
+            ],
+            "runtime_verification": "not-run"
+          },
+          "hex": "0061736d01000000010d026000017f60047f7f7f7f017f020c0104636f726503676574000003020100050401010104071002036765740001066d656d6f727902000a09010700100041016a0b"
+        },
+        {
+          "manifest": {
+            "schema_version": 1,
+            "kind": "wasm-module",
+            "id": "core",
+            "role": "lib",
+            "artifact": {
+              "path": "core.wasm",
+              "sha256": "dc7d40d02322053498140bafed3868e53fddd45259d26ed1b54dabb0ca16a316"
+            },
+            "target": {
+              "abi": "wasip1",
+              "features": []
+            },
+            "interface": {
+              "name": "core",
+              "version": 1
+            },
+            "memory_model": "isolated",
+            "requires": [
+              {
+                "provider": "host.wasi",
+                "interface": "wasi",
+                "version": 1,
+                "imports": [
+                  {
+                    "module": "wasi_snapshot_preview1",
+                    "name": "fd_write",
+                    "provider_export": "fd_write",
+                    "kind": "function",
+                    "params": [
+                      "i32",
+                      "i32",
+                      "i32",
+                      "i32"
+                    ],
+                    "results": [
+                      "i32"
+                    ]
+                  }
+                ]
+              }
+            ],
+            "exports": [
+              {
+                "name": "get",
+                "kind": "function",
+                "params": [],
+                "results": [
+                  "i32"
+                ]
+              },
+              {
+                "name": "memory",
+                "kind": "memory",
+                "minimumPages": 1,
+                "maximumPages": 4,
+                "shared": false
+              }
+            ],
+            "runtime_verification": "not-run"
+          },
+          "hex": "0061736d01000000010d026000017f60047f7f7f7f017f02230116776173695f736e617073686f745f70726576696577310866645f7772697465000103020100050401010104071002036765740001066d656d6f727902000a06010400412a0b"
+        }
+      ],
+      "hosts": [
+        {
+          "id": "host.wasi",
+          "interface": {
+            "name": "wasi",
+            "version": 1
+          },
+          "exports": [
+            {
+              "name": "fd_write",
+              "kind": "function",
+              "params": [
+                "i32",
+                "i32",
+                "i32",
+                "i32"
+              ],
+              "results": [
+                "i32"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "allowedFeatures": [],
+    "accepted": false,
+    "stage": "manifest"
+  },
+  {
+    "name": "start rejected",
+    "input": {
+      "modules": [
+        {
+          "manifest": {
+            "schema_version": 1,
+            "kind": "wasm-module",
+            "id": "app",
+            "role": "app",
+            "artifact": {
+              "path": "app.wasm",
+              "sha256": "17e2175f71018dd56cb44cafe7055670d20d4063b9faae9f4c2062e3435b7b1c"
+            },
+            "target": {
+              "abi": "wasip1",
+              "features": []
+            },
+            "interface": {
+              "name": "app",
+              "version": 1
+            },
+            "memory_model": "isolated",
+            "requires": [],
+            "exports": [],
+            "runtime_verification": "not-run"
+          },
+          "hex": "0061736d01000000010401600000030201000801000a05010300000b"
+        }
+      ],
+      "hosts": []
+    },
+    "allowedFeatures": [],
+    "accepted": false,
+    "stage": "resource",
+    "module": "app"
+  },
+  {
+    "name": "imported memory rejected",
+    "input": {
+      "modules": [
+        {
+          "manifest": {
+            "schema_version": 1,
+            "kind": "wasm-module",
+            "id": "app",
+            "role": "app",
+            "artifact": {
+              "path": "app.wasm",
+              "sha256": "e6246dbf4a7f3af8643a480ce692879dbb7063ece9ede01e321705359284216d"
+            },
+            "target": {
+              "abi": "wasip1",
+              "features": []
+            },
+            "interface": {
+              "name": "app",
+              "version": 1
+            },
+            "memory_model": "isolated",
+            "requires": [
+              {
+                "provider": "host.memory",
+                "interface": "memory",
+                "version": 1,
+                "imports": [
+                  {
+                    "module": "host",
+                    "name": "memory",
+                    "provider_export": "memory",
+                    "kind": "memory",
+                    "minimumPages": 1,
+                    "maximumPages": 4,
+                    "shared": false
+                  }
+                ]
+              }
+            ],
+            "exports": [],
+            "runtime_verification": "not-run"
+          },
+          "hex": "0061736d0100000002110104686f7374066d656d6f727902010104"
+        }
+      ],
+      "hosts": [
+        {
+          "id": "host.memory",
+          "interface": {
+            "name": "memory",
+            "version": 1
+          },
+          "exports": [
+            {
+              "name": "memory",
+              "kind": "memory",
+              "minimumPages": 1,
+              "maximumPages": 4,
+              "shared": false
+            }
+          ]
+        }
+      ]
+    },
+    "allowedFeatures": [],
+    "accepted": false,
+    "stage": "resource",
+    "module": "app"
+  },
+  {
+    "name": "wrong WASI signature",
+    "input": {
+      "modules": [
+        {
+          "manifest": {
+            "schema_version": 1,
+            "kind": "wasm-module",
+            "id": "app",
+            "role": "app",
+            "artifact": {
+              "path": "app.wasm",
+              "sha256": "c1fd8e7596438dce24fe7cbc28478060e94e8fd9ec5347f22e39f660ed666efe"
+            },
+            "target": {
+              "abi": "wasip1",
+              "features": []
+            },
+            "interface": {
+              "name": "app",
+              "version": 1
+            },
+            "memory_model": "isolated",
+            "requires": [
+              {
+                "provider": "host.wasi",
+                "interface": "wasi",
+                "version": 1,
+                "imports": [
+                  {
+                    "module": "wasi_snapshot_preview1",
+                    "name": "fd_write",
+                    "provider_export": "fd_write",
+                    "kind": "function",
+                    "params": [],
+                    "results": [
+                      "i32"
+                    ]
+                  }
+                ]
+              }
+            ],
+            "exports": [
+              {
+                "name": "memory",
+                "kind": "memory",
+                "minimumPages": 1,
+                "maximumPages": 4,
+                "shared": false
+              }
+            ],
+            "runtime_verification": "not-run"
+          },
+          "hex": "0061736d010000000105016000017f02230116776173695f736e617073686f745f70726576696577310866645f77726974650000050401010104070a01066d656d6f72790200"
+        }
+      ],
+      "hosts": [
+        {
+          "id": "host.wasi",
+          "interface": {
+            "name": "wasi",
+            "version": 1
+          },
+          "exports": [
+            {
+              "name": "fd_write",
+              "kind": "function",
+              "params": [],
+              "results": [
+                "i32"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "allowedFeatures": [],
+    "accepted": false,
+    "stage": "wasi",
+    "module": "app"
+  },
+  {
+    "name": "host-only SIMD not enabled",
+    "input": {
+      "modules": [
+        {
+          "manifest": {
+            "schema_version": 1,
+            "kind": "wasm-module",
+            "id": "app",
+            "role": "app",
+            "artifact": {
+              "path": "app.wasm",
+              "sha256": "458f6eb0156b55c488b9566a6a404c58bc39297fe3e6aa21274da39576971138"
+            },
+            "target": {
+              "abi": "wasip1",
+              "features": []
+            },
+            "interface": {
+              "name": "app",
+              "version": 1
+            },
+            "memory_model": "isolated",
+            "requires": [],
+            "exports": [],
+            "runtime_verification": "not-run"
+          },
+          "hex": "0061736d010000000105016000017b030201000a16011400fd0c010000000200000003000000040000000b"
+        }
+      ],
+      "hosts": []
+    },
+    "allowedFeatures": [
+      "simd"
+    ],
+    "accepted": false,
+    "stage": "feature",
+    "module": "app"
+  },
+  {
+    "name": "declared SIMD disallowed",
+    "input": {
+      "modules": [
+        {
+          "manifest": {
+            "schema_version": 1,
+            "kind": "wasm-module",
+            "id": "app",
+            "role": "app",
+            "artifact": {
+              "path": "app.wasm",
+              "sha256": "458f6eb0156b55c488b9566a6a404c58bc39297fe3e6aa21274da39576971138"
+            },
+            "target": {
+              "abi": "wasip1",
+              "features": [
+                "simd"
+              ]
+            },
+            "interface": {
+              "name": "app",
+              "version": 1
+            },
+            "memory_model": "isolated",
+            "requires": [],
+            "exports": [],
+            "runtime_verification": "not-run"
+          },
+          "hex": "0061736d010000000105016000017b030201000a16011400fd0c010000000200000003000000040000000b"
+        }
+      ],
+      "hosts": []
+    },
+    "allowedFeatures": [],
+    "accepted": false,
+    "stage": "feature",
+    "module": "app"
+  },
+  {
+    "name": "declared and allowed SIMD",
+    "input": {
+      "modules": [
+        {
+          "manifest": {
+            "schema_version": 1,
+            "kind": "wasm-module",
+            "id": "app",
+            "role": "app",
+            "artifact": {
+              "path": "app.wasm",
+              "sha256": "458f6eb0156b55c488b9566a6a404c58bc39297fe3e6aa21274da39576971138"
+            },
+            "target": {
+              "abi": "wasip1",
+              "features": [
+                "simd"
+              ]
+            },
+            "interface": {
+              "name": "app",
+              "version": 1
+            },
+            "memory_model": "isolated",
+            "requires": [],
+            "exports": [],
+            "runtime_verification": "not-run"
+          },
+          "hex": "0061736d010000000105016000017b030201000a16011400fd0c010000000200000003000000040000000b"
+        }
+      ],
+      "hosts": []
+    },
+    "allowedFeatures": [
+      "simd"
+    ],
+    "accepted": true
+  },
+  {
+    "name": "SIMD in other module does not authorize app",
+    "input": {
+      "modules": [
+        {
+          "manifest": {
+            "schema_version": 1,
+            "kind": "wasm-module",
+            "id": "lib",
+            "role": "lib",
+            "artifact": {
+              "path": "lib.wasm",
+              "sha256": "458f6eb0156b55c488b9566a6a404c58bc39297fe3e6aa21274da39576971138"
+            },
+            "target": {
+              "abi": "wasip1",
+              "features": [
+                "simd"
+              ]
+            },
+            "interface": {
+              "name": "lib",
+              "version": 1
+            },
+            "memory_model": "isolated",
+            "requires": [],
+            "exports": [],
+            "runtime_verification": "not-run"
+          },
+          "hex": "0061736d010000000105016000017b030201000a16011400fd0c010000000200000003000000040000000b"
+        },
+        {
+          "manifest": {
+            "schema_version": 1,
+            "kind": "wasm-module",
+            "id": "app",
+            "role": "app",
+            "artifact": {
+              "path": "app.wasm",
+              "sha256": "458f6eb0156b55c488b9566a6a404c58bc39297fe3e6aa21274da39576971138"
+            },
+            "target": {
+              "abi": "wasip1",
+              "features": []
+            },
+            "interface": {
+              "name": "app",
+              "version": 1
+            },
+            "memory_model": "isolated",
+            "requires": [
+              {
+                "provider": "lib",
+                "interface": "lib",
+                "version": 1,
+                "imports": []
+              }
+            ],
+            "exports": [],
+            "runtime_verification": "not-run"
+          },
+          "hex": "0061736d010000000105016000017b030201000a16011400fd0c010000000200000003000000040000000b"
+        }
+      ],
+      "hosts": []
+    },
+    "allowedFeatures": [
+      "simd"
+    ],
+    "accepted": false,
+    "stage": "feature",
+    "module": "app"
+  },
+  {
+    "name": "SIMD authorized separately for both modules",
+    "input": {
+      "modules": [
+        {
+          "manifest": {
+            "schema_version": 1,
+            "kind": "wasm-module",
+            "id": "lib",
+            "role": "lib",
+            "artifact": {
+              "path": "lib.wasm",
+              "sha256": "458f6eb0156b55c488b9566a6a404c58bc39297fe3e6aa21274da39576971138"
+            },
+            "target": {
+              "abi": "wasip1",
+              "features": [
+                "simd"
+              ]
+            },
+            "interface": {
+              "name": "lib",
+              "version": 1
+            },
+            "memory_model": "isolated",
+            "requires": [],
+            "exports": [],
+            "runtime_verification": "not-run"
+          },
+          "hex": "0061736d010000000105016000017b030201000a16011400fd0c010000000200000003000000040000000b"
+        },
+        {
+          "manifest": {
+            "schema_version": 1,
+            "kind": "wasm-module",
+            "id": "app",
+            "role": "app",
+            "artifact": {
+              "path": "app.wasm",
+              "sha256": "458f6eb0156b55c488b9566a6a404c58bc39297fe3e6aa21274da39576971138"
+            },
+            "target": {
+              "abi": "wasip1",
+              "features": [
+                "simd"
+              ]
+            },
+            "interface": {
+              "name": "app",
+              "version": 1
+            },
+            "memory_model": "isolated",
+            "requires": [
+              {
+                "provider": "lib",
+                "interface": "lib",
+                "version": 1,
+                "imports": []
+              }
+            ],
+            "exports": [],
+            "runtime_verification": "not-run"
+          },
+          "hex": "0061736d010000000105016000017b030201000a16011400fd0c010000000200000003000000040000000b"
+        }
+      ],
+      "hosts": []
+    },
+    "allowedFeatures": [
+      "simd"
+    ],
+    "accepted": true
+  }
+]
