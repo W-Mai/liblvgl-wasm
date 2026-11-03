@@ -574,6 +574,8 @@ liblvgl-wasm-host = { path = "/path/to/liblvgl-wasm/bindings/rust" }
 
 `load_numeric_environment` validates and compiles the same private module snapshots before creating trusted host instances and loading one app with its libraries. Initialization follows dependency order; `close` invokes initialized modules in reverse order and releases host instances. A nonzero initialization status rolls back earlier successful modules. A trap, host error or panic poisons the environment and stops further guest calls; dropping an environment does not execute guest cleanup. Host functions exchange only i32 values and do not receive guest memory or Wasmtime handles. WASI imports, cross-instance pointer semantics and callbacks are unsupported. Validation, compilation and guest execution are synchronous and have no CPU or execution deadline.
 
+`preflight_numeric_graph_with_wasi` checks the restricted WASI provider without running the graph. `load_numeric_environment_with_wasi` accepts explicit permissions for the provider and executes the checked graph. Each consumer has its own memory and standard output and error descriptor state; output limits apply to the whole environment. Environment variables are empty, output is delivered to the configured synchronous sink, and the optional clock uses configured values. The provider implements `environ_get`, `environ_sizes_get`, `fd_close`, `fd_seek`, `fd_write`, `proc_exit` and `clock_time_get`. Exit codes are available from the returned error. This does not provide a filesystem, network, stdin, cross-instance pointers or callbacks.
+
 ```rust
 use liblvgl_wasm_host::{Result, Runtime, UnsafePointer, values};
 

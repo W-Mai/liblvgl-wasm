@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+- Restricted WASI Preview 1 services for Rust numeric environments.
 - Rust numeric module graph environments with trusted host bindings and managed lifecycle.
 - Trusted numeric module graph preflight and resource limits.
 - Wasmtime compilation checks for authorized module graph features.

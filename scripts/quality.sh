@@ -31,6 +31,8 @@ python3 -B validator/numeric-fixtures.py
 bun tests/fixtures/numeric-preflight/generate.ts
 python3 -B tests/fixtures/numeric-environment/generate.py
 python3 -B validator/wasi-numeric-fixtures.py
+python3 -B tests/fixtures/numeric-wasi/generate.py
+bun tests/fixtures/numeric-wasi/generate.ts
 python3 -B validator/lvgl-core-fixture.py
 python3 -B validator/lvgl-lifecycle-fixtures.py
 python3 -B validator/lvgl-label-fixture.py

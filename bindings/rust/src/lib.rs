@@ -52,12 +52,17 @@ mod numeric_profile;
 pub use numeric_profile::{
     NumericFunctionContract, NumericHostContract, NumericLimits, NumericModuleContract,
     NumericPreflightError, NumericPreflightReport, NumericProfile, NumericResult,
-    preflight_numeric_graph,
+    preflight_numeric_graph, preflight_numeric_graph_with_wasi,
 };
 mod numeric_environment;
 pub use numeric_environment::{
     NumericEnvironment, NumericEnvironmentError, NumericEnvironmentId, NumericEnvironmentState,
     NumericHostBinding, NumericHostFactory, NumericHostInstance, load_numeric_environment,
+    load_numeric_environment_with_wasi,
+};
+mod numeric_wasi;
+pub use numeric_wasi::{
+    NumericWasiClock, NumericWasiOptions, NumericWasiOutput, NumericWasiService,
 };
 mod wasm_facts;
 pub use wasm_facts::{

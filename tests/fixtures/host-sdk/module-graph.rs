@@ -14,6 +14,9 @@ use std::collections::BTreeMap;
 #[path = "fixtures/numeric-environment/fixture.rs"]
 #[allow(dead_code)]
 mod numeric_fixture;
+#[path = "fixtures/numeric-wasi/fixture.rs"]
+#[allow(dead_code)]
+mod numeric_wasi_fixture;
 
 fn descriptor(facts: &WasmFacts, external: WasmExternal) -> ModuleExternalType {
     match external {
@@ -259,6 +262,8 @@ fn main() {
     inspect_numeric_app();
     let numeric_graph = std::fs::read(args.next().expect("numeric graph path")).unwrap();
     numeric_fixture::run_positive(&numeric_graph);
+    let wasi_graph = std::fs::read(args.next().expect("numeric WASI graph path")).unwrap();
+    numeric_wasi_fixture::run_positive(&wasi_graph);
 
     let empty = b"\0asm\x01\0\0\0";
     let feature = validate_wasm_features(empty, &[], &[]).unwrap();

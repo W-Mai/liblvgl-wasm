@@ -1,6 +1,7 @@
 """Compile the multi-consumer WASI Preview 1 fixtures."""
 
 from pathlib import Path
+import argparse
 import subprocess
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -16,6 +17,10 @@ int app_run(int value) { return write(1, "C!", 2) == 2 ? value + 1 : -1; }
 
 
 def main():
+    global OUTPUT
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--output", type=Path, default=OUTPUT)
+    OUTPUT = parser.parse_args().output
     OUTPUT.mkdir(parents=True, exist_ok=True)
     source = (ROOT / "validator/wasi-numeric-consumer.wat").read_text()
     for name in ("lib", "app"):

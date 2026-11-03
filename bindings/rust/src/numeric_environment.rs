@@ -6,7 +6,8 @@ use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::sync::Arc;
 
 use crate::module_manifest::ModuleManifestInput;
-use crate::numeric_profile::{NumericProfile, prepare_numeric_graph};
+use crate::numeric_profile::{NumericProfile, prepare_numeric_graph_with_wasi};
+use crate::numeric_wasi::{NumericWasiOptions, NumericWasiOutput, NumericWasiService, WasiState};
 use wasmtime::{Caller, Extern, ExternType, Func, Instance, Store, TypedFunc, Val};
 
 #[derive(Clone, Debug)]
@@ -50,6 +51,7 @@ pub enum NumericEnvironmentState {
 pub struct NumericEnvironmentError {
     message: String,
     cleanup_errors: Vec<String>,
+    exit_code: Option<u32>,
 }
 impl NumericEnvironmentError {
     pub fn message(&self) -> &str {
@@ -57,6 +59,9 @@ impl NumericEnvironmentError {
     }
     pub fn cleanup_errors(&self) -> &[String] {
         &self.cleanup_errors
+    }
+    pub fn exit_code(&self) -> Option<u32> {
+        self.exit_code
     }
 }
 impl fmt::Display for NumericEnvironmentError {
@@ -73,9 +78,10 @@ fn numeric_error(message: impl Into<String>) -> NumericEnvironmentError {
     NumericEnvironmentError {
         message: message.into(),
         cleanup_errors: Vec::new(),
+        exit_code: None,
     }
 }
-fn panic_message(panic: Box<dyn std::any::Any + Send>) -> String {
+pub(crate) fn panic_message(panic: Box<dyn std::any::Any + Send>) -> String {
     let mut message = if let Some(message) = panic.downcast_ref::<&str>() {
         format!("panic: {message}")
     } else if let Some(message) = panic.downcast_ref::<String>() {
@@ -95,12 +101,14 @@ struct HostSlot {
     instance: Option<Box<dyn NumericHostInstance>>,
 }
 #[derive(Default)]
-struct HostState {
+pub(crate) struct HostState {
     hosts: Vec<HostSlot>,
-    failure: Option<String>,
+    pub(crate) failure: Option<String>,
+    pub(crate) exit_code: Option<u32>,
+    pub(crate) wasi: Option<WasiState>,
 }
 impl HostState {
-    fn poison(&mut self, message: String) -> String {
+    pub(crate) fn poison(&mut self, message: String) -> String {
         if self.failure.is_none() {
             self.failure = Some(message);
         }
@@ -110,6 +118,12 @@ impl HostState {
 
 fn release_hosts(store: &mut Store<HostState>) -> Vec<String> {
     let mut failures = Vec::new();
+    if let Some(wasi) = &mut store.data_mut().wasi {
+        for slot in &mut wasi.slots {
+            slot.memory = None;
+            slot.fds.fill(false);
+        }
+    }
     for slot in store.data_mut().hosts.iter_mut().rev() {
         if let Some(mut host) = slot.instance.take() {
             match catch_unwind(AssertUnwindSafe(|| host.close())) {
@@ -123,6 +137,12 @@ fn release_hosts(store: &mut Store<HostState>) -> Vec<String> {
         }
     }
     store.data_mut().hosts.clear();
+    if let Some(mut wasi) = store.data_mut().wasi.take()
+        && let Some(output) = wasi.output.take()
+        && let Err(panic) = catch_unwind(AssertUnwindSafe(|| drop(output)))
+    {
+        failures.push(panic_message(panic));
+    }
     failures
 }
 
@@ -162,6 +182,15 @@ fn call_void(store: &mut Store<HostState>, function: &TypedFunc<(), ()>) -> Resu
 struct LiveModule {
     id: String,
     close: TypedFunc<(), i32>,
+    wasi_slot: Option<usize>,
+}
+
+fn close_wasi_slot(store: &mut Store<HostState>, slot: Option<usize>) {
+    if let Some(slot) = slot {
+        let slot = &mut store.data_mut().wasi.as_mut().expect("WASI state").slots[slot];
+        slot.memory = None;
+        slot.fds.fill(false);
+    }
 }
 
 fn rollback(
@@ -172,6 +201,7 @@ fn rollback(
     while let Some(previous) = initialized.last() {
         match call0(store, &previous.close) {
             Ok(0) => {
+                close_wasi_slot(store, previous.wasi_slot);
                 initialized.pop();
             }
             Ok(code) => {
@@ -218,6 +248,7 @@ impl NumericEnvironment {
         }
         self.state = NumericEnvironmentState::Poisoned;
         if let Some(mut store) = self.store.take() {
+            self.failure.as_mut().expect("latched failure").exit_code = store.data().exit_code;
             self.failure
                 .as_mut()
                 .expect("latched failure")
@@ -266,6 +297,10 @@ impl NumericEnvironment {
             let result = call0(self.store.as_mut().expect("closing store"), &module.close);
             match result {
                 Ok(0) => {
+                    close_wasi_slot(
+                        self.store.as_mut().expect("closing store"),
+                        module.wasi_slot,
+                    );
                     self.initialized.pop();
                 }
                 Ok(status) => {
@@ -281,6 +316,7 @@ impl NumericEnvironment {
             self.failure = Some(NumericEnvironmentError {
                 message: "numeric host cleanup failed".into(),
                 cleanup_errors: cleanup,
+                exit_code: None,
             });
             return Err(self.failure());
         }
@@ -363,7 +399,52 @@ pub fn load_numeric_environment(
     allowed: &[&str],
     factories: &mut [NumericHostBinding<'_>],
 ) -> Result<NumericEnvironment, NumericEnvironmentError> {
-    let prepared = prepare_numeric_graph(input, profile, allowed)
+    load_numeric_environment_internal(input, profile, allowed, factories, None, &mut None)
+}
+
+/// Load a numeric graph with a bounded WASI Preview 1 provider and a synchronous output sink.
+pub fn load_numeric_environment_with_wasi(
+    input: &ModuleManifestInput<'_>,
+    profile: &NumericProfile,
+    allowed: &[&str],
+    factories: &mut [NumericHostBinding<'_>],
+    wasi: &NumericWasiOptions,
+    output: Box<dyn NumericWasiOutput>,
+) -> Result<NumericEnvironment, NumericEnvironmentError> {
+    let mut output = Some(output);
+    let mut result = match catch_unwind(AssertUnwindSafe(|| {
+        load_numeric_environment_internal(
+            input,
+            profile,
+            allowed,
+            factories,
+            Some(wasi),
+            &mut output,
+        )
+    })) {
+        Ok(result) => result,
+        Err(panic) => Err(numeric_error(panic_message(panic))),
+    };
+    if let Some(output) = output
+        && let Err(panic) = catch_unwind(AssertUnwindSafe(|| drop(output)))
+    {
+        match &mut result {
+            Err(error) => error.cleanup_errors.push(panic_message(panic)),
+            Ok(_) => unreachable!("output is consumed by a loaded environment"),
+        }
+    }
+    result
+}
+
+fn load_numeric_environment_internal(
+    input: &ModuleManifestInput<'_>,
+    profile: &NumericProfile,
+    allowed: &[&str],
+    factories: &mut [NumericHostBinding<'_>],
+    wasi: Option<&NumericWasiOptions>,
+    output: &mut Option<Box<dyn NumericWasiOutput>>,
+) -> Result<NumericEnvironment, NumericEnvironmentError> {
+    let prepared = prepare_numeric_graph_with_wasi(input, profile, allowed, wasi)
         .map_err(|error| numeric_error(error.to_string()))?;
     let (prepared, engine, compiled, profile) = prepared.into_parts();
     let mut factory_indices = HashMap::new();
@@ -399,15 +480,40 @@ pub fn load_numeric_environment(
     let host_ids: HashSet<&str> = profile.hosts.iter().map(|host| host.id.as_str()).collect();
     let mut store = Store::new(&engine, HostState::default());
     let environment_id = NumericEnvironmentId(Arc::new(()));
+    if let Some(wasi) = wasi {
+        store.data_mut().wasi = Some(WasiState {
+            options: wasi.clone(),
+            output: output.take(),
+            slots: Vec::new(),
+            used: 0,
+            environment: environment_id.clone(),
+        });
+    }
     let mut host_slots: HashMap<(&str, &str), usize> = HashMap::new();
+    let mut wasi_slots: HashMap<&str, usize> = HashMap::new();
     let mut initialized: Vec<LiveModule> = Vec::new();
     let mut instances: HashMap<&str, Instance> = HashMap::new();
     let mut rollback_permitted = false;
+    let mut pending_wasi_slot = None;
     let result = catch_unwind(AssertUnwindSafe(
         || -> Result<TypedFunc<i32, i32>, NumericEnvironmentError> {
             for id in &prepared.order {
                 let module = module_by_id[id.as_str()].0;
                 for requirement in &module.manifest.requires {
+                    if wasi.is_some_and(|wasi| requirement.provider == wasi.id)
+                        && !requirement.imports.is_empty()
+                    {
+                        if !wasi_slots.contains_key(id.as_str()) {
+                            let slot = store
+                                .data_mut()
+                                .wasi
+                                .as_mut()
+                                .expect("WASI state")
+                                .add_slot(id.clone());
+                            wasi_slots.insert(id.as_str(), slot);
+                        }
+                        continue;
+                    }
                     if !host_ids.contains(requirement.provider.as_str()) {
                         continue;
                     }
@@ -434,6 +540,7 @@ pub fn load_numeric_environment(
             let mut app = None;
             for id in &prepared.order {
                 rollback_permitted = true;
+                pending_wasi_slot = wasi_slots.get(id.as_str()).copied();
                 let (record, module) = module_by_id[id.as_str()];
                 let mut bindings = HashMap::new();
                 for requirement in &record.manifest.requires {
@@ -459,7 +566,18 @@ pub fn load_numeric_environment(
                     let (provider, export) = *bindings
                         .get(&(fact.module.as_str(), fact.name.as_str()))
                         .ok_or_else(|| numeric_error("numeric import binding is missing"))?;
-                    let function = if let Some(slot) = host_slots.get(&(id.as_str(), provider)) {
+                    let function = if wasi.is_some_and(|wasi| provider == wasi.id) {
+                        let ExternType::Func(ty) = item.ty() else {
+                            return Err(numeric_error("numeric WASI import is not a function"));
+                        };
+                        let slot = *wasi_slots
+                            .get(id.as_str())
+                            .ok_or_else(|| numeric_error("numeric WASI slot is missing"))?;
+                        let service = NumericWasiService::from_name(export)
+                            .ok_or_else(|| numeric_error("numeric WASI service is missing"))?;
+                        crate::numeric_wasi::function(&mut store, ty, slot, service)
+                            .map_err(numeric_error)?
+                    } else if let Some(slot) = host_slots.get(&(id.as_str(), provider)) {
                         let ExternType::Func(ty) = item.ty() else {
                             return Err(numeric_error("numeric import is not a function"));
                         };
@@ -492,6 +610,14 @@ pub fn load_numeric_environment(
                         return Err(numeric_error(panic_message(panic)));
                     }
                 };
+                let wasi_slot = wasi_slots.get(id.as_str()).copied();
+                if let Some(slot) = wasi_slot {
+                    let memory = instance
+                        .get_memory(&mut store, "memory")
+                        .ok_or_else(|| numeric_error("numeric WASI memory is unavailable"))?;
+                    store.data_mut().wasi.as_mut().expect("WASI state").slots[slot].memory =
+                        Some(memory);
+                }
                 let close = instance
                     .get_typed_func::<(), i32>(&mut store, "module_close")
                     .map_err(|error| numeric_error(error.to_string()))?;
@@ -520,13 +646,16 @@ pub fn load_numeric_environment(
                 if status != 0 {
                     let mut failure =
                         numeric_error(format!("{id:?}: module_init returned {status}"));
+                    close_wasi_slot(&mut store, wasi_slot);
                     rollback(&mut store, &mut initialized, &mut failure);
                     return Err(failure);
                 }
                 initialized.push(LiveModule {
                     id: id.clone(),
                     close,
+                    wasi_slot,
                 });
+                pending_wasi_slot = None;
                 instances.insert(id.as_str(), instance);
                 if let Some(function) = app_function {
                     app = Some(function);
@@ -552,7 +681,11 @@ pub fn load_numeric_environment(
         }),
         Err(mut failure) => {
             if rollback_permitted && store.data().failure.is_none() {
+                close_wasi_slot(&mut store, pending_wasi_slot);
                 rollback(&mut store, &mut initialized, &mut failure);
+            }
+            if store.data().failure.as_deref() == Some(failure.message.as_str()) {
+                failure.exit_code = store.data().exit_code;
             }
             failure.cleanup_errors.extend(release_hosts(&mut store));
             Err(failure)

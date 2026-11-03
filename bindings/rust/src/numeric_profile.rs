@@ -12,6 +12,7 @@ use crate::module_manifest::{
     ModuleExternalType, ModuleInterface, ModuleManifestError, ModuleManifestInput,
     PreparedModuleGraph, SnapshotModule, prepare_module_manifests,
 };
+use crate::numeric_wasi::{NumericWasiOptions, NumericWasiService};
 use crate::wasm_facts::{WasmExternal, WasmValueType};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -193,6 +194,7 @@ fn entrypoint(
 fn check_profile<'a>(
     prepared: &PreparedModuleGraph<'_>,
     profile: &'a NumericProfile,
+    wasi: Option<&NumericWasiOptions>,
 ) -> Result<&'a str> {
     if profile.modules.len() > 256 || profile.hosts.len() > 256 {
         return Err(fail("numeric provider limit exceeded"));
@@ -235,7 +237,18 @@ fn check_profile<'a>(
         }
         contracts(&item.exports, true, &mut entries)?;
     }
-    if modules.len() != prepared.modules.len() || hosts.len() != prepared.hosts.len() {
+    if let Some(wasi) = wasi
+        && (!wasi.valid()
+            || !valid_name(&wasi.id)
+            || !valid_interface(&wasi.interface)
+            || hosts.contains_key(wasi.id.as_str())
+            || modules.contains_key(wasi.id.as_str()))
+    {
+        return Err(fail("invalid numeric WASI options"));
+    }
+    if modules.len() != prepared.modules.len()
+        || hosts.len() + usize::from(wasi.is_some()) != prepared.hosts.len()
+    {
         return Err(fail("numeric provider inventory differs"));
     }
     let mut authorized = HashMap::new();
@@ -288,7 +301,7 @@ fn check_profile<'a>(
         entrypoint(module, "module_init", &[], &[WasmValueType::I32], true)?;
         entrypoint(module, "module_close", &[], &[WasmValueType::I32], true)?;
         if module.facts.imports.iter().any(|item| {
-            item.module == "wasi_snapshot_preview1"
+            (wasi.is_none() && item.module == "wasi_snapshot_preview1")
                 || item.module == "wasi_unstable"
                 || item.module.starts_with("wasi:")
         }) {
@@ -326,6 +339,34 @@ fn check_profile<'a>(
             .iter()
             .map(|item| (item.name.as_str(), &item.ty))
             .collect();
+        let wasi_imports: HashSet<u32> = if wasi.is_some() {
+            module
+                .facts
+                .imports
+                .iter()
+                .filter_map(|import| match import.external {
+                    WasmExternal::Function { index, .. }
+                        if import.module == "wasi_snapshot_preview1" =>
+                    {
+                        Some(index)
+                    }
+                    _ => None,
+                })
+                .collect()
+        } else {
+            HashSet::new()
+        };
+        let wasi_exports: HashSet<&str> = module
+            .facts
+            .exports
+            .iter()
+            .filter_map(|export| match export.external {
+                WasmExternal::Function { index, .. } if wasi_imports.contains(&index) => {
+                    Some(export.name.as_str())
+                }
+                _ => None,
+            })
+            .collect();
         for function in &contract.exports {
             if !exports
                 .get(function.name.as_str())
@@ -336,6 +377,11 @@ fn check_profile<'a>(
                     function.name
                 )));
             }
+            if wasi_exports.contains(function.name.as_str()) {
+                return Err(fail(format!(
+                    "{id:?}: WASI imports cannot be numeric exports"
+                )));
+            }
         }
     }
     let app = app.ok_or_else(|| fail("numeric profile requires exactly one app"))?;
@@ -344,6 +390,19 @@ fn check_profile<'a>(
         return Err(fail("numeric environment resource limit exceeded"));
     }
     for host in prepared.hosts {
+        if let Some(wasi) = wasi.filter(|wasi| wasi.id == host.id) {
+            if wasi.interface != host.interface
+                || wasi.allowed.len() != host.exports.len()
+                || host.exports.iter().any(|item| {
+                    NumericWasiService::from_name(&item.name).is_none_or(|service| {
+                        !wasi.allowed.contains(&service) || !service.matches(&item.ty)
+                    })
+                })
+            {
+                return Err(fail("numeric WASI host contract differs"));
+            }
+            continue;
+        }
         let contract = hosts
             .get(host.id.as_str())
             .ok_or_else(|| fail(format!("{:?}: host is not authorized", host.id)))?;
@@ -373,6 +432,24 @@ fn check_profile<'a>(
     for module in &prepared.modules {
         for requirement in &module.manifest.requires {
             for item in &requirement.imports {
+                if item.module == "wasi_snapshot_preview1"
+                    || wasi.is_some_and(|wasi| requirement.provider == wasi.id)
+                {
+                    if !wasi.is_some_and(|wasi| {
+                        requirement.provider == wasi.id
+                            && item.module == "wasi_snapshot_preview1"
+                            && item.provider_export == item.name
+                            && NumericWasiService::from_name(&item.name).is_some_and(|service| {
+                                wasi.allowed.contains(&service) && service.matches(&item.ty)
+                            })
+                    }) {
+                        return Err(fail(format!(
+                            "{:?}: numeric WASI import is not authorized",
+                            module.manifest.id
+                        )));
+                    }
+                    continue;
+                }
                 if reserved(&item.provider_export) {
                     return Err(fail(format!(
                         "{:?}: lifecycle import is unsupported",
@@ -428,8 +505,27 @@ pub(crate) fn prepare_numeric_graph<'a>(
     profile: &'a NumericProfile,
     allowed: &[&str],
 ) -> Result<PreparedNumericGraph<'a>> {
+    prepare_numeric_graph_with_wasi(input, profile, allowed, None)
+}
+
+/// Validate and compile a numeric graph with a bounded WASI provider without instantiating it.
+pub fn preflight_numeric_graph_with_wasi(
+    input: &ModuleManifestInput<'_>,
+    profile: &NumericProfile,
+    allowed: &[&str],
+    wasi: &NumericWasiOptions,
+) -> Result<NumericPreflightReport> {
+    Ok(prepare_numeric_graph_with_wasi(input, profile, allowed, Some(wasi))?.report)
+}
+
+pub(crate) fn prepare_numeric_graph_with_wasi<'a>(
+    input: &'a ModuleManifestInput<'a>,
+    profile: &'a NumericProfile,
+    allowed: &[&str],
+    wasi: Option<&NumericWasiOptions>,
+) -> Result<PreparedNumericGraph<'a>> {
     let prepared = prepare_module_manifests(input).map_err(NumericPreflightError::Manifest)?;
-    let app_id = check_profile(&prepared, profile)?.to_owned();
+    let app_id = check_profile(&prepared, profile, wasi)?.to_owned();
     let checked =
         check_prepared_feature_graph(prepared, allowed).map_err(NumericPreflightError::Feature)?;
     let (prepared, engine, modules, graph) =
