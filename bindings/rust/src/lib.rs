@@ -23,6 +23,14 @@ mod module_graph;
 pub use module_graph::{
     ModuleDeclaration, ModuleGraph, ModuleGraphError, ModuleRole, order_module_graph,
 };
+mod wasm_facts;
+pub use wasm_facts::{
+    WASM_FACTS_MAX_INPUT_BYTES, WASM_FACTS_MAX_NAME_BYTES, WASM_FACTS_MAX_SECTIONS,
+    WASM_FACTS_MAX_VECTOR_ELEMENTS, WasmCheck, WasmExportFact, WasmExternal, WasmFacts,
+    WasmFactsError, WasmFunctionType, WasmGlobalType, WasmImportFact, WasmIndexed,
+    WasmIndexedFunction, WasmMemoryType, WasmReferenceType, WasmStart, WasmTableType,
+    WasmValueType, inspect_wasm_facts,
+};
 
 mod timer;
 pub use timer::Timer;

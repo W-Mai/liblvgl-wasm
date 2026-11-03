@@ -1,0 +1,362 @@
+{
+  "mixed": {
+    "sha256": "0cb4eb43a11d81bc5183e318fbb1c575132fd74e981151c3f46098b04cc59f00",
+    "types": [
+      {
+        "params": [
+          "i32"
+        ],
+        "results": [
+          "i32"
+        ]
+      },
+      {
+        "params": [],
+        "results": []
+      }
+    ],
+    "imports": [
+      {
+        "module": "env",
+        "name": "same",
+        "kind": "function",
+        "index": 0,
+        "typeIndex": 0
+      },
+      {
+        "module": "env",
+        "name": "same",
+        "kind": "function",
+        "index": 1,
+        "typeIndex": 1
+      },
+      {
+        "module": "env",
+        "name": "table",
+        "kind": "table",
+        "index": 0,
+        "type": {
+          "element": "funcref",
+          "minimum": 1,
+          "maximum": 3
+        }
+      },
+      {
+        "module": "env",
+        "name": "memory",
+        "kind": "memory",
+        "index": 0,
+        "type": {
+          "minimumPages": 1,
+          "maximumPages": 2,
+          "shared": false
+        }
+      },
+      {
+        "module": "﻿env",
+        "name": "global",
+        "kind": "global",
+        "index": 0,
+        "type": {
+          "value": "i32",
+          "mutable": false
+        }
+      }
+    ],
+    "exports": [
+      {
+        "name": "first",
+        "kind": "function",
+        "index": 0,
+        "typeIndex": 0
+      },
+      {
+        "name": "start",
+        "kind": "function",
+        "index": 2,
+        "typeIndex": 1
+      },
+      {
+        "name": "alias",
+        "kind": "function",
+        "index": 2,
+        "typeIndex": 1
+      },
+      {
+        "name": "table",
+        "kind": "table",
+        "index": 0,
+        "type": {
+          "element": "funcref",
+          "minimum": 1,
+          "maximum": 3
+        }
+      },
+      {
+        "name": "other-table",
+        "kind": "table",
+        "index": 1,
+        "type": {
+          "element": "externref",
+          "minimum": 0,
+          "maximum": null
+        }
+      },
+      {
+        "name": "memory",
+        "kind": "memory",
+        "index": 0,
+        "type": {
+          "minimumPages": 1,
+          "maximumPages": 2,
+          "shared": false
+        }
+      },
+      {
+        "name": "global",
+        "kind": "global",
+        "index": 0,
+        "type": {
+          "value": "i32",
+          "mutable": false
+        }
+      },
+      {
+        "name": "other-global",
+        "kind": "global",
+        "index": 1,
+        "type": {
+          "value": "i64",
+          "mutable": true
+        }
+      }
+    ],
+    "start": {
+      "index": 2,
+      "typeIndex": 1
+    },
+    "functions": [
+      {
+        "index": 0,
+        "imported": true,
+        "typeIndex": 0
+      },
+      {
+        "index": 1,
+        "imported": true,
+        "typeIndex": 1
+      },
+      {
+        "index": 2,
+        "imported": false,
+        "typeIndex": 1
+      },
+      {
+        "index": 3,
+        "imported": false,
+        "typeIndex": 1
+      }
+    ],
+    "tables": [
+      {
+        "index": 0,
+        "imported": true,
+        "type": {
+          "element": "funcref",
+          "minimum": 1,
+          "maximum": 3
+        }
+      },
+      {
+        "index": 1,
+        "imported": false,
+        "type": {
+          "element": "externref",
+          "minimum": 0,
+          "maximum": null
+        }
+      },
+      {
+        "index": 2,
+        "imported": false,
+        "type": {
+          "element": "funcref",
+          "minimum": 0,
+          "maximum": null
+        }
+      }
+    ],
+    "memories": [
+      {
+        "index": 0,
+        "imported": true,
+        "type": {
+          "minimumPages": 1,
+          "maximumPages": 2,
+          "shared": false
+        }
+      }
+    ],
+    "globals": [
+      {
+        "index": 0,
+        "imported": true,
+        "type": {
+          "value": "i32",
+          "mutable": false
+        }
+      },
+      {
+        "index": 1,
+        "imported": false,
+        "type": {
+          "value": "i64",
+          "mutable": true
+        }
+      },
+      {
+        "index": 2,
+        "imported": false,
+        "type": {
+          "value": "i32",
+          "mutable": false
+        }
+      }
+    ],
+    "tags": [],
+    "validation": "not-run",
+    "featureDetection": "not-run",
+    "abiDetection": "not-run"
+  },
+  "tags": {
+    "sha256": "47eabdd5c5c497547c7a7d158b4673ee4ed59d67ee238487df1bf0560f5f808f",
+    "types": [
+      {
+        "params": [
+          "i32"
+        ],
+        "results": []
+      }
+    ],
+    "imports": [
+      {
+        "module": "env",
+        "name": "tag",
+        "kind": "tag",
+        "index": 0,
+        "typeIndex": 0
+      }
+    ],
+    "exports": [
+      {
+        "name": "imported-tag",
+        "kind": "tag",
+        "index": 0,
+        "typeIndex": 0
+      },
+      {
+        "name": "defined-tag",
+        "kind": "tag",
+        "index": 1,
+        "typeIndex": 0
+      }
+    ],
+    "start": null,
+    "functions": [],
+    "tables": [],
+    "memories": [],
+    "globals": [],
+    "tags": [
+      {
+        "index": 0,
+        "imported": true,
+        "typeIndex": 0
+      },
+      {
+        "index": 1,
+        "imported": false,
+        "typeIndex": 0
+      }
+    ],
+    "validation": "not-run",
+    "featureDetection": "not-run",
+    "abiDetection": "not-run"
+  },
+  "memories": {
+    "sha256": "e1d3314c89e3e7076610c022d7b3d66ac388a148b90bf9eb5535161d5c341be7",
+    "types": [],
+    "imports": [
+      {
+        "module": "env",
+        "name": "first",
+        "kind": "memory",
+        "index": 0,
+        "type": {
+          "minimumPages": 0,
+          "maximumPages": null,
+          "shared": false
+        }
+      },
+      {
+        "module": "env",
+        "name": "second",
+        "kind": "memory",
+        "index": 1,
+        "type": {
+          "minimumPages": 1,
+          "maximumPages": 4,
+          "shared": false
+        }
+      }
+    ],
+    "exports": [
+      {
+        "name": "defined",
+        "kind": "memory",
+        "index": 2,
+        "type": {
+          "minimumPages": 0,
+          "maximumPages": 2,
+          "shared": true
+        }
+      }
+    ],
+    "start": null,
+    "functions": [],
+    "tables": [],
+    "memories": [
+      {
+        "index": 0,
+        "imported": true,
+        "type": {
+          "minimumPages": 0,
+          "maximumPages": null,
+          "shared": false
+        }
+      },
+      {
+        "index": 1,
+        "imported": true,
+        "type": {
+          "minimumPages": 1,
+          "maximumPages": 4,
+          "shared": false
+        }
+      },
+      {
+        "index": 2,
+        "imported": false,
+        "type": {
+          "minimumPages": 0,
+          "maximumPages": 2,
+          "shared": true
+        }
+      }
+    ],
+    "globals": [],
+    "tags": [],
+    "validation": "not-run",
+    "featureDetection": "not-run",
+    "abiDetection": "not-run"
+  }
+}

@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+- Bounded Wasm declaration facts for the Rust host.
 - Bounded Rust module graph validation and provider-first ordering.
 - Synchronous clicked-event callbacks for isolated LVGL applications.
 - Isolated C label adapter and copied RGBA frames for LVGL module graphs.

@@ -1,0 +1,238 @@
+[
+  {
+    "name": "mixed",
+    "hex": "0061736d0100000001090260017f017f60000002460503656e760473616d65000003656e760473616d65000103656e76057461626c65017001010303656e76066d656d6f72790201010206efbbbf656e7606676c6f62616c037f0003030201010407026f0000700000060b027e01427f0b7f0041000b0750080566697273740000057374617274000205616c6961730002057461626c6501000b6f746865722d7461626c650101066d656d6f7279020006676c6f62616c03000c6f746865722d676c6f62616c03010801020c01000a070202000b02000b0b0100",
+    "accepted": true,
+    "engineValid": true
+  },
+  {
+    "name": "tags",
+    "hex": "0061736d0100000001050160017f00020c0103656e76037461670400000d03010000071e020c696d706f727465642d74616704000b646566696e65642d7461670401",
+    "accepted": true,
+    "engineValid": true
+  },
+  {
+    "name": "memories",
+    "hex": "0061736d01000000021d0203656e7605666972737402000003656e76067365636f6e6402010104050401030002070b0107646566696e65640202",
+    "accepted": true
+  },
+  {
+    "name": "opaque element",
+    "hex": "0061736d010000000901ff",
+    "accepted": true,
+    "engineValid": false
+  },
+  {
+    "name": "opaque code",
+    "hex": "0061736d010000000a01ff",
+    "accepted": true,
+    "engineValid": false
+  },
+  {
+    "name": "opaque data",
+    "hex": "0061736d010000000b01ff",
+    "accepted": true,
+    "engineValid": false
+  },
+  {
+    "name": "function code mismatch",
+    "hex": "0061736d01000000010401600000030201000a0100",
+    "accepted": true,
+    "engineValid": false
+  },
+  {
+    "name": "short header",
+    "hex": "006173",
+    "accepted": false
+  },
+  {
+    "name": "wrong version",
+    "hex": "0061736d02000000",
+    "accepted": false
+  },
+  {
+    "name": "section truncated",
+    "hex": "0061736d01000000050200",
+    "accepted": false
+  },
+  {
+    "name": "invalid utf8",
+    "hex": "0061736d0100000002060101ff000000",
+    "accepted": false
+  },
+  {
+    "name": "u32 overflow",
+    "hex": "0061736d01000000050701008080808010",
+    "accepted": false
+  },
+  {
+    "name": "signed overflow",
+    "hex": "0061736d01000000060a017f004180808080080b",
+    "accepted": false
+  },
+  {
+    "name": "duplicate section",
+    "hex": "0061736d01000000050100050100",
+    "accepted": false
+  },
+  {
+    "name": "out of order",
+    "hex": "0061736d01000000050100040100",
+    "accepted": false
+  },
+  {
+    "name": "unknown section",
+    "hex": "0061736d010000000e0100",
+    "accepted": false
+  },
+  {
+    "name": "duplicate export",
+    "hex": "0061736d0100000005030100000709020178020001780200",
+    "accepted": false
+  },
+  {
+    "name": "out of bounds export",
+    "hex": "0061736d0100000007050101780000",
+    "accepted": false
+  },
+  {
+    "name": "invalid start signature",
+    "hex": "0061736d0100000001050160017f0003020100080100",
+    "accepted": false
+  },
+  {
+    "name": "tag result",
+    "hex": "0061736d010000000105016000017f0d03010000",
+    "accepted": false
+  },
+  {
+    "name": "memory flags",
+    "hex": "0061736d01000000050401800000",
+    "accepted": false
+  },
+  {
+    "name": "table flags",
+    "hex": "0061736d0100000004050170800000",
+    "accepted": false
+  },
+  {
+    "name": "memory64",
+    "hex": "0061736d010000000503010400",
+    "accepted": false
+  },
+  {
+    "name": "memory bounds",
+    "hex": "0061736d0100000005050100818004",
+    "accepted": false
+  },
+  {
+    "name": "table max below min",
+    "hex": "0061736d0100000004050170010201",
+    "accepted": false
+  },
+  {
+    "name": "invalid global initializer",
+    "hex": "0061736d010000000605017f00450b",
+    "accepted": false
+  },
+  {
+    "name": "unsupported reference type",
+    "hex": "0061736d0100000001050160016300",
+    "accepted": false
+  },
+  {
+    "name": "trailing section bytes",
+    "hex": "0061736d0100000001020000",
+    "accepted": false
+  },
+  {
+    "name": "1001 parameters",
+    "recipe": "parameters",
+    "count": 1001,
+    "accepted": true
+  },
+  {
+    "name": "vector limit",
+    "recipe": "parameters",
+    "count": 49999,
+    "accepted": true
+  },
+  {
+    "name": "vector over limit",
+    "recipe": "parameters",
+    "count": 50000,
+    "accepted": false,
+    "limit": "vector elements"
+  },
+  {
+    "name": "cumulative vector limit",
+    "recipe": "cumulative-parameters",
+    "count": 24999,
+    "accepted": true
+  },
+  {
+    "name": "cumulative vector over limit",
+    "recipe": "cumulative-parameters",
+    "count": 25000,
+    "accepted": false,
+    "limit": "vector elements"
+  },
+  {
+    "name": "100001 name bytes",
+    "recipe": "name",
+    "count": 100001,
+    "accepted": true
+  },
+  {
+    "name": "name byte limit",
+    "recipe": "name",
+    "count": 4194304,
+    "accepted": true
+  },
+  {
+    "name": "name bytes over limit",
+    "recipe": "name",
+    "count": 4194305,
+    "accepted": false,
+    "limit": "name bytes"
+  },
+  {
+    "name": "cumulative name limit",
+    "recipe": "cumulative-names",
+    "count": 2097152,
+    "accepted": true
+  },
+  {
+    "name": "cumulative names over limit",
+    "recipe": "cumulative-names",
+    "count": 2097153,
+    "accepted": false,
+    "limit": "name bytes"
+  },
+  {
+    "name": "section limit",
+    "recipe": "sections",
+    "count": 4096,
+    "accepted": true
+  },
+  {
+    "name": "section over limit",
+    "recipe": "sections",
+    "count": 4097,
+    "accepted": false,
+    "limit": "sections"
+  },
+  {
+    "name": "input byte limit",
+    "recipe": "input",
+    "count": 67108864,
+    "accepted": true
+  },
+  {
+    "name": "input bytes over limit",
+    "recipe": "input",
+    "count": 67108865,
+    "accepted": false,
+    "limit": "input bytes"
+  }
+]

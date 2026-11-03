@@ -61,6 +61,18 @@ CARGO_TARGET_DIR="$root/target/rust" \
     cargo clippy --manifest-path bindings/rust/Cargo.toml --locked --all-targets -- -D warnings
 CARGO_TARGET_DIR="$root/target/rust" \
     cargo test --manifest-path bindings/rust/Cargo.toml --locked
+facts_tmp=$(mktemp -d "$root/target/.wasm-facts.XXXXXX")
+trap 'rm -rf "$facts_tmp"' EXIT
+for module in target/wasm/liblvgl.wasm target/apps/c/app.wasm
+do
+    bun tests/fixtures/wasm-facts/reference.ts "$module" "$facts_tmp/reference.json"
+    LVW_TEST_WASM_FACTS_REAL_INPUT="$root/$module" \
+        LVW_TEST_WASM_FACTS_REAL_REFERENCE="$facts_tmp/reference.json" \
+        CARGO_TARGET_DIR="$root/target/rust" \
+        cargo test --manifest-path bindings/rust/Cargo.toml --locked --test wasm_facts real_wasm_fact_comparison
+done
+rm -rf "$facts_tmp"
+trap - EXIT
 CARGO_TARGET_DIR="$root/target/rust" \
     cargo run --manifest-path bindings/rust/Cargo.toml --locked -- "$root/target/wasm/liblvgl.wasm"
 CARGO_TARGET_DIR="$root/target/apps/rust/build" \

@@ -1,6 +1,8 @@
 import { createHash } from "node:crypto";
 import { expect, test } from "bun:test";
 import { inspectWasmFacts, WASM_FACTS_LIMITS } from "../bindings/typescript/src/index.ts";
+import sharedCases from "./fixtures/wasm-facts/cases.json";
+import expectedFacts from "./fixtures/wasm-facts/expected.json";
 
 const leb = (n: number): number[] => {
   const bytes = [];
@@ -15,23 +17,82 @@ const entry = (module: string, name_: string, kind: number, ...type: number[]): 
 const exported = (name_: string, kind: number, index: number): number[] => [...name(name_), kind, ...leb(index)];
 
 function mixedModule(): Uint8Array {
-  return wasm(
-    section(1, vec([0x60, 1, 0x7f, 1, 0x7f], [0x60, 0, 0])),
-    section(2, vec(
-      entry("env", "same", 0, 0), entry("env", "same", 0, 1),
-      entry("env", "table", 1, 0x70, 1, 1, 3), entry("env", "memory", 2, 1, 1, 2),
-      entry("\ufeffenv", "global", 3, 0x7f, 0),
-    )),
-    section(3, vec([1], [1])),
-    section(4, vec([0x6f, 0, 0], [0x70, 0, 0])),
-    section(6, vec([0x7e, 1, 0x42, 0x7f, 0x0b], [0x7f, 0, 0x41, 0, 0x0b])),
-    section(7, vec(
-      exported("first", 0, 0), exported("start", 0, 2), exported("alias", 0, 2),
-      exported("table", 1, 0), exported("other-table", 1, 1), exported("memory", 2, 0),
-      exported("global", 3, 0), exported("other-global", 3, 1),
-    )),
-    section(8, [2]), section(12, [0]), section(10, vec([2, 0, 0x0b], [2, 0, 0x0b])), section(11, [0]),
-  );
+  return fixtureBytes(sharedCases.find((item) => item.name === "mixed")!);
+}
+
+function fixtureBytes(item: typeof sharedCases[number]): Uint8Array {
+  if (item.hex !== undefined) return Uint8Array.from(item.hex.match(/../g) ?? [], (pair) => Number.parseInt(pair, 16));
+  const count = item.count!;
+  let payload: Uint8Array, id: number;
+  if (item.recipe === "parameters") {
+    const prefix = [1, 0x60, ...leb(count)];
+    payload = new Uint8Array(prefix.length + count + 1);
+    payload.set(prefix);
+    payload.fill(0x7f, prefix.length, prefix.length + count);
+    id = 1;
+  } else if (item.recipe === "cumulative-parameters") {
+    const prefix = [0x60, ...leb(count)];
+    const size = prefix.length + count + 1;
+    payload = new Uint8Array(1 + 2 * size);
+    payload[0] = 2;
+    for (const offset of [1, 1 + size]) {
+      payload.set(prefix, offset);
+      payload.fill(0x7f, offset + prefix.length, offset + prefix.length + count);
+    }
+    id = 1;
+  } else if (item.recipe === "name") {
+    const prefix = leb(count);
+    payload = new Uint8Array(prefix.length + count);
+    payload.set(prefix);
+    payload.fill(0x61, prefix.length);
+    id = 0;
+  } else if (item.recipe === "sections") {
+    const result = new Uint8Array(8 + count * 3);
+    result.set([0, 97, 115, 109, 1, 0, 0, 0]);
+    for (let i = 0; i < count; i++) result.set([0, 1, 0], 8 + i * 3);
+    return result;
+  } else if (item.recipe === "cumulative-names") {
+    const prefix = leb(count);
+    const size = 1 + leb(prefix.length + count).length + prefix.length + count;
+    const result = new Uint8Array(8 + 2 * size);
+    result.set([0, 97, 115, 109, 1, 0, 0, 0]);
+    for (const offset of [8, 8 + size]) {
+      const header = [0, ...leb(prefix.length + count), ...prefix];
+      result.set(header, offset);
+      result.fill(0x61, offset + header.length, offset + size);
+    }
+    return result;
+  } else if (item.recipe === "input") {
+    const result = new Uint8Array(count);
+    result.set([0, 97, 115, 109, 1, 0, 0, 0]);
+    let payloadLength = count - 9;
+    while (payloadLength + leb(payloadLength).length !== count - 9) payloadLength--;
+    result.set([0, ...leb(payloadLength), 0], 8);
+    return result;
+  } else throw new Error(`unknown fixture recipe: ${item.recipe}`);
+  const prefix = [0, 97, 115, 109, 1, 0, 0, 0, id, ...leb(payload.length)];
+  const result = new Uint8Array(prefix.length + payload.length);
+  result.set(prefix);
+  result.set(payload, prefix.length);
+  return result;
+}
+
+for (const fixture of sharedCases) {
+  test(`shared Wasm facts: ${fixture.name}`, () => {
+    const bytes = fixtureBytes(fixture);
+    if (fixture.accepted) {
+      const facts = inspectWasmFacts(bytes);
+      expect(facts.sha256).toBe(createHash("sha256").update(bytes).digest("hex"));
+      expect(facts.validation).toBe("not-run");
+      expect(facts.featureDetection).toBe("not-run");
+      expect(facts.abiDetection).toBe("not-run");
+      if (fixture.name in expectedFacts) expect(facts).toEqual(expectedFacts[fixture.name as keyof typeof expectedFacts]);
+      if (fixture.recipe === "parameters") expect(facts.types[0]!.params).toHaveLength(fixture.count!);
+    } else if (fixture.limit !== undefined) {
+      expect(() => inspectWasmFacts(bytes)).toThrow(`Wasm facts inspection limit: ${fixture.limit}`);
+    } else expect(() => inspectWasmFacts(bytes)).toThrow();
+    if (fixture.engineValid !== undefined) expect(WebAssembly.validate(bytes)).toBe(fixture.engineValid);
+  }, 30_000);
 }
 
 test("facts retain binary identity, mixed index spaces and duplicate imports", () => {

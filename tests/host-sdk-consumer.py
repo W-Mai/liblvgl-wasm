@@ -108,7 +108,8 @@ def check(output, build=None):
             environment.pop("LVW_RUST_BINDINGS", None)
             subprocess.run(["cargo", "metadata", "--offline", "--format-version", "1", "--manifest-path", str(graph_consumer / "Cargo.toml")],
                            env=environment, stdout=subprocess.DEVNULL, check=True)
-            run("cargo", "run", "--locked", "--offline", "--manifest-path", graph_consumer / "Cargo.toml", env=environment)
+            run("cargo", "run", "--locked", "--offline", "--manifest-path", graph_consumer / "Cargo.toml", "--",
+                package / "runtime/liblvgl.wasm", metadata["identity"]["wasm_sha256"], env=environment)
             if contracts:
                 environment = {**os.environ, "LVW_TEST_CORE": str(package / "runtime/liblvgl.wasm"),
                                "LVW_TEST_API": str(package / "metadata/api.json"),
