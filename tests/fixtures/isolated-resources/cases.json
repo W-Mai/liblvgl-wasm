@@ -1,0 +1,359 @@
+[
+  {
+    "name": "empty",
+    "hex": "0061736d01000000",
+    "accepted": true,
+    "memories": 0,
+    "tables": 0,
+    "usesWasi": false,
+    "engineValid": true
+  },
+  {
+    "name": "owned resources and aliases",
+    "hex": "0061736d010000000404017000010503010001071a03066d656d6f7279020005616c6961730200057461626c650100",
+    "accepted": true,
+    "memories": 1,
+    "tables": 1,
+    "usesWasi": false,
+    "engineValid": true
+  },
+  {
+    "name": "unexported owned resources",
+    "hex": "0061736d010000000404016f00000503010000",
+    "accepted": true,
+    "memories": 1,
+    "tables": 1,
+    "usesWasi": false
+  },
+  {
+    "name": "imported memory",
+    "hex": "0061736d01000000020f0103656e76066d656d6f7279020001",
+    "accepted": false,
+    "error": "cannot import memory"
+  },
+  {
+    "name": "imported table",
+    "hex": "0061736d01000000020f0103656e76057461626c6501700001",
+    "accepted": false,
+    "error": "cannot import table"
+  },
+  {
+    "name": "shared memory",
+    "hex": "0061736d01000000050401030102",
+    "accepted": false,
+    "error": "shared memory"
+  },
+  {
+    "name": "unexported multiple memories",
+    "hex": "0061736d0100000005050200010001",
+    "accepted": false,
+    "error": "multiple memories"
+  },
+  {
+    "name": "unexported multiple tables",
+    "hex": "0061736d01000000040702700001700001",
+    "accepted": false,
+    "error": "multiple tables"
+  },
+  {
+    "name": "funcref function import parameter",
+    "hex": "0061736d010000000105016001700002090103656e7601660000",
+    "accepted": false,
+    "error": "reference-typed"
+  },
+  {
+    "name": "funcref function import result",
+    "hex": "0061736d010000000105016000017002090103656e7601660000",
+    "accepted": false,
+    "error": "reference-typed"
+  },
+  {
+    "name": "funcref function export parameter",
+    "hex": "0061736d01000000010501600170000302010007050101660000",
+    "accepted": false,
+    "error": "reference-typed"
+  },
+  {
+    "name": "funcref function export result",
+    "hex": "0061736d01000000010501600001700302010007050101660000",
+    "accepted": false,
+    "error": "reference-typed"
+  },
+  {
+    "name": "funcref tag import",
+    "hex": "0061736d0100000001050160017000020a0103656e760174040000",
+    "accepted": false,
+    "error": "reference-typed"
+  },
+  {
+    "name": "funcref tag export",
+    "hex": "0061736d01000000010501600170000d0301000007050101740400",
+    "accepted": false,
+    "error": "reference-typed"
+  },
+  {
+    "name": "funcref immutable global import",
+    "hex": "0061736d01000000020a0103656e760167037000",
+    "accepted": false,
+    "error": "mutable or reference"
+  },
+  {
+    "name": "funcref mutable global export",
+    "hex": "0061736d010000000606017001d0700b07050101670300",
+    "accepted": true,
+    "memories": 0,
+    "tables": 0,
+    "usesWasi": false
+  },
+  {
+    "name": "funcref local function",
+    "hex": "0061736d0100000001050160017000030201000a040102000b",
+    "accepted": true,
+    "memories": 0,
+    "tables": 0,
+    "usesWasi": false,
+    "engineValid": true
+  },
+  {
+    "name": "externref function import parameter",
+    "hex": "0061736d0100000001050160016f0002090103656e7601660000",
+    "accepted": false,
+    "error": "reference-typed"
+  },
+  {
+    "name": "externref function import result",
+    "hex": "0061736d010000000105016000016f02090103656e7601660000",
+    "accepted": false,
+    "error": "reference-typed"
+  },
+  {
+    "name": "externref function export parameter",
+    "hex": "0061736d0100000001050160016f000302010007050101660000",
+    "accepted": false,
+    "error": "reference-typed"
+  },
+  {
+    "name": "externref function export result",
+    "hex": "0061736d010000000105016000016f0302010007050101660000",
+    "accepted": false,
+    "error": "reference-typed"
+  },
+  {
+    "name": "externref tag import",
+    "hex": "0061736d0100000001050160016f00020a0103656e760174040000",
+    "accepted": false,
+    "error": "reference-typed"
+  },
+  {
+    "name": "externref tag export",
+    "hex": "0061736d0100000001050160016f000d0301000007050101740400",
+    "accepted": false,
+    "error": "reference-typed"
+  },
+  {
+    "name": "externref immutable global import",
+    "hex": "0061736d01000000020a0103656e760167036f00",
+    "accepted": false,
+    "error": "mutable or reference"
+  },
+  {
+    "name": "externref mutable global export",
+    "hex": "0061736d010000000606016f01d06f0b07050101670300",
+    "accepted": true,
+    "memories": 0,
+    "tables": 0,
+    "usesWasi": false
+  },
+  {
+    "name": "externref local function",
+    "hex": "0061736d0100000001050160016f00030201000a040102000b",
+    "accepted": true,
+    "memories": 0,
+    "tables": 0,
+    "usesWasi": false,
+    "engineValid": true
+  },
+  {
+    "name": "mutable numeric global import",
+    "hex": "0061736d01000000020a0103656e760167037f01",
+    "accepted": false,
+    "error": "mutable or reference"
+  },
+  {
+    "name": "immutable i32 global import",
+    "hex": "0061736d01000000020a0103656e760167037f00",
+    "accepted": true,
+    "memories": 0,
+    "tables": 0,
+    "usesWasi": false
+  },
+  {
+    "name": "i32 function boundary",
+    "hex": "0061736d0100000001060160017f017f02090103656e7601660000",
+    "accepted": true,
+    "memories": 0,
+    "tables": 0,
+    "usesWasi": false
+  },
+  {
+    "name": "immutable i64 global import",
+    "hex": "0061736d01000000020a0103656e760167037e00",
+    "accepted": true,
+    "memories": 0,
+    "tables": 0,
+    "usesWasi": false
+  },
+  {
+    "name": "i64 function boundary",
+    "hex": "0061736d0100000001060160017e017e02090103656e7601660000",
+    "accepted": true,
+    "memories": 0,
+    "tables": 0,
+    "usesWasi": false
+  },
+  {
+    "name": "immutable f32 global import",
+    "hex": "0061736d01000000020a0103656e760167037d00",
+    "accepted": true,
+    "memories": 0,
+    "tables": 0,
+    "usesWasi": false
+  },
+  {
+    "name": "f32 function boundary",
+    "hex": "0061736d0100000001060160017d017d02090103656e7601660000",
+    "accepted": true,
+    "memories": 0,
+    "tables": 0,
+    "usesWasi": false
+  },
+  {
+    "name": "immutable f64 global import",
+    "hex": "0061736d01000000020a0103656e760167037c00",
+    "accepted": true,
+    "memories": 0,
+    "tables": 0,
+    "usesWasi": false
+  },
+  {
+    "name": "f64 function boundary",
+    "hex": "0061736d0100000001060160017c017c02090103656e7601660000",
+    "accepted": true,
+    "memories": 0,
+    "tables": 0,
+    "usesWasi": false
+  },
+  {
+    "name": "immutable v128 global import",
+    "hex": "0061736d01000000020a0103656e760167037b00",
+    "accepted": true,
+    "memories": 0,
+    "tables": 0,
+    "usesWasi": false
+  },
+  {
+    "name": "v128 function boundary",
+    "hex": "0061736d0100000001060160017b017b02090103656e7601660000",
+    "accepted": true,
+    "memories": 0,
+    "tables": 0,
+    "usesWasi": false
+  },
+  {
+    "name": "start section",
+    "hex": "0061736d01000000010401600000030201000801000a05010300000b",
+    "accepted": false,
+    "engineValid": true,
+    "error": "start section"
+  },
+  {
+    "name": "P1 without memory",
+    "hex": "0061736d0100000001040160000002230116776173695f736e617073686f745f70726576696577310866645f77726974650000",
+    "accepted": false,
+    "error": "export its own memory"
+  },
+  {
+    "name": "P1 hidden memory",
+    "hex": "0061736d0100000001040160000002230116776173695f736e617073686f745f70726576696577310866645f777269746500000503010001",
+    "accepted": false,
+    "error": "export its own memory"
+  },
+  {
+    "name": "P1 wrong memory name",
+    "hex": "0061736d0100000001040160000002230116776173695f736e617073686f745f70726576696577310866645f777269746500000503010001070901056f746865720200",
+    "accepted": false,
+    "error": "export its own memory"
+  },
+  {
+    "name": "P1 global named memory",
+    "hex": "0061736d0100000001040160000002230116776173695f736e617073686f745f70726576696577310866645f7772697465000005030100010606017f0041000b070a01066d656d6f72790300",
+    "accepted": false,
+    "error": "export its own memory"
+  },
+  {
+    "name": "P1 memory and alias, wrong ABI",
+    "hex": "0061736d0100000001040160000002230116776173695f736e617073686f745f70726576696577310866645f777269746500000503010001071202066d656d6f7279020005616c6961730200",
+    "accepted": true,
+    "memories": 1,
+    "tables": 0,
+    "usesWasi": true
+  },
+  {
+    "name": "P1 unknown name with owned memory",
+    "hex": "0061736d0100000001040160000002220116776173695f736e617073686f745f707265766965773107756e6b6e6f776e00000503010001070a01066d656d6f72790200",
+    "accepted": true,
+    "memories": 1,
+    "tables": 0,
+    "usesWasi": true
+  },
+  {
+    "name": "ordinary topology namespace wasi_unstable",
+    "hex": "0061736d010000000104016000000213010d776173695f756e737461626c6501660000",
+    "accepted": true,
+    "memories": 0,
+    "tables": 0,
+    "usesWasi": false
+  },
+  {
+    "name": "ordinary topology namespace wasi:cli/environment@0.2.0",
+    "hex": "0061736d010000000104016000000220011a776173693a636c692f656e7669726f6e6d656e7440302e322e3001660000",
+    "accepted": true,
+    "memories": 0,
+    "tables": 0,
+    "usesWasi": false
+  },
+  {
+    "name": "ordinary topology namespace wasi_custom",
+    "hex": "0061736d010000000104016000000211010b776173695f637573746f6d01660000",
+    "accepted": true,
+    "memories": 0,
+    "tables": 0,
+    "usesWasi": false
+  },
+  {
+    "name": "ordinary topology namespace ",
+    "hex": "0061736d010000000104016000000206010001660000",
+    "accepted": true,
+    "memories": 0,
+    "tables": 0,
+    "usesWasi": false
+  },
+  {
+    "name": "opaque invalid code",
+    "hex": "0061736d01000000010401600000030201000a0401020000",
+    "accepted": true,
+    "memories": 0,
+    "tables": 0,
+    "usesWasi": false,
+    "engineValid": false
+  },
+  {
+    "name": "10000 repeated imports",
+    "recipe": "repeated",
+    "repeat": 10000,
+    "accepted": true,
+    "memories": 0,
+    "tables": 0,
+    "usesWasi": false
+  }
+]

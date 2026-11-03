@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+- Rust isolated Wasm resource topology inspection.
 - Rust WASI Preview 1 import signature inspection.
 - Static Rust module manifest identity and interface validation.
 - Bounded Wasm declaration facts for the Rust host.

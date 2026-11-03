@@ -562,6 +562,8 @@ liblvgl-wasm-host = { path = "/path/to/liblvgl-wasm/bindings/rust" }
 
 `inspect_wasi_preview1` checks the names and signatures of observed WASI Preview 1 imports against a private snapshot and reports the presence of WASI imports and entrypoints. An absent result does not establish the target ABI. The check does not compile or run the module or verify host services.
 
+`inspect_isolated_resources` checks a private Wasm snapshot for isolated memory and table topology and restricted cross-instance types. The report does not verify WASI signatures, pointer or handle contracts, host implementations, or execution; it does not authorize loading.
+
 ```rust
 use liblvgl_wasm_host::{Result, Runtime, UnsafePointer, values};
 

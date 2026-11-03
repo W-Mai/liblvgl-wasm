@@ -1,6 +1,22 @@
 import { createHash } from "node:crypto";
 import { expect, test } from "bun:test";
 import { inspectIsolatedResources } from "../bindings/typescript/src/index.ts";
+import { inspectIsolatedFacts } from "../bindings/typescript/src/isolated-resources.ts";
+import { inspectWasmFacts } from "../bindings/typescript/src/wasm-facts.ts";
+import sharedCases from "./fixtures/isolated-resources/cases.json";
+
+for (const fixture of sharedCases) {
+  test(`shared isolated topology: ${fixture.name}`, () => {
+    const bytes = fixture.recipe === "repeated"
+      ? wasm(section(1, vec(signature(...new Array(1000).fill(0x7f)))), section(2, vec(...new Array(fixture.repeat).fill(imported("env", "f", 0, 0)))))
+      : Uint8Array.from(fixture.hex!.match(/../g) ?? [], (pair) => Number.parseInt(pair, 16));
+    const inspect = () => inspectIsolatedFacts(inspectWasmFacts(bytes));
+    if (fixture.accepted) {
+      expect(inspect()).toEqual({ memories: fixture.memories, tables: fixture.tables, usesWasi: fixture.usesWasi });
+    } else expect(inspect).toThrow(fixture.error);
+    if (fixture.engineValid !== undefined) expect(WebAssembly.validate(bytes)).toBe(fixture.engineValid);
+  });
+}
 
 const leb = (value: number): number[] => {
   const out: number[] = [];

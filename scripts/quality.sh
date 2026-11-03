@@ -79,6 +79,11 @@ do
         LVW_TEST_WASI_REAL_REFERENCE="$facts_tmp/wasi.json" \
         CARGO_TARGET_DIR="$root/target/rust" \
         cargo test --manifest-path bindings/rust/Cargo.toml --locked --test wasi_preview1 real_wasi_preview1
+    bun tests/fixtures/isolated-resources/real.ts "$module" "$facts_tmp/isolated.json"
+    LVW_TEST_ISOLATED_REAL_INPUT="$root/$module" \
+        LVW_TEST_ISOLATED_REAL_REFERENCE="$facts_tmp/isolated.json" \
+        CARGO_TARGET_DIR="$root/target/rust" \
+        cargo test --manifest-path bindings/rust/Cargo.toml --locked --test isolated_resources real_isolated_resources
 done
 wasi_sdk=$(sh "$root/scripts/resolve-wasi-sdk.sh" "$root")
 "$wasi_sdk/bin/clang" --target=wasm32-wasip1 -std=c11 -O0 -Werror \
@@ -88,6 +93,11 @@ LVW_TEST_WASI_REAL_INPUT="$facts_tmp/wasi45.wasm" \
     LVW_TEST_WASI_REAL_REFERENCE="$facts_tmp/wasi.json" \
     CARGO_TARGET_DIR="$root/target/rust" \
     cargo test --manifest-path bindings/rust/Cargo.toml --locked --test wasi_preview1 real_wasi_preview1
+bun tests/fixtures/isolated-resources/real.ts "$facts_tmp/wasi45.wasm" "$facts_tmp/isolated.json"
+LVW_TEST_ISOLATED_REAL_INPUT="$facts_tmp/wasi45.wasm" \
+    LVW_TEST_ISOLATED_REAL_REFERENCE="$facts_tmp/isolated.json" \
+    CARGO_TARGET_DIR="$root/target/rust" \
+    cargo test --manifest-path bindings/rust/Cargo.toml --locked --test isolated_resources real_isolated_resources
 rm -rf "$facts_tmp"
 trap - EXIT
 CARGO_TARGET_DIR="$root/target/rust" \

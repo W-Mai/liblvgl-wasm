@@ -1,7 +1,8 @@
 use liblvgl_wasm_host::{
-    ManifestCheck, ModuleArtifact, ModuleArtifactInput, ModuleDeclaration, ModuleGraph,
-    ModuleInterface, ModuleManifest, ModuleManifestInput, ModuleRole, ModuleTarget, WasiEvidence,
-    WasmCheck, inspect_module_manifests, inspect_wasi_preview1, inspect_wasm_facts, order_module_graph,
+    IsolatedTopologyCheck, ManifestCheck, ModuleArtifact, ModuleArtifactInput, ModuleDeclaration,
+    ModuleGraph, ModuleInterface, ModuleManifest, ModuleManifestInput, ModuleRole, ModuleTarget,
+    WasiEvidence, WasmCheck, inspect_isolated_resources, inspect_module_manifests,
+    inspect_wasi_preview1, inspect_wasm_facts, order_module_graph,
 };
 
 fn main() {
@@ -36,6 +37,14 @@ fn main() {
     assert_eq!(wasi.sha256(), expected_sha);
     assert_eq!(wasi.checks().engine(), WasmCheck::NotRun);
     assert_eq!(wasi.checks().runtime(), WasmCheck::NotRun);
+    let isolated = inspect_isolated_resources(&bytes).unwrap();
+    assert_eq!(isolated.sha256(), expected_sha);
+    assert_eq!(
+        isolated.checks().resource_topology(),
+        IsolatedTopologyCheck::Passed
+    );
+    assert_eq!(isolated.checks().engine(), WasmCheck::NotRun);
+    assert_eq!(isolated.checks().wasi_abi(), WasmCheck::NotRun);
 
     let empty = b"\0asm\x01\0\0\0";
     assert_eq!(inspect_wasi_preview1(empty).unwrap().evidence(), WasiEvidence::Absent);

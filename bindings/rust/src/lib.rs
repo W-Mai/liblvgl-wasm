@@ -23,6 +23,11 @@ mod module_graph;
 pub use module_graph::{
     ModuleDeclaration, ModuleGraph, ModuleGraphError, ModuleRole, order_module_graph,
 };
+mod isolated_resources;
+pub use isolated_resources::{
+    IsolatedResourceChecks, IsolatedResourceError, IsolatedResourceReport, IsolatedTopologyCheck,
+    inspect_isolated_resources,
+};
 mod module_manifest;
 pub use module_manifest::{
     ManifestCheck, ManifestRequirement, ModuleArtifact, ModuleArtifactInput, ModuleExport,
