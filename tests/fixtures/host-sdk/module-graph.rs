@@ -278,7 +278,9 @@ fn main() {
         .next()
         .expect("numeric label graph path or skip marker");
     if path != "--skip-label" {
-        numeric_label_fixture::run_preflight(&std::fs::read(path).unwrap());
+        let graph = std::fs::read(path).unwrap();
+        numeric_label_fixture::run_preflight(&graph);
+        numeric_label_fixture::run_runtime(&graph);
     }
 
     let empty = b"\0asm\x01\0\0\0";

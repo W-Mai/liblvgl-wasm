@@ -66,6 +66,7 @@ python3 -B validator/notices.test.py
 python3 -B tests/native-validator-package.py
 python3 -B tests/multimodule-build.py
 python3 -B tests/numeric_sdk_fixture_test.py
+python3 -B tests/browser_temp_test.py
 
 cargo fmt --manifest-path bindings/rust/Cargo.toml --all -- --check
 cargo fmt --manifest-path toolchains/rust/Cargo.toml --all -- --check
@@ -85,6 +86,12 @@ LVW_TEST_LVGL_CORE="$root/target/wasm/liblvgl-bounded.wasm" \
     CARGO_TARGET_DIR="$root/target/rust" \
     cargo test --manifest-path bindings/rust/Cargo.toml --locked --lib \
         real_lvgl_failed_app_rolls_back_same_core -- --ignored
+LVW_TEST_LVGL_CORE="$root/target/wasm/liblvgl-bounded.wasm" \
+    LVW_TEST_LVGL_API="$root/target/wasm/api.json" \
+    LVW_TEST_LVGL_PROOF="$root/target/wasm/api-verification-bounded.json" \
+    CARGO_TARGET_DIR="$root/target/rust" \
+    cargo test --manifest-path bindings/rust/Cargo.toml --locked --lib \
+        numeric_label_test -- --ignored
 facts_tmp=$(mktemp -d "$root/target/.wasm-facts.XXXXXX")
 for module in target/wasm/liblvgl.wasm target/apps/c/app.wasm
 do

@@ -9,6 +9,7 @@ import secrets
 import signal
 import subprocess
 import sys
+import tempfile
 import time
 from urllib.parse import quote, urlsplit
 
@@ -128,16 +129,26 @@ def stop(process):
         pass
 
 
+def browser_directory():
+    """Create a private, short path for Chromium's Unix-domain sockets."""
+    return tempfile.TemporaryDirectory(prefix="lvw-browser-", dir="/tmp")
+
+
 def run_browser(package, work, project, identity, chromium):
+    with browser_directory() as directory:
+        return _run_browser(package, work, project, identity, chromium, Path(directory))
+
+
+def _run_browser(package, work, project, identity, chromium, browser_dir):
     core = package / "host-sdk/runtime/liblvgl.wasm"
     api = package / "host-sdk/metadata/api.json"
     if (hashlib.sha256(core.read_bytes()).hexdigest() != identity["wasm_sha256"] or
             hashlib.sha256(api.read_bytes()).hexdigest() != identity["api_sha256"]):
         raise ValueError("package identity does not match the core and API bytes")
-    cache, config, data, runtime = (work / name for name in ("cache", "config", "data", "runtime"))
+    cache, config, data, runtime = (browser_dir / name for name in ("cache", "config", "data", "runtime"))
     for directory in (cache, config, data, runtime):
         directory.mkdir(mode=0o700)
-    env = {**os.environ, "TMPDIR": str(work), "CHROME_CONFIG_HOME": str(config),
+    env = {**os.environ, "TMPDIR": str(browser_dir), "CHROME_CONFIG_HOME": str(config),
            "XDG_CACHE_HOME": str(cache), "XDG_CONFIG_HOME": str(config),
            "XDG_DATA_HOME": str(data), "XDG_RUNTIME_DIR": str(runtime),
            "BUN_INSTALL_CACHE_DIR": str(work / "bun-cache")}
@@ -177,7 +188,7 @@ def run_browser(package, work, project, identity, chromium):
             process = subprocess.Popen([chromium, "--headless", "--disable-gpu",
                 "--disable-background-networking", "--disable-default-apps", "--disable-sync",
                 "--disable-extensions", "--no-first-run", "--no-default-browser-check",
-                "--password-store=basic", f"--user-data-dir={work / 'profile'}",
+                "--password-store=basic", f"--user-data-dir={browser_dir / 'profile'}",
                 f"http://127.0.0.1:{server.server_port}/browser.html"],
                 cwd=work, env=env, stdin=subprocess.DEVNULL, stdout=output,
                 stderr=subprocess.STDOUT, start_new_session=True)

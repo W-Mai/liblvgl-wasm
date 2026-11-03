@@ -8,7 +8,7 @@ import secrets
 import subprocess
 import threading
 
-from package_browser import stop
+from package_browser import browser_directory, stop
 
 
 def page(endpoint):
@@ -70,6 +70,11 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def run_browser(project, sdk, work, chromium, wasi, lv_provider, lv_app, standalone_core, standalone_app, label_app, event_app):
+    with browser_directory() as directory:
+        return _run_browser(project, sdk, work, chromium, wasi, lv_provider, lv_app, standalone_core, standalone_app, label_app, event_app, directory)
+
+
+def _run_browser(project, sdk, work, chromium, wasi, lv_provider, lv_app, standalone_core, standalone_app, label_app, event_app, directory):
     consumer = project / "target/browser-worker.js"
     subprocess.run(["bun", "build", "browser-worker.ts", "--target", "browser", "--format", "iife",
                     "--outfile", consumer], cwd=project, check=True)
@@ -88,10 +93,11 @@ def run_browser(project, sdk, work, chromium, wasi, lv_provider, lv_app, standal
     server.unexpected = []
     threading.Thread(target=server.serve_forever, daemon=True).start()
     env = dict(os.environ)
+    env["TMPDIR"] = directory
     for key in ("DISPLAY", "WAYLAND_DISPLAY", "XAUTHORITY", "DBUS_SESSION_BUS_ADDRESS"):
         env.pop(key, None)
     flags = [chromium, "--headless", "--disable-gpu", "--disable-dev-shm-usage", "--disable-background-networking",
-             "--disable-extensions", "--no-first-run", "--user-data-dir=" + str(work / "browser-profile")]
+             "--disable-extensions", "--no-first-run", "--user-data-dir=" + directory + "/profile"]
     if env.get("LVW_TEST_BROWSER_NO_SANDBOX") == "1":
         flags.append("--no-sandbox")
     url = f"http://127.0.0.1:{server.server_address[1]}/"

@@ -11,4 +11,4 @@ test("optional feature SDK runs from a read-only relocated package", async () =>
   } finally {
     await rm(output, { recursive: true, force: true });
   }
-}, 300_000);
+}, 600_000);

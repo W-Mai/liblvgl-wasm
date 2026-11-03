@@ -6,11 +6,16 @@ use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::sync::Arc;
 
 use crate::module_manifest::ModuleManifestInput;
+use crate::numeric_label::NumericLabelOptions;
+use crate::numeric_label_runtime::{LabelState, bind_label, label_function};
 use crate::numeric_lvgl::NumericLvglCoreOptions;
-use crate::numeric_profile::{NumericProfile, prepare_numeric_graph_with_options};
+use crate::numeric_profile::{NumericProfile, prepare_numeric_graph_with_label};
 use crate::numeric_wasi::{NumericWasiOptions, NumericWasiOutput, NumericWasiService, WasiState};
 use wasmtime::{Caller, Extern, ExternType, Func, Instance, Store, TypedFunc, Val};
 
+#[cfg(test)]
+#[path = "numeric_label_test.rs"]
+mod numeric_label_test;
 #[cfg(test)]
 #[path = "numeric_lvgl_test.rs"]
 mod numeric_lvgl_test;
@@ -111,6 +116,7 @@ pub(crate) struct HostState {
     pub(crate) failure: Option<String>,
     pub(crate) exit_code: Option<u32>,
     pub(crate) wasi: Option<WasiState>,
+    pub(crate) label: Option<LabelState>,
 }
 impl HostState {
     pub(crate) fn poison(&mut self, message: String) -> String {
@@ -123,6 +129,7 @@ impl HostState {
 
 fn release_hosts(store: &mut Store<HostState>) -> Vec<String> {
     let mut failures = Vec::new();
+    store.data_mut().label = None;
     if let Some(wasi) = &mut store.data_mut().wasi {
         for slot in &mut wasi.slots {
             slot.memory = None;
@@ -189,6 +196,7 @@ struct LiveModule {
     close: TypedFunc<(), i32>,
     close_name: &'static str,
     wasi_slot: Option<usize>,
+    is_app: bool,
     #[cfg(test)]
     core_instance: Option<Instance>,
 }
@@ -349,6 +357,9 @@ impl NumericEnvironment {
             let result = call0(self.store.as_mut().expect("closing store"), &module.close);
             match result {
                 Ok(0) => {
+                    if module.is_app {
+                        self.store.as_mut().expect("closing store").data_mut().label = None;
+                    }
                     close_wasi_slot(
                         self.store.as_mut().expect("closing store"),
                         module.wasi_slot,
@@ -451,7 +462,15 @@ pub fn load_numeric_environment(
     allowed: &[&str],
     factories: &mut [NumericHostBinding<'_>],
 ) -> Result<NumericEnvironment, NumericEnvironmentError> {
-    load_numeric_environment_internal(input, profile, allowed, factories, None, &mut None, None)
+    load_numeric_environment_internal(
+        input,
+        profile,
+        allowed,
+        factories,
+        None,
+        &mut None,
+        LvglAdapters::default(),
+    )
 }
 
 /// Load a numeric graph with a bounded WASI Preview 1 provider and a synchronous output sink.
@@ -470,7 +489,7 @@ pub fn load_numeric_environment_with_wasi(
         factories,
         Some(wasi),
         Some(output),
-        None,
+        LvglAdapters::default(),
     )
 }
 
@@ -487,7 +506,52 @@ pub fn load_lvgl_core_environment(
         Some((wasi, output)) => (Some(wasi), Some(output)),
         None => (None, None),
     };
-    load_with_output(input, profile, allowed, factories, wasi, output, Some(lvgl))
+    load_with_output(
+        input,
+        profile,
+        allowed,
+        factories,
+        wasi,
+        output,
+        LvglAdapters {
+            core: Some(lvgl),
+            label: None,
+        },
+    )
+}
+
+/// Load a trusted LVGL core and an app with the screen and label adapter.
+pub fn load_lvgl_label_environment(
+    input: &ModuleManifestInput<'_>,
+    profile: &NumericProfile,
+    allowed: &[&str],
+    factories: &mut [NumericHostBinding<'_>],
+    lvgl: &NumericLvglCoreOptions,
+    label: &NumericLabelOptions,
+    wasi: Option<(&NumericWasiOptions, Box<dyn NumericWasiOutput>)>,
+) -> Result<NumericEnvironment, NumericEnvironmentError> {
+    let (wasi, output) = match wasi {
+        Some((wasi, output)) => (Some(wasi), Some(output)),
+        None => (None, None),
+    };
+    load_with_output(
+        input,
+        profile,
+        allowed,
+        factories,
+        wasi,
+        output,
+        LvglAdapters {
+            core: Some(lvgl),
+            label: Some(label),
+        },
+    )
+}
+
+#[derive(Default)]
+struct LvglAdapters<'a> {
+    core: Option<&'a NumericLvglCoreOptions>,
+    label: Option<&'a NumericLabelOptions>,
 }
 
 fn load_with_output(
@@ -497,7 +561,7 @@ fn load_with_output(
     factories: &mut [NumericHostBinding<'_>],
     wasi: Option<&NumericWasiOptions>,
     mut output: Option<Box<dyn NumericWasiOutput>>,
-    lvgl: Option<&NumericLvglCoreOptions>,
+    adapters: LvglAdapters<'_>,
 ) -> Result<NumericEnvironment, NumericEnvironmentError> {
     let mut result = match catch_unwind(AssertUnwindSafe(|| {
         load_numeric_environment_internal(
@@ -507,7 +571,7 @@ fn load_with_output(
             factories,
             wasi,
             &mut output,
-            lvgl,
+            adapters,
         )
     })) {
         Ok(result) => result,
@@ -531,9 +595,11 @@ fn load_numeric_environment_internal(
     factories: &mut [NumericHostBinding<'_>],
     wasi: Option<&NumericWasiOptions>,
     output: &mut Option<Box<dyn NumericWasiOutput>>,
-    lvgl: Option<&NumericLvglCoreOptions>,
+    adapters: LvglAdapters<'_>,
 ) -> Result<NumericEnvironment, NumericEnvironmentError> {
-    let prepared = prepare_numeric_graph_with_options(input, profile, allowed, wasi, lvgl)
+    let lvgl = adapters.core;
+    let label = adapters.label;
+    let prepared = prepare_numeric_graph_with_label(input, profile, allowed, wasi, lvgl, label)
         .map_err(|error| numeric_error(error.to_string()))?;
     let (prepared, engine, compiled, profile) = prepared.into_parts();
     let mut factory_indices = HashMap::new();
@@ -655,7 +721,12 @@ fn load_numeric_environment_internal(
                     let (provider, export) = *bindings
                         .get(&(fact.module.as_str(), fact.name.as_str()))
                         .ok_or_else(|| numeric_error("numeric import binding is missing"))?;
-                    let function = if lvgl.is_some_and(|lvgl| provider == lvgl.id) {
+                    let function = if label.is_some_and(|label| provider == label.id) {
+                        let ExternType::Func(ty) = item.ty() else {
+                            return Err(numeric_error("label import is not a function"));
+                        };
+                        label_function(&mut store, ty, export).map_err(numeric_error)?
+                    } else if lvgl.is_some_and(|lvgl| provider == lvgl.id) {
                         let ExternType::Func(ty) = item.ty() else {
                             return Err(numeric_error("LVGL import is not a function"));
                         };
@@ -759,6 +830,18 @@ fn load_numeric_environment_internal(
                 } else {
                     None
                 };
+                if let Some(label) = label.filter(|_| app_function.is_some()) {
+                    let core = *instances
+                        .get(lvgl.expect("label core").module.as_str())
+                        .ok_or_else(|| numeric_error("label core is not initialized"))?;
+                    let memory = instance
+                        .get_memory(&mut store, "memory")
+                        .ok_or_else(|| numeric_error("label app memory is unavailable"))?;
+                    let state =
+                        bind_label(&mut store, core, memory, label).map_err(numeric_error)?;
+                    store.data_mut().label =
+                        Some(state.ok_or_else(|| numeric_error("label display creation failed"))?);
+                }
                 rollback_permitted = false;
                 if let Some(initialize) = initialize {
                     call_void(&mut store, &initialize).map_err(numeric_error)?;
@@ -777,6 +860,9 @@ fn load_numeric_environment_internal(
                 if status != 0 {
                     let mut failure =
                         numeric_error(format!("{id:?}: {init_name} returned {status}"));
+                    if app_function.is_some() {
+                        store.data_mut().label = None;
+                    }
                     close_wasi_slot(&mut store, wasi_slot);
                     rollback(&mut store, &mut initialized, &mut failure);
                     return Err(failure);
@@ -786,6 +872,7 @@ fn load_numeric_environment_internal(
                     close,
                     close_name,
                     wasi_slot,
+                    is_app: app_function.is_some(),
                     #[cfg(test)]
                     core_instance: is_lvgl.then_some(instance),
                 });

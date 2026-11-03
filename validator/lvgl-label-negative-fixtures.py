@@ -25,7 +25,8 @@ def main() -> None:
         "core": {}, "core-alloc-zero": {"ALLOC": "i32.const 0"}, "core-alloc-trap": {"ALLOC": "unreachable"},
         "core-alloc-oob": {"ALLOC": "i32.const 65535"}, "core-set-trap": {"SETTER": "unreachable"},
         "core-free-trap": {"FREE": "unreachable"}, "core-no-memory": {"MEMORY": "(memory 1 2)"},
-        "core-display-zero": {"DISPLAY": "i32.const 0"}, "core-create-zero": {"CREATE": "i32.const 0"},
+        "core-display-zero": {"DISPLAY": "i32.const 0"}, "core-display-trap": {"DISPLAY": "unreachable"},
+        "core-create-zero": {"CREATE": "i32.const 0"},
         "core-foreign-default": {"DEFAULT_SCREEN": "i32.const 201", "PARENT_CHECK": "local.get 0 i32.const 200 i32.ne if unreachable end"},
         "core-null-frame": {"FRAME": frame.replace("@POINTER@", "0")},
         "core-valid-frame": {"FRAME": frame.replace("@POINTER@", "1024")},
@@ -45,6 +46,9 @@ def main() -> None:
     inputs["app-init-fail"] = inputs["app"].replace("i32.const 31 call $trace i32.const 0", "i32.const 31 call $trace call $screen call $create drop i32.const 7")
     inputs["app-init-save-fail"] = inputs["app"].replace("i32.const 31 call $trace i32.const 0", "i32.const 31 call $trace call $screen call $create call $trace i32.const 7")
     inputs["app-reactor-use"] = inputs["app"].replace('(func (export "_initialize"))', '(func (export "_initialize") call $screen call $create drop)')
+    close = 'i32.const 39 call $trace i32.const 0'
+    assert inputs["app"].count(close) == 1
+    inputs["app-close-use"] = inputs["app"].replace(close, 'i32.const 39 call $trace call $screen call $create i32.const 0 call $set i32.const 38 call $trace i32.const 0')
     inputs["app-alias"] = app.replace("@LABEL_MODULE@", "not-lvgl").replace("@MEMORY@", '(memory (export "memory") 1 2)')
     inputs["app-no-memory"] = app.replace("@LABEL_MODULE@", "lvgl").replace("@MEMORY@", "(memory 1 2)")
     inputs["app-bad-signature"] = inputs["app"].replace('(func $screen (result i32))', '(func $screen (param i32) (result i32))').replace('call $screen', 'i32.const 0 call $screen')

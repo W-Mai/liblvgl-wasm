@@ -11,7 +11,7 @@ use sha2::{Digest, Sha256};
 use std::collections::HashSet;
 use std::io::Read;
 
-fn read_bounded(variable: &str, maximum: u64) -> Vec<u8> {
+pub(super) fn read_bounded(variable: &str, maximum: u64) -> Vec<u8> {
     let path = std::env::var_os(variable).unwrap_or_else(|| panic!("missing {variable}"));
     let file = std::fs::File::open(path).unwrap();
     assert!(
@@ -24,7 +24,7 @@ fn read_bounded(variable: &str, maximum: u64) -> Vec<u8> {
     bytes
 }
 
-fn check_core_proof(core: &[u8], api: &[u8], proof: &[u8]) {
+pub(super) fn check_core_proof(core: &[u8], api: &[u8], proof: &[u8]) {
     let api_sha = format!("{:x}", Sha256::digest(api));
     let core_sha = format!("{:x}", Sha256::digest(core));
     let api: serde_json::Value = serde_json::from_slice(api).expect("invalid API metadata");
@@ -96,7 +96,7 @@ fn bounded_core_proof_binds_core_api_and_unique_export_count() {
     );
 }
 
-fn interface(name: &str) -> ModuleInterface {
+pub(super) fn interface(name: &str) -> ModuleInterface {
     ModuleInterface {
         name: name.into(),
         version: 1,
@@ -123,7 +123,7 @@ fn external(facts: &WasmFacts, item: WasmExternal) -> ModuleExternalType {
         WasmExternal::Global { ty, .. } => ModuleExternalType::Global(ty),
     }
 }
-fn exports(facts: &WasmFacts) -> Vec<ModuleExport> {
+pub(super) fn exports(facts: &WasmFacts) -> Vec<ModuleExport> {
     facts
         .exports
         .iter()
@@ -133,7 +133,7 @@ fn exports(facts: &WasmFacts) -> Vec<ModuleExport> {
         })
         .collect()
 }
-fn requirement(
+pub(super) fn requirement(
     facts: &WasmFacts,
     namespace: &str,
     provider: &str,
@@ -156,7 +156,7 @@ fn requirement(
             .collect(),
     }
 }
-fn manifest(
+pub(super) fn manifest(
     id: &str,
     role: ModuleRole,
     facts: &WasmFacts,

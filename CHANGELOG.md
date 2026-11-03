@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+- Isolated LVGL screen and label calls with copied text in Rust numeric environments.
 - Static validation for isolated LVGL label adapter contracts.
 - Trusted standalone LVGL core lifecycle for Rust numeric environments.
 - Restricted WASI Preview 1 services for Rust numeric environments.

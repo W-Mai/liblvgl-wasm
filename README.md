@@ -580,6 +580,8 @@ liblvgl-wasm-host = { path = "/path/to/liblvgl-wasm/bindings/rust" }
 
 `preflight_lvgl_label_graph` checks the isolated label adapter contract against the app, core and bounded resources, then compiles the same snapshots. Its report does not authorize loading or run the adapter.
 
+`load_lvgl_label_environment` loads the checked core and app with `lv_screen_active`, `lv_label_create` and `lv_label_set_text`. Object values are environment-local opaque tokens; text is copied from app memory into core memory. The adapter bounds display dimensions, label count and text length. Its tokens cannot be dereferenced by the app or transferred between environments. Other LVGL object APIs, callbacks, events and frame access are not provided by this Rust adapter. Guest execution has no CPU or execution deadline.
+
 ```rust
 use liblvgl_wasm_host::{Result, Runtime, UnsafePointer, values};
 
