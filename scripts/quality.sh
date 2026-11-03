@@ -35,6 +35,8 @@ python3 -B tests/fixtures/numeric-wasi/generate.py
 bun tests/fixtures/numeric-wasi/generate.ts
 python3 -B validator/lvgl-core-fixture.py
 python3 -B validator/lvgl-lifecycle-fixtures.py
+python3 -B tests/fixtures/numeric-lvgl/generate.py
+bun tests/fixtures/numeric-lvgl/generate.ts
 python3 -B validator/lvgl-label-fixture.py
 python3 -B validator/lvgl-label-negative-fixtures.py
 python3 -B validator/lvgl-event-fixture.py
@@ -66,6 +68,13 @@ CARGO_TARGET_DIR="$root/target/rust" \
     cargo clippy --manifest-path bindings/rust/Cargo.toml --locked --all-targets -- -D warnings
 CARGO_TARGET_DIR="$root/target/rust" \
     cargo test --manifest-path bindings/rust/Cargo.toml --locked
+LVW_TEST_LVGL_CORE="$root/target/wasm/liblvgl-bounded.wasm" \
+    LVW_TEST_LVGL_FAIL_APP="$root/target/validator/lvgl-core-app-fail-init.wasm" \
+    LVW_TEST_LVGL_API="$root/target/wasm/api.json" \
+    LVW_TEST_LVGL_PROOF="$root/target/wasm/api-verification-bounded.json" \
+    CARGO_TARGET_DIR="$root/target/rust" \
+    cargo test --manifest-path bindings/rust/Cargo.toml --locked --lib \
+        real_lvgl_failed_app_rolls_back_same_core -- --ignored
 facts_tmp=$(mktemp -d "$root/target/.wasm-facts.XXXXXX")
 trap 'rm -rf "$facts_tmp"' EXIT
 for module in target/wasm/liblvgl.wasm target/apps/c/app.wasm

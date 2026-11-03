@@ -576,6 +576,8 @@ liblvgl-wasm-host = { path = "/path/to/liblvgl-wasm/bindings/rust" }
 
 `preflight_numeric_graph_with_wasi` checks the restricted WASI provider without running the graph. `load_numeric_environment_with_wasi` accepts explicit permissions for the provider and executes the checked graph. Each consumer has its own memory and standard output and error descriptor state; output limits apply to the whole environment. Environment variables are empty, output is delivered to the configured synchronous sink, and the optional clock uses configured values. The provider implements `environ_get`, `environ_sizes_get`, `fd_close`, `fd_seek`, `fd_write`, `proc_exit` and `clock_time_get`. Exit codes are available from the returned error. This does not provide a filesystem, network, stdin, cross-instance pointers or callbacks.
 
+`preflight_lvgl_core_graph` and `load_lvgl_core_environment` accept a trusted standalone LVGL core with a fixed-size table. The environment initializes and shuts down the core in dependency order and exposes only explicitly authorized `lv_is_initialized` and `lv_tick_get` scalar functions to other modules. Unsupported LVGL bridge callbacks poison the environment when invoked. Cross-instance pointers, LVGL callbacks and rendering are not provided by this profile.
+
 ```rust
 use liblvgl_wasm_host::{Result, Runtime, UnsafePointer, values};
 

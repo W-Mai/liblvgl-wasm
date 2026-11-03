@@ -11,7 +11,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "toolchains"))
 from host_sdk import build_host_sdk, verify_rust_validator
 from lvw import file_inventory, publish_package
-from numeric_sdk_fixture import install as install_numeric_fixture, prepare as prepare_numeric_fixture, prepare_wasi
+from numeric_sdk_fixture import install as install_numeric_fixture, prepare as prepare_numeric_fixture, prepare_lvgl, prepare_wasi
 
 
 def run(*command, **kwargs):
@@ -35,6 +35,7 @@ def check(output, build=None):
     build = build or ROOT / "target/wasm"
     numeric_graph = prepare_numeric_fixture(output / "numeric-fixture")
     wasi_graph = prepare_wasi(output / "numeric-wasi-fixture")
+    lvgl_graph = None if custom else prepare_lvgl(output / "numeric-lvgl-fixture")
     ndk = output / "ndk"
     run("cmake", "--build", build, "--target", "lvw_ndk", "-j", "4")
     run("cmake", "--install", build, "--prefix", ndk, "--component", "ndk")
@@ -115,10 +116,13 @@ def check(output, build=None):
             environment = {**os.environ, "CARGO_TARGET_DIR": str(ROOT / "target/rust")}
             environment.pop("LVW_RUST_BINDINGS", None)
             run("cargo", "check", "--locked", "--offline", "--manifest-path", package / "rust/Cargo.toml", env=environment)
+            run("cargo", "test", "--locked", "--offline", "--manifest-path", package / "rust/Cargo.toml",
+                "--lib", "--no-run", env=environment)
             subprocess.run(["cargo", "metadata", "--offline", "--format-version", "1", "--manifest-path", str(graph_consumer / "Cargo.toml")],
                            env=environment, stdout=subprocess.DEVNULL, check=True)
             run("cargo", "run", "--locked", "--offline", "--manifest-path", graph_consumer / "Cargo.toml", "--",
-                package / "runtime/liblvgl.wasm", metadata["identity"]["wasm_sha256"], numeric_graph, wasi_graph, env=environment)
+                package / "runtime/liblvgl.wasm", metadata["identity"]["wasm_sha256"], numeric_graph, wasi_graph,
+                lvgl_graph if lvgl_graph else "--skip-lvgl", env=environment)
             if contracts:
                 environment = {**os.environ, "LVW_TEST_CORE": str(package / "runtime/liblvgl.wasm"),
                                "LVW_TEST_API": str(package / "metadata/api.json"),
@@ -144,9 +148,13 @@ def check(output, build=None):
                 (rust / "Cargo.toml").write_text('[package]\nname="lvw-compatibility-consumer"\n'
                     'version="0.1.0"\nedition="2024"\n[dependencies]\nliblvgl-wasm-host={path='
                     + json.dumps(str(package / "rust")) + '}\n')
-                run("cargo", "run", "--offline", "--manifest-path", rust / "Cargo.toml", "--",
-                    package / "runtime/liblvgl.wasm",
-                    env={**os.environ, "CARGO_TARGET_DIR": str(ROOT / "target/rust")})
+                shutil.copyfile(package / "rust/Cargo.lock", rust / "Cargo.lock")
+                custom_env = {**os.environ, "CARGO_TARGET_DIR": str(ROOT / "target/rust")}
+                custom_env.pop("LVW_RUST_BINDINGS", None)
+                subprocess.run(["cargo", "metadata", "--offline", "--format-version", "1", "--manifest-path", str(rust / "Cargo.toml")],
+                               env=custom_env, stdout=subprocess.DEVNULL, check=True)
+                run("cargo", "run", "--locked", "--offline", "--manifest-path", rust / "Cargo.toml", "--",
+                    package / "runtime/liblvgl.wasm", env=custom_env)
         finally:
             readonly(package, False)
     # Use a nested crate so the fallback is confined to the test directory.

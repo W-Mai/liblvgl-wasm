@@ -6,9 +6,14 @@ use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::sync::Arc;
 
 use crate::module_manifest::ModuleManifestInput;
-use crate::numeric_profile::{NumericProfile, prepare_numeric_graph_with_wasi};
+use crate::numeric_lvgl::NumericLvglCoreOptions;
+use crate::numeric_profile::{NumericProfile, prepare_numeric_graph_with_options};
 use crate::numeric_wasi::{NumericWasiOptions, NumericWasiOutput, NumericWasiService, WasiState};
 use wasmtime::{Caller, Extern, ExternType, Func, Instance, Store, TypedFunc, Val};
+
+#[cfg(test)]
+#[path = "numeric_lvgl_test.rs"]
+mod numeric_lvgl_test;
 
 #[derive(Clone, Debug)]
 pub struct NumericEnvironmentId(Arc<()>);
@@ -182,7 +187,50 @@ fn call_void(store: &mut Store<HostState>, function: &TypedFunc<(), ()>) -> Resu
 struct LiveModule {
     id: String,
     close: TypedFunc<(), i32>,
+    close_name: &'static str,
     wasi_slot: Option<usize>,
+    #[cfg(test)]
+    core_instance: Option<Instance>,
+}
+
+#[cfg(test)]
+type LvglShutdownObservations = Option<Vec<(String, Option<i32>)>>;
+
+#[cfg(test)]
+thread_local! {
+    static LVGL_SHUTDOWN_OBSERVATIONS: std::cell::RefCell<LvglShutdownObservations> = const { std::cell::RefCell::new(None) };
+}
+
+#[cfg(test)]
+fn observe_lvgl_shutdown(store: &mut Store<HostState>, module: &LiveModule) {
+    let Some(instance) = module.core_instance else {
+        return;
+    };
+    if !LVGL_SHUTDOWN_OBSERVATIONS.with(|state| state.borrow().is_some()) {
+        return;
+    }
+    let saved_failure = store.data().failure.clone();
+    let saved_exit = store.data().exit_code;
+    let result = catch_unwind(AssertUnwindSafe(|| {
+        instance
+            .get_typed_func::<(), i32>(&mut *store, "lv_is_initialized")
+            .and_then(|getter| getter.call(&mut *store, ()))
+    }));
+    let value = match result {
+        Ok(Ok(value)) => Some(value),
+        Ok(Err(_)) => None,
+        Err(panic) => {
+            let _ = panic_message(panic);
+            None
+        }
+    };
+    store.data_mut().failure = saved_failure;
+    store.data_mut().exit_code = saved_exit;
+    LVGL_SHUTDOWN_OBSERVATIONS.with(|state| {
+        if let Some(records) = state.borrow_mut().as_mut() {
+            records.push((module.id.clone(), value));
+        }
+    });
 }
 
 fn close_wasi_slot(store: &mut Store<HostState>, slot: Option<usize>) {
@@ -201,13 +249,16 @@ fn rollback(
     while let Some(previous) = initialized.last() {
         match call0(store, &previous.close) {
             Ok(0) => {
+                #[cfg(test)]
+                observe_lvgl_shutdown(store, previous);
                 close_wasi_slot(store, previous.wasi_slot);
                 initialized.pop();
             }
             Ok(code) => {
-                failure
-                    .cleanup_errors
-                    .push(format!("{:?}: module_close returned {code}", previous.id));
+                failure.cleanup_errors.push(format!(
+                    "{:?}: {} returned {code}",
+                    previous.id, previous.close_name
+                ));
                 break;
             }
             Err(message) => {
@@ -294,6 +345,7 @@ impl NumericEnvironment {
         self.state = NumericEnvironmentState::Closing;
         while let Some(module) = self.initialized.last() {
             let id = module.id.clone();
+            let close_name = module.close_name;
             let result = call0(self.store.as_mut().expect("closing store"), &module.close);
             match result {
                 Ok(0) => {
@@ -304,7 +356,7 @@ impl NumericEnvironment {
                     self.initialized.pop();
                 }
                 Ok(status) => {
-                    return Err(self.poison(format!("{id:?}: module_close returned {status}")));
+                    return Err(self.poison(format!("{id:?}: {close_name} returned {status}")));
                 }
                 Err(message) => return Err(self.poison(message)),
             }
@@ -399,7 +451,7 @@ pub fn load_numeric_environment(
     allowed: &[&str],
     factories: &mut [NumericHostBinding<'_>],
 ) -> Result<NumericEnvironment, NumericEnvironmentError> {
-    load_numeric_environment_internal(input, profile, allowed, factories, None, &mut None)
+    load_numeric_environment_internal(input, profile, allowed, factories, None, &mut None, None)
 }
 
 /// Load a numeric graph with a bounded WASI Preview 1 provider and a synchronous output sink.
@@ -411,15 +463,51 @@ pub fn load_numeric_environment_with_wasi(
     wasi: &NumericWasiOptions,
     output: Box<dyn NumericWasiOutput>,
 ) -> Result<NumericEnvironment, NumericEnvironmentError> {
-    let mut output = Some(output);
+    load_with_output(
+        input,
+        profile,
+        allowed,
+        factories,
+        Some(wasi),
+        Some(output),
+        None,
+    )
+}
+
+/// Load a trusted LVGL core and numeric app in the same environment.
+pub fn load_lvgl_core_environment(
+    input: &ModuleManifestInput<'_>,
+    profile: &NumericProfile,
+    allowed: &[&str],
+    factories: &mut [NumericHostBinding<'_>],
+    lvgl: &NumericLvglCoreOptions,
+    wasi: Option<(&NumericWasiOptions, Box<dyn NumericWasiOutput>)>,
+) -> Result<NumericEnvironment, NumericEnvironmentError> {
+    let (wasi, output) = match wasi {
+        Some((wasi, output)) => (Some(wasi), Some(output)),
+        None => (None, None),
+    };
+    load_with_output(input, profile, allowed, factories, wasi, output, Some(lvgl))
+}
+
+fn load_with_output(
+    input: &ModuleManifestInput<'_>,
+    profile: &NumericProfile,
+    allowed: &[&str],
+    factories: &mut [NumericHostBinding<'_>],
+    wasi: Option<&NumericWasiOptions>,
+    mut output: Option<Box<dyn NumericWasiOutput>>,
+    lvgl: Option<&NumericLvglCoreOptions>,
+) -> Result<NumericEnvironment, NumericEnvironmentError> {
     let mut result = match catch_unwind(AssertUnwindSafe(|| {
         load_numeric_environment_internal(
             input,
             profile,
             allowed,
             factories,
-            Some(wasi),
+            wasi,
             &mut output,
+            lvgl,
         )
     })) {
         Ok(result) => result,
@@ -443,8 +531,9 @@ fn load_numeric_environment_internal(
     factories: &mut [NumericHostBinding<'_>],
     wasi: Option<&NumericWasiOptions>,
     output: &mut Option<Box<dyn NumericWasiOutput>>,
+    lvgl: Option<&NumericLvglCoreOptions>,
 ) -> Result<NumericEnvironment, NumericEnvironmentError> {
-    let prepared = prepare_numeric_graph_with_wasi(input, profile, allowed, wasi)
+    let prepared = prepare_numeric_graph_with_options(input, profile, allowed, wasi, lvgl)
         .map_err(|error| numeric_error(error.to_string()))?;
     let (prepared, engine, compiled, profile) = prepared.into_parts();
     let mut factory_indices = HashMap::new();
@@ -566,7 +655,23 @@ fn load_numeric_environment_internal(
                     let (provider, export) = *bindings
                         .get(&(fact.module.as_str(), fact.name.as_str()))
                         .ok_or_else(|| numeric_error("numeric import binding is missing"))?;
-                    let function = if wasi.is_some_and(|wasi| provider == wasi.id) {
+                    let function = if lvgl.is_some_and(|lvgl| provider == lvgl.id) {
+                        let ExternType::Func(ty) = item.ty() else {
+                            return Err(numeric_error("LVGL import is not a function"));
+                        };
+                        let name = export.to_owned();
+                        Func::try_new(
+                            &mut store,
+                            ty,
+                            move |mut caller: Caller<'_, HostState>, _, _| {
+                                let message = caller
+                                    .data_mut()
+                                    .poison(format!("unsupported LVGL callback {name:?}"));
+                                Err(wasmtime::Error::msg(message))
+                            },
+                        )
+                        .map_err(|error| numeric_error(error.to_string()))?
+                    } else if wasi.is_some_and(|wasi| provider == wasi.id) {
                         let ExternType::Func(ty) = item.ty() else {
                             return Err(numeric_error("numeric WASI import is not a function"));
                         };
@@ -618,12 +723,28 @@ fn load_numeric_environment_internal(
                     store.data_mut().wasi.as_mut().expect("WASI state").slots[slot].memory =
                         Some(memory);
                 }
+                let is_lvgl = lvgl.is_some_and(|lvgl| lvgl.module == *id);
+                let close_name = if is_lvgl {
+                    "lvw_shutdown"
+                } else {
+                    "module_close"
+                };
+                let init_name = if is_lvgl { "lvw_init" } else { "module_init" };
                 let close = instance
-                    .get_typed_func::<(), i32>(&mut store, "module_close")
+                    .get_typed_func::<(), i32>(&mut store, close_name)
                     .map_err(|error| numeric_error(error.to_string()))?;
                 let init = instance
-                    .get_typed_func::<(), i32>(&mut store, "module_init")
+                    .get_typed_func::<(), i32>(&mut store, init_name)
                     .map_err(|error| numeric_error(error.to_string()))?;
+                let abi = if is_lvgl {
+                    Some(
+                        instance
+                            .get_typed_func::<(), i32>(&mut store, "lvw_abi_version")
+                            .map_err(|error| numeric_error(error.to_string()))?,
+                    )
+                } else {
+                    None
+                };
                 let initialize = instance
                     .get_func(&mut store, "_initialize")
                     .map(|function| function.typed::<(), ()>(&store))
@@ -642,10 +763,20 @@ fn load_numeric_environment_internal(
                 if let Some(initialize) = initialize {
                     call_void(&mut store, &initialize).map_err(numeric_error)?;
                 }
+                if let Some(abi) = abi {
+                    let version = call0(&mut store, &abi).map_err(numeric_error)?;
+                    if version as u32 != lvgl.expect("LVGL profile").abi_version {
+                        let mut failure =
+                            numeric_error(format!("{id:?}: unsupported LVGL bridge ABI {version}"));
+                        close_wasi_slot(&mut store, wasi_slot);
+                        rollback(&mut store, &mut initialized, &mut failure);
+                        return Err(failure);
+                    }
+                }
                 let status = call0(&mut store, &init).map_err(numeric_error)?;
                 if status != 0 {
                     let mut failure =
-                        numeric_error(format!("{id:?}: module_init returned {status}"));
+                        numeric_error(format!("{id:?}: {init_name} returned {status}"));
                     close_wasi_slot(&mut store, wasi_slot);
                     rollback(&mut store, &mut initialized, &mut failure);
                     return Err(failure);
@@ -653,7 +784,10 @@ fn load_numeric_environment_internal(
                 initialized.push(LiveModule {
                     id: id.clone(),
                     close,
+                    close_name,
                     wasi_slot,
+                    #[cfg(test)]
+                    core_instance: is_lvgl.then_some(instance),
                 });
                 pending_wasi_slot = None;
                 instances.insert(id.as_str(), instance);

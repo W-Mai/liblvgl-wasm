@@ -12,6 +12,7 @@ use crate::module_manifest::{
     ModuleExternalType, ModuleInterface, ModuleManifestError, ModuleManifestInput,
     PreparedModuleGraph, SnapshotModule, prepare_module_manifests,
 };
+use crate::numeric_lvgl::{LVGL_LIFECYCLE, NumericLvglCoreOptions, bridge_signature};
 use crate::numeric_wasi::{NumericWasiOptions, NumericWasiService};
 use crate::wasm_facts::{WasmExternal, WasmValueType};
 
@@ -195,6 +196,7 @@ fn check_profile<'a>(
     prepared: &PreparedModuleGraph<'_>,
     profile: &'a NumericProfile,
     wasi: Option<&NumericWasiOptions>,
+    lvgl: Option<&NumericLvglCoreOptions>,
 ) -> Result<&'a str> {
     if profile.modules.len() > 256 || profile.hosts.len() > 256 {
         return Err(fail("numeric provider limit exceeded"));
@@ -246,8 +248,20 @@ fn check_profile<'a>(
     {
         return Err(fail("invalid numeric WASI options"));
     }
+    if let Some(lvgl) = lvgl
+        && (!valid_name(&lvgl.module)
+            || !valid_name(&lvgl.id)
+            || !valid_interface(&lvgl.interface)
+            || lvgl.abi_version != 1
+            || hosts.contains_key(lvgl.id.as_str())
+            || modules.contains_key(lvgl.id.as_str())
+            || wasi.is_some_and(|wasi| wasi.id == lvgl.id))
+    {
+        return Err(fail("invalid LVGL core options"));
+    }
     if modules.len() != prepared.modules.len()
-        || hosts.len() + usize::from(wasi.is_some()) != prepared.hosts.len()
+        || hosts.len() + usize::from(wasi.is_some()) + usize::from(lvgl.is_some())
+            != prepared.hosts.len()
     {
         return Err(fail("numeric provider inventory differs"));
     }
@@ -263,6 +277,7 @@ fn check_profile<'a>(
         }
     }
     let mut app = None;
+    let mut found_lvgl = false;
     let mut memory_total = 0u64;
     let mut table_total = 0u64;
     for module in &prepared.modules {
@@ -297,9 +312,35 @@ fn check_profile<'a>(
         {
             return Err(fail(format!("{id:?}: _start is unsupported")));
         }
-        entrypoint(module, "_initialize", &[], &[], false)?;
-        entrypoint(module, "module_init", &[], &[WasmValueType::I32], true)?;
-        entrypoint(module, "module_close", &[], &[WasmValueType::I32], true)?;
+        if lvgl.is_some_and(|lvgl| lvgl.module == *id) {
+            if module.manifest.role != ModuleRole::Lib {
+                return Err(fail("LVGL core must be a library"));
+            }
+            found_lvgl = true;
+            entrypoint(module, "_initialize", &[], &[], true)?;
+            for entry in LVGL_LIFECYCLE {
+                entrypoint(module, entry, &[], &[WasmValueType::I32], true)?;
+            }
+            if contract.exports.iter().any(|function| {
+                !matches!(function.name.as_str(), "lv_is_initialized" | "lv_tick_get")
+                    || function.params != 0
+                    || function.result != NumericResult::I32
+            }) {
+                return Err(fail("unsupported LVGL scalar export"));
+            }
+            if module
+                .facts
+                .tables
+                .iter()
+                .any(|table| table.ty.maximum != Some(table.ty.minimum))
+            {
+                return Err(fail("LVGL core table must have a fixed size"));
+            }
+        } else {
+            entrypoint(module, "_initialize", &[], &[], false)?;
+            entrypoint(module, "module_init", &[], &[WasmValueType::I32], true)?;
+            entrypoint(module, "module_close", &[], &[WasmValueType::I32], true)?;
+        }
         if module.facts.imports.iter().any(|item| {
             (wasi.is_none() && item.module == "wasi_snapshot_preview1")
                 || item.module == "wasi_unstable"
@@ -385,11 +426,25 @@ fn check_profile<'a>(
         }
     }
     let app = app.ok_or_else(|| fail("numeric profile requires exactly one app"))?;
+    if lvgl.is_some() && !found_lvgl {
+        return Err(fail("LVGL core module is missing"));
+    }
     if memory_total > limits.max_total_memory_pages || table_total > limits.max_total_table_elements
     {
         return Err(fail("numeric environment resource limit exceeded"));
     }
     for host in prepared.hosts {
+        if let Some(lvgl) = lvgl.filter(|lvgl| lvgl.id == host.id) {
+            if lvgl.interface != host.interface
+                || host
+                    .exports
+                    .iter()
+                    .any(|item| !bridge_signature(&item.name, &item.ty))
+            {
+                return Err(fail("LVGL host contract differs"));
+            }
+            continue;
+        }
         if let Some(wasi) = wasi.filter(|wasi| wasi.id == host.id) {
             if wasi.interface != host.interface
                 || wasi.allowed.len() != host.exports.len()
@@ -429,9 +484,29 @@ fn check_profile<'a>(
             }
         }
     }
+    let mut lvgl_imports = HashSet::new();
     for module in &prepared.modules {
         for requirement in &module.manifest.requires {
+            if lvgl.is_some_and(|lvgl| {
+                requirement.provider == lvgl.id && module.manifest.id != lvgl.module
+            }) {
+                return Err(fail("LVGL host is reserved for its core"));
+            }
             for item in &requirement.imports {
+                if lvgl.is_some_and(|lvgl| item.module == "lvw" || requirement.provider == lvgl.id)
+                {
+                    if !lvgl.is_some_and(|lvgl| {
+                        module.manifest.id == lvgl.module
+                            && requirement.provider == lvgl.id
+                            && item.module == "lvw"
+                            && item.provider_export == item.name
+                            && bridge_signature(&item.name, &item.ty)
+                    }) {
+                        return Err(fail("LVGL host import is not authorized"));
+                    }
+                    lvgl_imports.insert(item.name.as_str());
+                    continue;
+                }
                 if item.module == "wasi_snapshot_preview1"
                     || wasi.is_some_and(|wasi| requirement.provider == wasi.id)
                 {
@@ -450,7 +525,12 @@ fn check_profile<'a>(
                     }
                     continue;
                 }
-                if reserved(&item.provider_export) {
+                if reserved(&item.provider_export)
+                    || lvgl.is_some_and(|lvgl| {
+                        requirement.provider == lvgl.module
+                            && LVGL_LIFECYCLE.contains(&item.provider_export.as_str())
+                    })
+                {
                     return Err(fail(format!(
                         "{:?}: lifecycle import is unsupported",
                         module.manifest.id
@@ -465,6 +545,21 @@ fn check_profile<'a>(
                     )));
                 }
             }
+        }
+    }
+    if let Some(lvgl) = lvgl {
+        let host = prepared
+            .hosts
+            .iter()
+            .find(|host| host.id == lvgl.id)
+            .ok_or_else(|| fail("LVGL host is missing"))?;
+        if host.exports.len() != lvgl_imports.len()
+            || host
+                .exports
+                .iter()
+                .any(|item| !lvgl_imports.contains(item.name.as_str()))
+        {
+            return Err(fail("LVGL host inventory differs from core imports"));
         }
     }
     Ok(app)
@@ -524,8 +619,29 @@ pub(crate) fn prepare_numeric_graph_with_wasi<'a>(
     allowed: &[&str],
     wasi: Option<&NumericWasiOptions>,
 ) -> Result<PreparedNumericGraph<'a>> {
+    prepare_numeric_graph_with_options(input, profile, allowed, wasi, None)
+}
+
+/// Validate and compile a graph with a trusted LVGL core and optional bounded WASI provider.
+pub fn preflight_lvgl_core_graph(
+    input: &ModuleManifestInput<'_>,
+    profile: &NumericProfile,
+    allowed: &[&str],
+    lvgl: &NumericLvglCoreOptions,
+    wasi: Option<&NumericWasiOptions>,
+) -> Result<NumericPreflightReport> {
+    Ok(prepare_numeric_graph_with_options(input, profile, allowed, wasi, Some(lvgl))?.report)
+}
+
+pub(crate) fn prepare_numeric_graph_with_options<'a>(
+    input: &'a ModuleManifestInput<'a>,
+    profile: &'a NumericProfile,
+    allowed: &[&str],
+    wasi: Option<&NumericWasiOptions>,
+    lvgl: Option<&NumericLvglCoreOptions>,
+) -> Result<PreparedNumericGraph<'a>> {
     let prepared = prepare_module_manifests(input).map_err(NumericPreflightError::Manifest)?;
-    let app_id = check_profile(&prepared, profile, wasi)?.to_owned();
+    let app_id = check_profile(&prepared, profile, wasi, lvgl)?.to_owned();
     let checked =
         check_prepared_feature_graph(prepared, allowed).map_err(NumericPreflightError::Feature)?;
     let (prepared, engine, modules, graph) =

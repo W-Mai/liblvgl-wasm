@@ -4,6 +4,7 @@ from pathlib import Path
 import shutil
 import subprocess
 import sys
+import tempfile
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -23,6 +24,7 @@ def prepare(directory):
 def install(source):
     fixtures = Path(source) / "fixtures"
     for name, file in (("numeric-environment", "fixture.rs"), ("numeric-wasi", "fixture.rs"),
+                       ("numeric-lvgl", "fixture.rs"),
                        ("feature-graph", "decode.rs")):
         destination = fixtures / name
         destination.mkdir(parents=True, exist_ok=True)
@@ -41,3 +43,21 @@ def prepare_wasi(directory):
                     "--fixtures", str(fixtures), "--variants", str(variants), "--output", str(graph)],
                    cwd=ROOT, check=True)
     return graph
+
+
+def prepare_lvgl(directory):
+    directory = Path(directory).resolve()
+    directory.mkdir(parents=True, exist_ok=True)
+    output = directory / "graph.json"
+    target = ROOT / "target/validator"
+    target.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix="lvw-sdk-core-fixture-", dir=target) as temporary:
+        subprocess.run([sys.executable, "-B", str(ROOT / "validator/lvgl-core-fixture.py"),
+                        "--output", temporary], cwd=ROOT, check=True)
+        subprocess.run(["bun", str(ROOT / "tests/fixtures/numeric-lvgl/generate.ts"), "--real-only",
+                        "--core", str(ROOT / "target/wasm/liblvgl-bounded.wasm"),
+                        "--app", str(Path(temporary) / "lvgl-core-app.wasm"),
+                        "--api", str(ROOT / "target/wasm/api.json"),
+                        "--proof", str(ROOT / "target/wasm/api-verification-bounded.json"),
+                        "--output", str(output)], cwd=ROOT, check=True)
+    return output

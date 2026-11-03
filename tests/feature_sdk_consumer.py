@@ -20,7 +20,7 @@ from lvw import file_inventory
 from host_sdk import verify_feature_validator, verify_rust_validator
 from feature_sdk_browser import run_browser
 from bounded_core import MAX_API_BYTES, MAX_CORE_BYTES, check_proof, read
-from numeric_sdk_fixture import install as install_numeric_fixture, prepare as prepare_numeric_fixture, prepare_wasi
+from numeric_sdk_fixture import install as install_numeric_fixture, prepare as prepare_numeric_fixture, prepare_lvgl, prepare_wasi
 
 
 def run(*command, cwd=None, env=None):
@@ -297,6 +297,7 @@ def check(sdk, ndk, chromium=None):
         work = Path(temporary)
         numeric_graph = prepare_numeric_fixture(work / "numeric-fixture")
         wasi_graph = prepare_wasi(work / "numeric-wasi-fixture")
+        lvgl_graph = prepare_lvgl(work / "numeric-lvgl-fixture")
         bounded = read(ROOT / "target/wasm/liblvgl-bounded.wasm", MAX_CORE_BYTES)
         api = read(ROOT / "target/wasm/api.json", MAX_API_BYTES)
         proof = read(ROOT / "target/wasm/api-verification-bounded.json", 1024 * 1024)
@@ -361,10 +362,12 @@ def check(sdk, ndk, chromium=None):
             rust_env = {**os.environ, "CARGO_TARGET_DIR": str(ROOT / "target/rust")}
             rust_env.pop("LVW_RUST_BINDINGS", None)
             run("cargo", "check", "--locked", "--offline", "--manifest-path", moved / "rust/Cargo.toml", env=rust_env)
+            run("cargo", "test", "--locked", "--offline", "--manifest-path", moved / "rust/Cargo.toml",
+                "--lib", "--no-run", env=rust_env)
             subprocess.run(["cargo", "metadata", "--offline", "--format-version", "1", "--manifest-path", str(rust_consumer / "Cargo.toml")],
                            env=rust_env, stdout=subprocess.DEVNULL, check=True)
             run("cargo", "run", "--locked", "--offline", "--manifest-path", rust_consumer / "Cargo.toml", "--",
-                moved / "runtime/liblvgl.wasm", manifest["identity"]["wasm_sha256"], numeric_graph, wasi_graph, env=rust_env)
+                moved / "runtime/liblvgl.wasm", manifest["identity"]["wasm_sha256"], numeric_graph, wasi_graph, lvgl_graph, env=rust_env)
             (project / "package.json").write_text('{"type":"module"}\n')
             (project / "node_modules").mkdir()
             (project / "node_modules/liblvgl-wasm").symlink_to(typescript, target_is_directory=True)
