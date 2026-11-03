@@ -58,7 +58,7 @@ export async function exerciseStandaloneCore(coreInput: ArrayBuffer, appInput: A
   }
 }
 
-export async function exerciseLabelCore(coreInput: ArrayBuffer, appInput: ArrayBuffer) {
+export async function exerciseLabelCore(coreInput: ArrayBuffer, appInput: ArrayBuffer, events = false) {
   const coreBytes = new Uint8Array(coreInput), appBytes = new Uint8Array(appInput);
   const core = inspectWasmFacts(coreBytes), app = inspectWasmFacts(appBytes);
   const iface = (name: string) => ({ name, version: 1 });
@@ -68,14 +68,14 @@ export async function exerciseLabelCore(coreInput: ArrayBuffer, appInput: ArrayB
     imports: items.map((item) => ({ ...descriptor(facts, item), module: item.module, provider_export: item.name })),
   });
   const wasiImports = imports(core, "wasi_snapshot_preview1"), lvwImports = imports(core, "lvw"), labelImports = imports(app, "lvgl");
-  if (wasiImports.length !== 7 || lvwImports.length !== 14 || labelImports.length !== 3) throw new Error("unexpected label fixture imports");
+  if (wasiImports.length !== 7 || lvwImports.length !== 14 || labelImports.length !== (events ? 9 : 3)) throw new Error("unexpected label fixture imports");
   const features = ["bulk-memory", "reference-types", "sign-extension", "saturating-float-to-int", "exceptions"];
   const coreManifest: ModuleManifest = { schema_version: 1, kind: "wasm-module", id: "lvcore", role: "lib",
     artifact: { path: "lvcore.wasm", sha256: core.sha256 }, target: { abi: "wasip1", features }, interface: iface("lvcore"),
     memory_model: "isolated", runtime_verification: "not-run", exports: core.exports.map((item) => descriptor(core, item)),
     requires: [requirement("host.wasi", "wasi", core, wasiImports), requirement("host.lvw", "lvw", core, lvwImports)] };
   const appManifest: ModuleManifest = { schema_version: 1, kind: "wasm-module", id: "app", role: "app",
-    artifact: { path: "app.wasm", sha256: app.sha256 }, target: { abi: "wasip1", features: ["bulk-memory"] }, interface: iface("app"),
+    artifact: { path: "app.wasm", sha256: app.sha256 }, target: { abi: "wasip1", features: events ? ["reference-types"] : ["bulk-memory"] }, interface: iface("app"),
     memory_model: "isolated", runtime_verification: "not-run", exports: app.exports.map((item) => descriptor(app, item)),
     requires: [requirement("lvcore", "lvcore", app, []), requirement("host.label", "lvgl", app, labelImports)] };
   const wasiExports = wasiImports.map((item) => descriptor(core, item)), lvwExports = lvwImports.map((item) => descriptor(core, item));
@@ -85,8 +85,9 @@ export async function exerciseLabelCore(coreInput: ArrayBuffer, appInput: ArrayB
   const memory = [...core.memories, ...app.memories].map((item) => item.type.maximumPages);
   const table = [...core.tables, ...app.tables].map((item) => item.type.maximum);
   if (memory.some((value) => value === null) || table.some((value) => value === null)) throw new Error("fixture resources are not bounded");
-  const options: NumericEnvironmentOptions = { profile: "lvgl-label-v1", lvgl: { module: "lvcore", id: "host.lvw", interface: iface("lvw"), abiVersion: 1 },
+  const options: NumericEnvironmentOptions = { profile: events ? "lvgl-event-v1" : "lvgl-label-v1", lvgl: { module: "lvcore", id: "host.lvw", interface: iface("lvw"), abiVersion: 1 },
     label: { id: "host.label", interface: iface("lvgl"), width: 120, height: 48, maxLabels: 8, maxTextBytes: 4096 },
+    ...(events ? { event: { maxRegistrations: 8, maxDepth: 8 } } : {}),
     modules: [{ id: "lvcore", sha256: core.sha256, interface: iface("lvcore"), exports: [] }, { id: "app", sha256: app.sha256, interface: iface("app"), exports: [] }], hosts: [],
     wasi: { id: "host.wasi", interface: iface("wasi"), allowed: ["environ_get", "environ_sizes_get", "clock_time_get", "fd_close", "fd_seek", "fd_write", "proc_exit"],
       outputFds: [], maxIovecs: 16, maxWriteBytes: 4096, maxOutputBytes: 4096, clock: { realtimeNs: 0n, monotonicNs: 0n }, onWrite: () => { throw new Error("unexpected WASI output"); } },
@@ -99,15 +100,16 @@ export async function exerciseLabelCore(coreInput: ArrayBuffer, appInput: ArrayB
     second = await loadNumericEnvironment(input, options);
     if (!first.readFrame || !second.readFrame) throw new Error("missing label frame operation");
     const oldFrame = first.readFrame(), otherFrame = second.readFrame();
-    if (first.run(-1) !== 0) throw new Error("label update failed");
+    if (events ? first.run(1) !== 2 || first.run(4) !== 1 : first.run(-1) !== 0) throw new Error("label update failed");
     const frame = first.readFrame();
     const framesDiffer = oldFrame.rgba.some((value, index) => value !== frame.rgba[index]);
     const otherAfter = second.readFrame();
     const otherUnchanged = otherFrame.rgba.every((value, index) => value === otherAfter.rgba[index]);
+    const removed = events ? first.run(2) === 1 && first.run(3) === 2 : true;
     first.close();
-    const survivesClose = second.run(-4) === 0;
+    const survivesClose = events ? second.run(1) === 2 : second.run(-4) === 0;
     second.close();
-    if (!framesDiffer || !otherUnchanged || !survivesClose) throw new Error("unexpected label frame or environment isolation");
+    if (!framesDiffer || !otherUnchanged || !survivesClose || !removed) throw new Error("unexpected label frame or environment isolation");
     return { width: frame.width, height: frame.height, framesDiffer, otherUnchanged, survivesClose, states: [first.state, second.state] };
   } finally {
     if (first.state === "ready") first.close();

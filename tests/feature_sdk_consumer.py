@@ -56,6 +56,8 @@ def check_result(result, core_sha, identity):
             or result["standalone"] != {"values": [5, 9, 7], "states": ["closed", "closed"]}
             or result["label"] != {"width": 120, "height": 48, "framesDiffer": True, "otherUnchanged": True,
                                     "survivesClose": True, "states": ["closed", "closed"]}
+            or result["event"] != {"width": 120, "height": 48, "framesDiffer": True, "otherUnchanged": True,
+                                    "survivesClose": True, "states": ["closed", "closed"]}
             or result["lvgl"] != {"values": [37, 81, 37, 81, 0x336699, 0x336699, -1], "green": [16, 48],
                                    "environments": 2, "lifecycle": [10, 20, 10, 20, 21, 11, 21, 11], "callbacks": 0, "outputBytes": 0,
                                    "survivesClose": 81, "closedRejected": True}):
@@ -195,7 +197,8 @@ def check_tampering(moved, work):
 
     for files_key, tree_key, name in (("files", "treeSha256", "src/lib.rs"),
                                       ("workerFiles", "workerTreeSha256", "bindings/typescript/src/feature-validator-worker.ts"),
-                                      ("workerFiles", "workerTreeSha256", "validator/build-worker.sh")):
+                                      ("workerFiles", "workerTreeSha256", "validator/build-worker.sh"),
+                                      ("workerFiles", "workerTreeSha256", "bindings/typescript/src/numeric-events.ts")):
         shutil.rmtree(altered)
         shutil.copytree(moved, altered)
         readonly(altered, False)
@@ -302,6 +305,8 @@ def check(sdk, ndk, chromium=None):
         standalone_app = fixture_dir / "lvgl-core-app.wasm"
         run(sys.executable, "-B", ROOT / "validator/lvgl-label-fixture.py", "--ndk", ndk, "--output", fixture_dir)
         label_app = fixture_dir / "lvgl-label-app.wasm"
+        run(sys.executable, "-B", ROOT / "validator/lvgl-event-fixture.py", "--ndk", ndk, "--output", fixture_dir)
+        event_app = fixture_dir / "lvgl-event-app.wasm"
         moved = work / "moved package"
         shutil.copytree(sdk, moved)
         readonly(moved, True)
@@ -354,12 +359,12 @@ def check(sdk, ndk, chromium=None):
                 run("bun", ROOT / "node_modules/typescript/bin/tsc", "--project", project / "tsconfig.json")
             (project / "runner.ts").write_text('''globalThis.fetch = (() => { throw new Error("network is unavailable"); }) as typeof fetch;
 const { exercise } = await import("./consumer.ts");
-const result = await exercise(await Bun.file(Bun.argv[2]!).arrayBuffer(), await Bun.file(Bun.argv[3]!).arrayBuffer(), await Bun.file(Bun.argv[4]!).arrayBuffer(), await Bun.file(Bun.argv[5]!).arrayBuffer(), await Bun.file(Bun.argv[6]!).arrayBuffer(), await Bun.file(Bun.argv[7]!).arrayBuffer(), await Bun.file(Bun.argv[8]!).arrayBuffer());
+const result = await exercise(await Bun.file(Bun.argv[2]!).arrayBuffer(), await Bun.file(Bun.argv[3]!).arrayBuffer(), await Bun.file(Bun.argv[4]!).arrayBuffer(), await Bun.file(Bun.argv[5]!).arrayBuffer(), await Bun.file(Bun.argv[6]!).arrayBuffer(), await Bun.file(Bun.argv[7]!).arrayBuffer(), await Bun.file(Bun.argv[8]!).arrayBuffer(), await Bun.file(Bun.argv[9]!).arrayBuffer());
 console.log(JSON.stringify(result));
 ''')
             core = moved / "runtime/liblvgl.wasm"
             core_sha = hashlib.sha256(core.read_bytes()).hexdigest()
-            result = subprocess.run(["bun", "runner.ts", core, wasi, lv_provider, lv_app, standalone_core, standalone_app, label_app], cwd=project, check=True, capture_output=True, text=True)
+            result = subprocess.run(["bun", "runner.ts", core, wasi, lv_provider, lv_app, standalone_core, standalone_app, label_app, event_app], cwd=project, check=True, capture_output=True, text=True)
             check_result(json.loads(result.stdout), core_sha, identity)
 
             packable = work / "packable typescript"
@@ -396,7 +401,7 @@ console.log(JSON.stringify(result));
                 noble = archive.extractfile("package/LICENSE-noble-hashes.txt").read()
                 if hashlib.sha256(noble).hexdigest() != notice_manifest["noble"]["license_sha256"]:
                     raise ValueError("packed noble license identity differs")
-            browser = run_browser(project, moved, work, chromium, wasi, lv_provider, lv_app, standalone_core, standalone_app, label_app) if chromium else None
+            browser = run_browser(project, moved, work, chromium, wasi, lv_provider, lv_app, standalone_core, standalone_app, label_app, event_app) if chromium else None
             if browser is not None:
                 if browser.get("hasSubtle") is not False:
                     raise ValueError("browser worker did not use an opaque origin")

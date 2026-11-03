@@ -20,6 +20,7 @@ FEATURE_WASI_TYPE_DEPENDENCY = "types/bindings/typescript/src/numeric-wasi.d.ts"
 LEGACY_FEATURE_BUILDER_SHA256 = "efee79b5e5055e03e74fdc1b4f53d8792b69b4f6eea1bbfd15a0c0f0fa306816"
 GRAPH_FEATURE_BUILDER_SHA256 = "f0ec7cfe34843a089961acff876d3ee8cf5ce7b87888f740b84d389b4e04c4a8"
 NUMERIC_FEATURE_BUILDER_SHA256 = "5f9616429d3f1c8996b45407ff0f2a07184a39c3c0ffea84f113aec3b212b3f5"
+WASI_FEATURE_BUILDER_SHA256 = "045f2810bfb19c940ce56c16a653b5c5052238ceb065bee4add3e8dd1f5f7a44"
 
 
 def read_limited(path, limit):
@@ -363,6 +364,7 @@ def verify_feature_validator(typescript, expected, source=None):
     graph_worker_files = {f"bindings/typescript/src/{name}.ts" for name in
                           ("module-graph", "module-manifest", "isolated-resources", "wasi-preview1")}
     numeric_worker_file = "bindings/typescript/src/numeric-environment.ts"
+    event_worker_file = "bindings/typescript/src/numeric-events.ts"
     wasi_worker_file = "bindings/typescript/src/numeric-wasi.ts"
     for files_key, tree_key, prefix in (("files", "treeSha256", "validator"),
                                         ("workerFiles", "workerTreeSha256", "")):
@@ -377,13 +379,16 @@ def verify_feature_validator(typescript, expected, source=None):
             if names == worker_files:
                 if not graph_types or not numeric_types or not wasi_types:
                     raise ValueError("feature validator declaration imports are incomplete")
-            elif (names == worker_files - {wasi_worker_file} and graph_types and numeric_types and not wasi_types
+            elif (names == worker_files - {event_worker_file} and graph_types and numeric_types and wasi_types
+                  and entries.get("validator/build-worker.py") == WASI_FEATURE_BUILDER_SHA256):
+                pass
+            elif (names == worker_files - {event_worker_file, wasi_worker_file} and graph_types and numeric_types and not wasi_types
                   and entries.get("validator/build-worker.py") == NUMERIC_FEATURE_BUILDER_SHA256):
                 pass
-            elif (names == worker_files - {numeric_worker_file, wasi_worker_file} and graph_types and not numeric_types and not wasi_types
+            elif (names == worker_files - {event_worker_file, numeric_worker_file, wasi_worker_file} and graph_types and not numeric_types and not wasi_types
                   and entries.get("validator/build-worker.py") == GRAPH_FEATURE_BUILDER_SHA256):
                 pass
-            elif (names != worker_files - graph_worker_files - {numeric_worker_file, wasi_worker_file} or graph_types or numeric_types or wasi_types
+            elif (names != worker_files - graph_worker_files - {event_worker_file, numeric_worker_file, wasi_worker_file} or graph_types or numeric_types or wasi_types
                   or entries.get("validator/build-worker.py") != LEGACY_FEATURE_BUILDER_SHA256):
                 raise ValueError("feature validator source inventory is incomplete")
         tree = hashlib.sha256(json.dumps(entries, sort_keys=True, separators=(",", ":")).encode()).hexdigest()

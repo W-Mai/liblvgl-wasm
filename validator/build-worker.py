@@ -21,6 +21,7 @@ INPUTS = (
     "bindings/typescript/src/feature-validator.ts",
     "bindings/typescript/src/feature-validator-policy.ts",
     "bindings/typescript/src/numeric-environment.ts",
+    "bindings/typescript/src/numeric-events.ts",
     "bindings/typescript/src/numeric-wasi.ts",
     "bindings/typescript/src/wasm-facts.ts",
     "bindings/typescript/src/module-graph.ts",

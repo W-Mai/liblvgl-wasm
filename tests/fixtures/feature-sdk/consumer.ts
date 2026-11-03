@@ -40,7 +40,7 @@ async function rejected(promise: Promise<unknown>): Promise<string> {
   catch (error) { if (!(error instanceof FeatureValidationError)) throw error; return error.code; }
 }
 
-export async function exercise(core: ArrayBuffer, wasiApp: ArrayBuffer, lvProvider: ArrayBuffer, lvApp: ArrayBuffer, standaloneCore: ArrayBuffer, standaloneApp: ArrayBuffer, labelApp: ArrayBuffer) {
+export async function exercise(core: ArrayBuffer, wasiApp: ArrayBuffer, lvProvider: ArrayBuffer, lvApp: ArrayBuffer, standaloneCore: ArrayBuffer, standaloneApp: ArrayBuffer, labelApp: ArrayBuffer, eventApp: ArrayBuffer) {
   const options = { startupTimeoutMs: 10_000, executionTimeoutMs: 10_000 };
   const input = new Uint8Array(core), original = input.slice();
   const pending = validateWasmFeatures(input, { ...options, declaredFeatures: coreFeatures, allowedFeatures: coreFeatures });
@@ -93,9 +93,10 @@ export async function exercise(core: ArrayBuffer, wasiApp: ArrayBuffer, lvProvid
   const lvgl = await exerciseLvgl(lvProvider, lvApp);
   const standalone = await exerciseStandaloneCore(standaloneCore, standaloneApp);
   const label = await exerciseLabelCore(standaloneCore, labelApp);
+  const event = await exerciseLabelCore(standaloneCore, eventApp, true);
   return { report, coreDenied, simdStatus: simdResult.status, simdDenied, policyDenied, aborted,
     numericResult, numericState: numeric.state,
-    wasiResult, wasiState: wasi.state, wasiOutput: output, wasiIdentity: environmentIds.length === 3 && new Set(environmentIds).size === 1, standalone, label,
+    wasiResult, wasiState: wasi.state, wasiOutput: output, wasiIdentity: environmentIds.length === 3 && new Set(environmentIds).size === 1, standalone, label, event,
     wasiExit: new NumericWasiExit(42).code === 42, lvgl,
     graphOrder: graphReport.order, graphChecks: graphReport.modules.map((item) => item.checks),
     knownFeatures: WASM_FEATURE_POLICY_NAMES.includes("simd") && Object.isFrozen(WASM_FEATURE_POLICY_NAMES),

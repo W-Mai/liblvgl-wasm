@@ -33,10 +33,13 @@ python3 -B validator/lvgl-core-fixture.py
 python3 -B validator/lvgl-lifecycle-fixtures.py
 python3 -B validator/lvgl-label-fixture.py
 python3 -B validator/lvgl-label-negative-fixtures.py
+python3 -B validator/lvgl-event-fixture.py
+python3 -B validator/lvgl-event-negative-fixtures.py
 bun test validator/feature-validator.test.ts
 bun test validator/feature-worker.test.ts validator/feature-worker-live.test.ts validator/feature-graph.test.ts validator/numeric-environment.test.ts validator/wasi-numeric-loader.test.ts
 bun test validator/lvgl-core-profile.test.ts validator/lvgl-lifecycle.test.ts
 bun test validator/lvgl-label-profile.test.ts validator/lvgl-label-negative.test.ts
+bun test validator/lvgl-event-profile.test.ts validator/lvgl-event-negative.test.ts
 bun test validator/feature-sdk.test.ts
 bun test validator/bounded-core.test.ts
 python3 -B validator/bounded-core.test.py
