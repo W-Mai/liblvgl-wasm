@@ -15,6 +15,8 @@ const lvglCallbacks: Readonly<Record<string, string>> = Object.freeze({
   anim_notify: "iii/", anim_release: "i/", observer: "iii/", observer_release: "i/",
   decoder_info: "iiii/i", decoder_open: "iii/i", decoder_area: "iiiii/i", decoder_close: "iii/", decoder_release: "i/",
 });
+const labelImports: Readonly<Record<string, string>> = Object.freeze({ lv_screen_active: "/i", lv_label_create: "i/i", lv_label_set_text: "ii/" });
+let nextLabelToken = 1;
 
 export interface NumericFunctionContract {
   readonly name: string;
@@ -42,8 +44,10 @@ export interface NumericHostContract {
 }
 
 export interface NumericEnvironmentOptions {
-  readonly profile: "numeric-v1" | "lvgl-core-v1";
+  readonly profile: "numeric-v1" | "lvgl-core-v1" | "lvgl-label-v1";
   readonly lvgl?: { readonly module: string; readonly id: string; readonly interface: ModuleInterface; readonly abiVersion: 1 };
+  readonly label?: { readonly id: string; readonly interface: ModuleInterface; readonly width: number; readonly height: number;
+    readonly maxLabels: number; readonly maxTextBytes: number };
   readonly modules: readonly NumericModuleContract[];
   readonly hosts: readonly NumericHostContract[];
   readonly wasi?: NumericWasiOptions;
@@ -63,6 +67,7 @@ interface NumericProfile {
   readonly hosts: ReadonlyMap<string, NumericHostContract>;
   readonly wasi?: NumericWasiOptions;
   readonly lvgl?: NonNullable<NumericEnvironmentOptions["lvgl"]>;
+  readonly label?: NonNullable<NumericEnvironmentOptions["label"]>;
   readonly app: string;
   readonly featureOptions: Pick<NumericEnvironmentOptions, "allowedFeatures" | "startupTimeoutMs" | "executionTimeoutMs" | "signal">;
 }
@@ -141,6 +146,17 @@ function lvglSignature(value: ModuleExport): boolean {
   const encode = (types: readonly string[]) => types.map((type) => type === "i32" ? "i" : "?").join("");
   return `${encode(value.params)}/${encode(value.results)}` === lvglCallbacks[value.name];
 }
+function labelSignature(value: ModuleExport): boolean {
+  if (value.kind !== "function" || !Object.hasOwn(labelImports, value.name)) return false;
+  const encode = (types: readonly string[]) => types.map((type) => type === "i32" ? "i" : "?").join("");
+  return `${encode(value.params)}/${encode(value.results)}` === labelImports[value.name];
+}
+function ownMemory(record: NumericRecord): void {
+  if (record.facts.memories.length !== 1 || record.facts.memories[0]!.imported || record.facts.memories[0]!.type.shared
+      || !record.facts.exports.some((item) => item.kind === "memory" && item.name === "memory" && item.index === 0)) {
+    fail(`${JSON.stringify(record.manifest.id)}: label profile requires owned exported memory`);
+  }
+}
 function ownEntrypoint(record: NumericRecord, entry: string, params: readonly string[], results: readonly string[], required: boolean): void {
   const item = record.facts.exports.find((value) => value.name === entry);
   if (!item) { if (required) fail(`${JSON.stringify(record.manifest.id)}: missing ${entry}`); return; }
@@ -152,14 +168,23 @@ function ownEntrypoint(record: NumericRecord, entry: string, params: readonly st
 /** @internal Snapshot the trusted numeric profile and match it to the prepared graph. */
 export function prepareNumericProfile(prepared: PreparedModuleGraph, options: NumericEnvironmentOptions): NumericProfile {
   const root = fields(options, ["profile", "modules", "hosts", "allowedFeatures", "startupTimeoutMs", "executionTimeoutMs",
-    "maxMemoryPages", "maxTotalMemoryPages", "maxTableElements", "maxTotalTableElements"], ["signal", "wasi", "lvgl"]);
-  if (root.profile !== "numeric-v1" && root.profile !== "lvgl-core-v1") return fail("unsupported numeric profile");
+    "maxMemoryPages", "maxTotalMemoryPages", "maxTableElements", "maxTotalTableElements"], ["signal", "wasi", "lvgl", "label"]);
+  if (root.profile !== "numeric-v1" && root.profile !== "lvgl-core-v1" && root.profile !== "lvgl-label-v1") return fail("unsupported numeric profile");
   if (root.profile === "numeric-v1" && Object.hasOwn(root, "lvgl")) return fail("numeric-v1 does not accept an LVGL core");
+  if (root.profile !== "lvgl-label-v1" && Object.hasOwn(root, "label")) return fail("label adapter requires lvgl-label-v1");
   let lvgl: NumericProfile["lvgl"];
-  if (root.profile === "lvgl-core-v1") {
+  if (root.profile === "lvgl-core-v1" || root.profile === "lvgl-label-v1") {
     const value = fields(root.lvgl, ["module", "id", "interface", "abiVersion"]);
     if (value.abiVersion !== 1) return fail("unsupported LVGL bridge ABI");
     lvgl = { module: name(value.module), id: name(value.id), interface: interfaceContract(value.interface), abiVersion: 1 };
+  }
+  let label: NumericProfile["label"];
+  if (root.profile === "lvgl-label-v1") {
+    const value = fields(root.label, ["id", "interface", "width", "height", "maxLabels", "maxTextBytes"]);
+    const width = limit(value.width, 4096), height = limit(value.height, 4096);
+    const maxLabels = limit(value.maxLabels, 4096), maxTextBytes = limit(value.maxTextBytes, 1024 * 1024);
+    if (!width || !height || width * height * 4 > 16 * 1024 * 1024 || !maxLabels || !maxTextBytes) fail("invalid LVGL label limits");
+    label = { id: name(value.id), interface: interfaceContract(value.interface), width, height, maxLabels, maxTextBytes };
   }
   const budget = { entries: 0 };
   const modules = new Map<string, NumericModuleContract>();
@@ -177,12 +202,13 @@ export function prepareNumericProfile(prepared: PreparedModuleGraph, options: Nu
   const wasi = root.wasi === undefined ? undefined : prepareNumericWasi(root.wasi);
   if (wasi && hosts.has(wasi.id)) fail("numeric WASI provider conflicts with a numeric host");
   if (lvgl && (hosts.has(lvgl.id) || wasi?.id === lvgl.id || modules.has(lvgl.id))) fail("LVGL host provider identity conflicts");
+  if (label && (hosts.has(label.id) || wasi?.id === label.id || lvgl?.id === label.id || modules.has(label.id))) fail("LVGL label provider identity conflicts");
   const allowedFeatures = list(root.allowedFeatures, 32).map(name);
   const featureOptions = { allowedFeatures, startupTimeoutMs: root.startupTimeoutMs as number, executionTimeoutMs: root.executionTimeoutMs as number,
     signal: root.signal as AbortSignal | undefined };
   const maxMemoryPages = limit(root.maxMemoryPages, 65536), maxTotalMemoryPages = limit(root.maxTotalMemoryPages, 65536 * 256);
   const maxTableElements = limit(root.maxTableElements, 0xffff_ffff), maxTotalTableElements = limit(root.maxTotalTableElements, 0xffff_ffff * 256);
-  if (modules.size !== prepared.modules.length || hosts.size + Number(wasi !== undefined) + Number(lvgl !== undefined) !== prepared.hosts.length) return fail("numeric profile provider inventory differs");
+  if (modules.size !== prepared.modules.length || hosts.size + Number(wasi !== undefined) + Number(lvgl !== undefined) + Number(label !== undefined) !== prepared.hosts.length) return fail("numeric profile provider inventory differs");
   let totalMemory = 0, totalTables = 0;
   let app: string | undefined, foundLvgl = false;
   for (const record of prepared.modules) {
@@ -203,12 +229,26 @@ export function prepareNumericProfile(prepared: PreparedModuleGraph, options: Nu
       if (contract.exports.some((fn) => !lvglScalars.has(fn.name) || fn.params.length !== 0 || fn.results.length !== 1)) {
         fail("unsupported LVGL scalar export");
       }
+      if (label) {
+        ownMemory(record);
+        for (const [entry, params, results] of [
+          ["lvw_display_create", ["i32", "i32", "i32"], ["i32"]], ["lvw_alloc", ["i32"], ["i32"]], ["lvw_free", ["i32"], []],
+          ["lv_display_get_screen_active", ["i32"], ["i32"]], ["lv_label_create", ["i32"], ["i32"]], ["lv_label_set_text", ["i32", "i32"], []],
+          ["lv_refr_now", ["i32"], []], ["lvw_frame_get", ["i32", "i32"], ["i32"]],
+        ] as const) ownEntrypoint(record, entry, params, results, true);
+      }
     } else {
       ownEntrypoint(record, "_initialize", [], [], false);
       ownEntrypoint(record, "module_init", [], ["i32"], true);
       ownEntrypoint(record, "module_close", [], ["i32"], true);
     }
-    if (current.role === "app") ownEntrypoint(record, "app_run", ["i32"], ["i32"], true);
+    if (current.role === "app") {
+      ownEntrypoint(record, "app_run", ["i32"], ["i32"], true);
+      if (label) {
+        ownMemory(record);
+        if (!current.requires.some((requirement) => requirement.provider === lvgl!.module)) fail("label app must depend on its LVGL core");
+      }
+    }
     for (const memory of record.facts.memories) {
       const max = memory.type.maximumPages;
       if (max === null || max > maxMemoryPages) fail(`${JSON.stringify(current.id)}: numeric memory limit exceeded`);
@@ -228,6 +268,10 @@ export function prepareNumericProfile(prepared: PreparedModuleGraph, options: Nu
   if (app === undefined) return fail("numeric profile requires exactly one app");
   if (totalMemory > maxTotalMemoryPages || totalTables > maxTotalTableElements) return fail("numeric environment resource limit exceeded");
   for (const host of prepared.hosts) {
+    if (label && host.id === label.id) {
+      if (!sameInterface(label.interface, host.interface) || host.exports.some((item) => !labelSignature(item))) fail("LVGL label host contract differs");
+      continue;
+    }
     if (lvgl && host.id === lvgl.id) {
       if (!sameInterface(lvgl.interface, host.interface) || host.exports.some((item) => !lvglSignature(item))) fail("LVGL host contract differs");
       continue;
@@ -248,9 +292,17 @@ export function prepareNumericProfile(prepared: PreparedModuleGraph, options: Nu
     }
   }
   const lvglImports = new Set<string>();
+  const labelUsed = new Set<string>();
   for (const record of prepared.modules) for (const requirement of record.manifest.requires) {
     if (lvgl && requirement.provider === lvgl.id && record.manifest.id !== lvgl.module) fail("LVGL host is reserved for its core");
+    if (label && requirement.provider === label.id && record.manifest.id !== app) fail("LVGL label host is reserved for its app");
     for (const item of requirement.imports) {
+      if (label && (item.module === "lvgl" || requirement.provider === label.id)) {
+        if (record.manifest.id !== app || requirement.provider !== label.id || item.module !== "lvgl"
+            || item.provider_export !== item.name || !labelSignature(item)) fail(`${JSON.stringify(record.manifest.id)}: LVGL label import is not authorized`);
+        labelUsed.add(item.name);
+        continue;
+      }
       if (lvgl && (item.module === "lvw" || requirement.provider === lvgl.id)) {
         if (record.manifest.id !== lvgl.module || requirement.provider !== lvgl.id || item.module !== "lvw"
             || item.provider_export !== item.name || !lvglSignature(item)) fail(`${JSON.stringify(record.manifest.id)}: LVGL host import is not authorized`);
@@ -274,7 +326,11 @@ export function prepareNumericProfile(prepared: PreparedModuleGraph, options: Nu
     const host = prepared.hosts.find((item) => item.id === lvgl!.id)!;
     if (host.exports.length !== lvglImports.size || host.exports.some((item) => !lvglImports.has(item.name))) fail("LVGL host inventory differs from core imports");
   }
-  return { modules, hosts, wasi, lvgl, app, featureOptions };
+  if (label) {
+    const host = prepared.hosts.find((item) => item.id === label!.id)!;
+    if (host.exports.length !== labelUsed.size || host.exports.some((item) => !labelUsed.has(item.name))) fail("LVGL label host inventory differs from app imports");
+  }
+  return { modules, hosts, wasi, lvgl, label, app, featureOptions };
 }
 
 /** @internal Compile all private snapshots before creating any guest instance. */
@@ -299,6 +355,125 @@ export interface NumericEnvironment {
   readonly state: "loading" | "ready" | "closing" | "closed" | "poisoned";
   run(value: number): number;
   close(): void;
+  readonly readFrame?: () => { readonly width: number; readonly height: number; readonly frameId: number; readonly rgba: Uint8ClampedArray<ArrayBuffer> };
+}
+
+class LabelAdapter {
+  #core?: WebAssembly.Instance;
+  #appMemory?: WebAssembly.Memory;
+  #handles = new Map<number, { readonly kind: "screen" | "label"; readonly pointer: number }>();
+  #screen = 0;
+  #labels = 0;
+
+  constructor(core: WebAssembly.Instance, appMemory: WebAssembly.Memory, readonly display: number,
+    readonly options: NonNullable<NumericProfile["label"]>, private readonly rethrow: () => void) {
+    this.#core = core;
+    this.#appMemory = appMemory;
+  }
+
+  #call(name: string, ...args: number[]): number | void {
+    const fn = this.#core?.exports[name];
+    if (typeof fn !== "function") return fail("LVGL label adapter is unavailable");
+    const result = fn(...args) as number | void;
+    this.rethrow();
+    return result;
+  }
+
+  #memory(): Uint8Array<ArrayBuffer> {
+    const memory = this.#core?.exports.memory;
+    if (!(memory instanceof WebAssembly.Memory) || !(memory.buffer instanceof ArrayBuffer)) return fail("LVGL core memory is unavailable");
+    return new Uint8Array(memory.buffer);
+  }
+
+  #reserve(): number {
+    if (nextLabelToken > 0xffff_ffff) return fail("LVGL label tokens exhausted");
+    return nextLabelToken++;
+  }
+
+  #handle(token: number, kind: "screen" | "label"): number {
+    const record = this.#handles.get(token >>> 0);
+    if (!record || record.kind !== kind) return fail("invalid LVGL label handle");
+    return record.pointer;
+  }
+
+  screen(): number {
+    const pointer = (this.#call("lv_display_get_screen_active", this.display) as number) >>> 0;
+    if (!pointer) return fail("LVGL screen is unavailable");
+    if (this.#screen) {
+      if (this.#handle(this.#screen, "screen") !== pointer) return fail("LVGL screen changed");
+      return this.#screen;
+    }
+    const token = this.#reserve();
+    this.#handles.set(token, { kind: "screen", pointer });
+    this.#screen = token;
+    return token;
+  }
+
+  create(parent: number): number {
+    const pointer = this.#handle(parent, "screen");
+    if (this.#labels >= this.options.maxLabels) return fail("LVGL label quota exceeded");
+    const token = this.#reserve();
+    const created = (this.#call("lv_label_create", pointer) as number) >>> 0;
+    if (!created) return 0;
+    this.#handles.set(token, { kind: "label", pointer: created });
+    this.#labels++;
+    return token;
+  }
+
+  setText(token: number, address: number): void {
+    const pointer = this.#handle(token, "label");
+    const offset = address >>> 0;
+    if (offset === 0) { this.#call("lv_label_set_text", pointer, 0); return; }
+    const buffer = this.#appMemory?.buffer;
+    if (!(buffer instanceof ArrayBuffer)) return fail("LVGL app memory is unavailable");
+    const bytes = new Uint8Array(buffer);
+    if (offset >= bytes.length) return fail("LVGL text pointer is out of bounds");
+    const end = Math.min(bytes.length, offset + this.options.maxTextBytes + 1);
+    let cursor = offset;
+    while (cursor < end && bytes[cursor] !== 0) cursor++;
+    if (cursor === end || cursor - offset > this.options.maxTextBytes) return fail("LVGL text is unterminated or too long");
+    const snapshot = bytes.slice(offset, cursor + 1);
+    const scratch = (this.#call("lvw_alloc", snapshot.length) as number) >>> 0;
+    if (!scratch) return fail("LVGL text allocation failed");
+    const memory = this.#memory();
+    if (scratch > memory.length || snapshot.length > memory.length - scratch) return fail("LVGL text allocation is out of bounds");
+    memory.set(snapshot, scratch);
+    this.#call("lv_label_set_text", pointer, scratch);
+    this.#call("lvw_free", scratch);
+  }
+
+  frame(): NonNullable<NumericEnvironment["readFrame"]> extends () => infer T ? T : never {
+    this.#call("lv_refr_now", this.display);
+    const scratch = (this.#call("lvw_alloc", 48) as number) >>> 0;
+    if (!scratch) return fail("LVGL frame allocation failed");
+    let memory = this.#memory();
+    if (scratch > memory.length || 48 > memory.length - scratch) return fail("LVGL frame allocation is out of bounds");
+    memory.fill(0, scratch, scratch + 48);
+    let view = new DataView(memory.buffer);
+    view.setUint32(scratch, 48, true);
+    view.setUint32(scratch + 4, 1, true);
+    if (this.#call("lvw_frame_get", this.display, scratch) !== 0) return fail("LVGL frame is unavailable");
+    memory = this.#memory();
+    if (scratch > memory.length || 48 > memory.length - scratch) return fail("LVGL frame metadata is out of bounds");
+    view = new DataView(memory.buffer);
+    const size = view.getUint32(scratch, true), version = view.getUint32(scratch + 4, true);
+    const pointer = view.getUint32(scratch + 8, true), length = view.getUint32(scratch + 12, true);
+    const width = view.getUint32(scratch + 16, true), height = view.getUint32(scratch + 20, true);
+    const stride = view.getUint32(scratch + 24, true), format = view.getUint32(scratch + 28, true);
+    const alpha = view.getUint32(scratch + 32, true), frameId = view.getUint32(scratch + 44, true);
+    if (size !== 48 || version !== 1 || width !== this.options.width || height !== this.options.height
+        || stride !== width * 4 || length !== stride * height || format !== 1 || alpha !== 0 || pointer === 0
+        || pointer > memory.length || length > memory.length - pointer) return fail("invalid LVGL frame metadata");
+    const rgba = new Uint8ClampedArray(length);
+    for (let index = 0; index < length; index += 4) {
+      rgba[index] = memory[pointer + index + 2]!; rgba[index + 1] = memory[pointer + index + 1]!;
+      rgba[index + 2] = memory[pointer + index]!; rgba[index + 3] = 255;
+    }
+    this.#call("lvw_free", scratch);
+    return { width, height, frameId, rgba };
+  }
+
+  close(): void { this.#handles.clear(); this.#appMemory = undefined; this.#core = undefined; }
 }
 
 class NumericRuntime {
@@ -309,6 +484,7 @@ class NumericRuntime {
   #wasi = new Map<string, ReturnType<typeof createNumericWasiConsumer>>();
   #initialized: LiveModule[] = [];
   #hosts: LiveHost[] = [];
+  #label?: LabelAdapter;
   #app: string;
   #lvgl?: string;
 
@@ -350,6 +526,8 @@ class NumericRuntime {
     return errors;
   }
   #invalidateModules(): void {
+    this.#label?.close();
+    this.#label = undefined;
     for (const wasi of this.#wasi.values()) wasi.close();
     this.#wasi.clear();
     for (const module of this.#modules.values()) { module.instance = undefined; module.initialized = false; }
@@ -368,6 +546,7 @@ class NumericRuntime {
       const close = module.instance!.exports[closeName] as () => number;
       const status = this.#enter(close);
       if (status !== 0) this.#poison(new Error(`${JSON.stringify(module.record.manifest.id)}: ${closeName} returned ${status}`));
+      if (module.record.manifest.id === this.#app) { this.#label?.close(); this.#label = undefined; }
       this.#wasi.get(module.record.manifest.id)?.close();
       this.#wasi.delete(module.record.manifest.id);
       module.initialized = false;
@@ -380,6 +559,12 @@ class NumericRuntime {
     this.#idle("run");
     if (!i32(value)) return fail("numeric app input must be a signed i32");
     return this.#enter(() => (this.#modules.get(this.#app)!.instance!.exports.app_run as (value: number) => number)(value));
+  }
+
+  readFrame(): ReturnType<NonNullable<NumericEnvironment["readFrame"]>> {
+    this.#idle("readFrame");
+    if (!this.#label) return fail("LVGL label adapter is unavailable");
+    return this.#enter(() => this.#label!.frame());
   }
 
   /** Close the app and initialized libraries in reverse dependency order. */
@@ -418,6 +603,7 @@ class NumericRuntime {
             continue;
           }
           if (profile.lvgl && requirement.provider === profile.lvgl.id) continue;
+          if (profile.label && requirement.provider === profile.label.id) continue;
           const contract = profile.hosts.get(requirement.provider);
           if (!contract || byHost.has(contract.id)) continue;
           const create = contract.create;
@@ -458,6 +644,17 @@ class NumericRuntime {
             namespace[item.name] = () => environment.#enter(() => fail(`unsupported LVGL callback ${JSON.stringify(item.name)}`));
             continue;
           }
+          if (profile.label && requirement.provider === profile.label.id) {
+            namespace[item.name] = (...args: number[]) => environment.#enter(() => {
+              const adapter = environment.#label;
+              if (!adapter) return fail("LVGL label adapter is unavailable");
+              if (item.name === "lv_screen_active") return adapter.screen();
+              if (item.name === "lv_label_create") return adapter.create(args[0]!);
+              if (item.name === "lv_label_set_text") return adapter.setText(args[0]!, args[1]!);
+              return fail("unsupported LVGL label import");
+            });
+            continue;
+          }
           const host = hostBindings.get(id)!.get(requirement.provider);
           const contract = (profile.modules.get(requirement.provider) ?? profile.hosts.get(requirement.provider))!.exports.find((fn) => fn.name === item.provider_export)!;
           if (host) {
@@ -482,10 +679,8 @@ class NumericRuntime {
           if (!(memory instanceof WebAssembly.Memory)) fail(`${JSON.stringify(id)}: numeric WASI memory is unavailable`);
           wasi.bind(memory);
         }
-        const initialize = live.instance.exports._initialize;
-        if (typeof initialize === "function") environment.#enter(() => initialize());
-        const isLvgl = id === profile.lvgl?.module;
         const rollback = (failure: Error): never => {
+          if (id === profile.app) { environment.#label?.close(); environment.#label = undefined; }
           environment.#wasi.get(id)?.close();
           environment.#wasi.delete(id);
           environment.#state = "closing";
@@ -493,6 +688,18 @@ class NumericRuntime {
           catch (error) { throw new AggregateError([failure, error], "numeric initialization rollback failed"); }
           throw failure;
         };
+        if (profile.label && id === profile.app) {
+          const provider = environment.#modules.get(profile.lvgl!.module)!;
+          if (!provider.initialized || !provider.instance) fail("LVGL core is not initialized");
+          const memory = live.instance.exports.memory;
+          if (!(memory instanceof WebAssembly.Memory)) fail("LVGL app memory is unavailable");
+          const display = environment.#enter(() => (provider.instance!.exports.lvw_display_create as (width: number, height: number, format: number) => number)(profile.label!.width, profile.label!.height, 1)) >>> 0;
+          if (!display) rollback(new Error("LVGL display creation failed"));
+          environment.#label = new LabelAdapter(provider.instance, memory, display, profile.label, () => environment.#rethrow());
+        }
+        const initialize = live.instance.exports._initialize;
+        if (typeof initialize === "function") environment.#enter(() => initialize());
+        const isLvgl = id === profile.lvgl?.module;
         if (isLvgl) {
           const version = environment.#enter(() => (live.instance!.exports.lvw_abi_version as () => number)());
           if (version !== profile.lvgl!.abiVersion) rollback(new Error(`${JSON.stringify(id)}: unsupported LVGL bridge ABI ${version}`));
@@ -519,5 +726,6 @@ class NumericRuntime {
 /** @internal Create a numeric environment from already compiled private snapshots. */
 export function instantiateNumericEnvironment(prepared: PreparedModuleGraph, profile: NumericProfile, compiled: ReadonlyMap<string, WebAssembly.Module>, beforeGuest: () => void): NumericEnvironment {
   const runtime = NumericRuntime.load(prepared, profile, compiled, beforeGuest);
-  return Object.freeze({ get state() { return runtime.state; }, run: (value: number) => runtime.run(value), close: () => runtime.close() });
+  const base = { get state() { return runtime.state; }, run: (value: number) => runtime.run(value), close: () => runtime.close() };
+  return Object.freeze(profile.label ? { ...base, get state() { return runtime.state; }, readFrame: () => runtime.readFrame() } : base);
 }
