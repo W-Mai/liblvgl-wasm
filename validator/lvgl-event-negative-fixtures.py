@@ -26,6 +26,10 @@ def main() -> None:
         "core-bad-current": {"DISPATCH": "global.get $registration local.get 0 i32.const 1 i32.add local.get 1 call $event"},
         "core-bad-code": {"DISPATCH": "global.get $registration local.get 0 local.get 1 i32.const 1 i32.add call $event"},
         "core-cross-send": {"SEND_TARGET": "global.get $target2", "DISPATCH": "global.get $registration2 global.get $target2 local.get 1 call $event"},
+        "core-nested-add": {"ADD": "global.get $registration i32.eqz if else global.get $registration local.get 0 i32.const 123 call $event end i32.const 0"},
+        "core-nested-remove": {"REMOVE": "global.get $registration2 local.get 0 i32.const 123 call $event i32.const 0"},
+        "core-current-reenter": {"EVENT_POINTER": "global.get $getterDepth i32.eqz if i32.const 1 global.set $getterDepth global.get $registration global.get $target i32.const 123 call $event i32.const 0 global.set $getterDepth end i32.const 500"},
+        "core-target-reenter": {"ORIGINAL_TARGET": "global.get $getterDepth i32.eqz if i32.const 1 global.set $getterDepth global.get $registration global.get $target i32.const 123 call $event i32.const 0 global.set $getterDepth end global.get $eventTarget"},
         "core-steal": {"EXTRA_IMPORT": '(import "lvgl" "lv_event_get_code" (func (param i32) (result i32)))'},
     }
     inputs: dict[str, str] = {}
@@ -33,6 +37,11 @@ def main() -> None:
         text = core
         for key, value in {**common, **changes}.items():
             text = text.replace(f"@{key}@", value)
+        if name in ("core-current-reenter", "core-target-reenter"):
+            marker = '  (global $registration (mut i32) (i32.const 0))'
+            if text.count(marker) != 1:
+                raise ValueError("missing event getter fixture marker")
+            text = text.replace(marker, '  (global $getterDepth (mut i32) (i32.const 0))\n' + marker)
         inputs[name] = text
     dispatch = '(func (export "app_event_dispatch") (param i32 i32) local.get 1 local.get 0 call_indirect (type $callback))'
     app_common = {"EVENT_MODULE": "lvgl", "EXTRA_IMPORT": "", "DISPATCH_EXPORT": dispatch,
@@ -53,7 +62,12 @@ def main() -> None:
         inputs[name] = text
     inputs["app-close-fail"] = inputs["app"].replace("i32.const 39 call $trace i32.const 0", "i32.const 39 call $trace i32.const 8")
     inputs["app-close-trap"] = inputs["app"].replace("i32.const 39 call $trace i32.const 0", "i32.const 39 call $trace unreachable")
+    inputs["app-close-observed"] = inputs["app"].replace("i32.const 39 call $trace i32.const 0", "i32.const 39 call $trace i32.const 38 call $trace i32.const 0")
     inputs["app-callback-trap"] = inputs["app"].replace("i32.const 70 call $trace", "i32.const 70 call $trace unreachable")
+    nested_add = 'global.get $mode i32.const 12 i32.eq if global.get $label i32.const 1 i32.const 123 i32.const 80 call $add drop end'
+    inputs["app-nested-add"] = inputs["app"].replace('    i32.const 71 call $trace)', f'    {nested_add}\n    i32.const 71 call $trace)')
+    if inputs["app-nested-add"] == inputs["app"]:
+        raise ValueError("missing nested event add fixture marker")
     inputs["app-multilabel"] = inputs["app"].replace("local.get $eventToken call $event_target global.get $label i32.ne if unreachable end",
                                                      "local.get $eventToken call $event_target drop")
     inputs["app-multilabel"] = inputs["app-multilabel"].replace("if global.get $label i32.const 123 i32.const 0 call $send drop end",
@@ -62,6 +76,9 @@ def main() -> None:
         if source.count(before) != 1:
             raise ValueError(f"unexpected event fixture marker: {before!r}")
         return source.replace(before, after)
+
+    inputs["app-remove-first"] = replace_once(inputs["app"], 'global.get $mode i32.const 4 i32.eq\n',
+        'global.get $mode i32.const 4 i32.eq global.get $count i32.const 1 i32.eq i32.and\n')
 
     for name, params in [
         ("lvw_event_clicked", ""), ("lvw_event_current", ""),
@@ -74,6 +91,10 @@ def main() -> None:
         bad = export + (params[:-1] + ' i32)' if params else ' (param i32)') + ' (result i32)'
         inputs[f"core-badsig-{name}"] = replace_once(inputs["core"], original, bad)
     clicked = '(func (export "lvw_event_clicked") (result i32) i32.const 45 call $trace i32.const 123)'
+    inputs["core-clicked-zero"] = replace_once(inputs["core"], clicked,
+        '(func (export "lvw_event_clicked") (result i32) i32.const 45 call $trace i32.const 0)')
+    inputs["core-clicked-trap"] = replace_once(inputs["core"], clicked,
+        '(func (export "lvw_event_clicked") (result i32) i32.const 45 call $trace unreachable)')
     imported = replace_once(inputs["core"], '(import "trace" "event" (func $trace (param i32)))',
         '(import "trace" "event" (func $trace (param i32)))\n  (import "trace" "clicked" (func $imported_clicked (result i32)))')
     inputs["core-imported-clicked"] = replace_once(imported, clicked, '(export "lvw_event_clicked" (func $imported_clicked))')

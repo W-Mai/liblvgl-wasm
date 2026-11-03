@@ -22,6 +22,7 @@ static bool remove_on_inner;
 static bool use_outer_in_inner;
 static bool leave_registered_on_close;
 static bool fire_on_close;
+static bool foreign_target_next;
 static lv_event_t *outer_event;
 
 static void clicked(lv_event_t *event) {
@@ -70,6 +71,10 @@ int32_t module_init(void) {
 
 __attribute__((export_name("app_run")))
 int32_t app_run(int32_t op) {
+    if (foreign_target_next) {
+        foreign_target_next = false;
+        return (int32_t)lv_obj_send_event((lv_obj_t *)(uintptr_t)(uint32_t)op, LV_EVENT_CLICKED, NULL);
+    }
     if (op == 0) return (int32_t)(uintptr_t)data.label;
     if (op == 1 || op == 3) return lv_obj_send_event(data.label, LV_EVENT_CLICKED, NULL) == LV_RESULT_OK ? (int32_t)data.calls : -1;
     if (op == 2) { bool result = lv_obj_remove_event_dsc(data.label, descriptor); removed = descriptor; descriptor = NULL; return result; }
@@ -85,6 +90,10 @@ int32_t app_run(int32_t op) {
     }
     if (op == 11) { leave_registered_on_close = true; return 0; }
     if (op == 12) { fire_on_close = true; return 0; }
+    if (op == 13) { descriptor = lv_obj_add_event_cb(data.label, clicked, LV_EVENT_CLICKED, &data); return descriptor != NULL; }
+    if (op == 14) return (int32_t)(uintptr_t)removed;
+    if (op == 15) return (int32_t)(uintptr_t)descriptor;
+    if (op == 16) { foreign_target_next = true; return 0; }
     if (op == -1) return (int32_t)lv_event_get_code(stale);
     if (op == -2) return lv_obj_remove_event_dsc(data.label, removed);
     if (op == -3) return (int32_t)lv_obj_send_event(data.label, LV_EVENT_CLICKED, (void *)(uintptr_t)1);

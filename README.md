@@ -584,6 +584,8 @@ liblvgl-wasm-host = { path = "/path/to/liblvgl-wasm/bindings/rust" }
 
 `load_lvgl_label_environment` loads the checked core and app with `lv_screen_active`, `lv_label_create` and `lv_label_set_text`. Object values are environment-local opaque tokens; text is copied from app memory into core memory. The adapter bounds display dimensions, label count and text length. Its tokens cannot be dereferenced by the app or transferred between environments. `read_frame()` refreshes the display and returns a `NumericFrame` containing width, height, frame ID and an owned RGBA byte vector; the copy remains valid after the environment closes. Other LVGL object APIs, callbacks and events are not provided by this Rust adapter. Guest execution has no CPU or execution deadline.
 
+`load_lvgl_event_environment` adds synchronous clicked events for adapter-owned labels. The app registers callbacks using its own typed dispatcher and can send clicked events with a null parameter; callback depth and registrations are bounded by `NumericEventOptions`. Event and descriptor values are opaque tokens, and event tokens are valid only in their current innermost synchronous callback. The adapter removes remaining registrations before shutting down the core. Pointer input, bubbling, object deletion and other event codes are unsupported.
+
 ```rust
 use liblvgl_wasm_host::{Result, Runtime, UnsafePointer, values};
 

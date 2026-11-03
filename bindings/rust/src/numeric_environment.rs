@@ -6,13 +6,20 @@ use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::sync::Arc;
 
 use crate::module_manifest::ModuleManifestInput;
+use crate::numeric_event::NumericEventOptions;
+use crate::numeric_event_runtime::{
+    EventState, bind_event, close_event, event_bridge, event_function,
+};
 use crate::numeric_label::{NumericFrame, NumericLabelOptions};
 use crate::numeric_label_runtime::{LabelState, bind_label, label_function, read_frame};
 use crate::numeric_lvgl::NumericLvglCoreOptions;
-use crate::numeric_profile::{NumericProfile, prepare_numeric_graph_with_label};
+use crate::numeric_profile::{NumericProfile, prepare_numeric_graph_with_event};
 use crate::numeric_wasi::{NumericWasiOptions, NumericWasiOutput, NumericWasiService, WasiState};
 use wasmtime::{Caller, Extern, ExternType, Func, Instance, Store, TypedFunc, Val};
 
+#[cfg(test)]
+#[path = "numeric_event_test.rs"]
+mod numeric_event_test;
 #[cfg(test)]
 #[path = "numeric_label_test.rs"]
 mod numeric_label_test;
@@ -117,6 +124,7 @@ pub(crate) struct HostState {
     pub(crate) exit_code: Option<u32>,
     pub(crate) wasi: Option<WasiState>,
     pub(crate) label: Option<LabelState>,
+    pub(crate) event: Option<EventState>,
 }
 impl HostState {
     pub(crate) fn poison(&mut self, message: String) -> String {
@@ -129,6 +137,7 @@ impl HostState {
 
 fn release_hosts(store: &mut Store<HostState>) -> Vec<String> {
     let mut failures = Vec::new();
+    store.data_mut().event = None;
     store.data_mut().label = None;
     if let Some(wasi) = &mut store.data_mut().wasi {
         for slot in &mut wasi.slots {
@@ -207,6 +216,17 @@ type LvglShutdownObservations = Option<Vec<(String, Option<i32>)>>;
 #[cfg(test)]
 thread_local! {
     static LVGL_SHUTDOWN_OBSERVATIONS: std::cell::RefCell<LvglShutdownObservations> = const { std::cell::RefCell::new(None) };
+    static EVENT_OBSERVATIONS: std::cell::RefCell<Option<Vec<&'static str>>> = const { std::cell::RefCell::new(None) };
+    static EVENT_BOUNDARY_OBSERVATIONS: std::cell::RefCell<Option<Vec<(bool, bool)>>> = const { std::cell::RefCell::new(None) };
+}
+
+#[cfg(test)]
+pub(crate) fn observe_event(name: &'static str) {
+    EVENT_OBSERVATIONS.with(|state| {
+        if let Some(records) = state.borrow_mut().as_mut() {
+            records.push(name);
+        }
+    });
 }
 
 #[cfg(test)]
@@ -249,16 +269,42 @@ fn close_wasi_slot(store: &mut Store<HostState>, slot: Option<usize>) {
     }
 }
 
+fn close_event_checked(store: &mut Store<HostState>) -> Result<(), String> {
+    let outcome = catch_unwind(AssertUnwindSafe(|| close_event(&mut *store)));
+    if let Some(message) = store.data().failure.clone() {
+        if let Err(panic) = outcome {
+            let _ = panic_message(panic);
+        }
+        return Err(message);
+    }
+    match outcome {
+        Ok(result) => result,
+        Err(panic) => Err(store.data_mut().poison(panic_message(panic))),
+    }
+}
+
 fn rollback(
     store: &mut Store<HostState>,
     initialized: &mut Vec<LiveModule>,
     failure: &mut NumericEnvironmentError,
 ) {
     while let Some(previous) = initialized.last() {
+        #[cfg(test)]
+        if previous.close_name == "lvw_shutdown" {
+            EVENT_BOUNDARY_OBSERVATIONS.with(|state| {
+                if let Some(records) = state.borrow_mut().as_mut() {
+                    records.push((store.data().label.is_none(), store.data().event.is_none()));
+                }
+            });
+        }
         match call0(store, &previous.close) {
             Ok(0) => {
                 #[cfg(test)]
                 observe_lvgl_shutdown(store, previous);
+                #[cfg(test)]
+                if previous.close_name == "lvw_shutdown" {
+                    observe_event("core_shutdown");
+                }
                 close_wasi_slot(store, previous.wasi_slot);
                 initialized.pop();
             }
@@ -382,8 +428,21 @@ impl NumericEnvironment {
             let result = call0(self.store.as_mut().expect("closing store"), &module.close);
             match result {
                 Ok(0) => {
+                    #[cfg(test)]
+                    observe_lvgl_shutdown(self.store.as_mut().expect("closing store"), module);
+                    #[cfg(test)]
                     if module.is_app {
-                        self.store.as_mut().expect("closing store").data_mut().label = None;
+                        observe_event("app_close");
+                    } else if module.close_name == "lvw_shutdown" {
+                        observe_event("core_shutdown");
+                    }
+                    if module.is_app {
+                        let store = self.store.as_mut().expect("closing store");
+                        if let Err(message) = close_event_checked(store) {
+                            return Err(self.poison(message));
+                        }
+                        store.data_mut().event = None;
+                        store.data_mut().label = None;
                     }
                     close_wasi_slot(
                         self.store.as_mut().expect("closing store"),
@@ -541,6 +600,7 @@ pub fn load_lvgl_core_environment(
         LvglAdapters {
             core: Some(lvgl),
             label: None,
+            event: None,
         },
     )
 }
@@ -569,6 +629,41 @@ pub fn load_lvgl_label_environment(
         LvglAdapters {
             core: Some(lvgl),
             label: Some(label),
+            event: None,
+        },
+    )
+}
+
+/// Load a trusted LVGL core and app with synchronous clicked event callbacks.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "The trusted providers and output sink are configured explicitly."
+)]
+pub fn load_lvgl_event_environment(
+    input: &ModuleManifestInput<'_>,
+    profile: &NumericProfile,
+    allowed: &[&str],
+    factories: &mut [NumericHostBinding<'_>],
+    lvgl: &NumericLvglCoreOptions,
+    label: &NumericLabelOptions,
+    event: &NumericEventOptions,
+    wasi: Option<(&NumericWasiOptions, Box<dyn NumericWasiOutput>)>,
+) -> Result<NumericEnvironment, NumericEnvironmentError> {
+    let (wasi, output) = match wasi {
+        Some((wasi, output)) => (Some(wasi), Some(output)),
+        None => (None, None),
+    };
+    load_with_output(
+        input,
+        profile,
+        allowed,
+        factories,
+        wasi,
+        output,
+        LvglAdapters {
+            core: Some(lvgl),
+            label: Some(label),
+            event: Some(event),
         },
     )
 }
@@ -577,6 +672,7 @@ pub fn load_lvgl_label_environment(
 struct LvglAdapters<'a> {
     core: Option<&'a NumericLvglCoreOptions>,
     label: Option<&'a NumericLabelOptions>,
+    event: Option<&'a NumericEventOptions>,
 }
 
 fn load_with_output(
@@ -624,8 +720,10 @@ fn load_numeric_environment_internal(
 ) -> Result<NumericEnvironment, NumericEnvironmentError> {
     let lvgl = adapters.core;
     let label = adapters.label;
-    let prepared = prepare_numeric_graph_with_label(input, profile, allowed, wasi, lvgl, label)
-        .map_err(|error| numeric_error(error.to_string()))?;
+    let event = adapters.event;
+    let prepared =
+        prepare_numeric_graph_with_event(input, profile, allowed, wasi, lvgl, label, event)
+            .map_err(|error| numeric_error(error.to_string()))?;
     let (prepared, engine, compiled, profile) = prepared.into_parts();
     let mut factory_indices = HashMap::new();
     for (index, binding) in factories.iter().enumerate() {
@@ -750,23 +848,36 @@ fn load_numeric_environment_internal(
                         let ExternType::Func(ty) = item.ty() else {
                             return Err(numeric_error("label import is not a function"));
                         };
-                        label_function(&mut store, ty, export).map_err(numeric_error)?
+                        if event.is_some()
+                            && !matches!(
+                                export,
+                                "lv_screen_active" | "lv_label_create" | "lv_label_set_text"
+                            )
+                        {
+                            event_function(&mut store, ty, export).map_err(numeric_error)?
+                        } else {
+                            label_function(&mut store, ty, export).map_err(numeric_error)?
+                        }
                     } else if lvgl.is_some_and(|lvgl| provider == lvgl.id) {
                         let ExternType::Func(ty) = item.ty() else {
                             return Err(numeric_error("LVGL import is not a function"));
                         };
-                        let name = export.to_owned();
-                        Func::try_new(
-                            &mut store,
-                            ty,
-                            move |mut caller: Caller<'_, HostState>, _, _| {
-                                let message = caller
-                                    .data_mut()
-                                    .poison(format!("unsupported LVGL callback {name:?}"));
-                                Err(wasmtime::Error::msg(message))
-                            },
-                        )
-                        .map_err(|error| numeric_error(error.to_string()))?
+                        if event.is_some() && export == "event" {
+                            event_bridge(&mut store, ty).map_err(numeric_error)?
+                        } else {
+                            let name = export.to_owned();
+                            Func::try_new(
+                                &mut store,
+                                ty,
+                                move |mut caller: Caller<'_, HostState>, _, _| {
+                                    let message = caller
+                                        .data_mut()
+                                        .poison(format!("unsupported LVGL callback {name:?}"));
+                                    Err(wasmtime::Error::msg(message))
+                                },
+                            )
+                            .map_err(|error| numeric_error(error.to_string()))?
+                        }
                     } else if wasi.is_some_and(|wasi| provider == wasi.id) {
                         let ExternType::Func(ty) = item.ty() else {
                             return Err(numeric_error("numeric WASI import is not a function"));
@@ -866,6 +977,13 @@ fn load_numeric_environment_internal(
                         bind_label(&mut store, core, memory, label).map_err(numeric_error)?;
                     store.data_mut().label =
                         Some(state.ok_or_else(|| numeric_error("label display creation failed"))?);
+                    if let Some(event) = event {
+                        let state =
+                            bind_event(&mut store, core, instance, event).map_err(numeric_error)?;
+                        store.data_mut().event = Some(state.ok_or_else(|| {
+                            numeric_error("LVGL clicked event code is unavailable")
+                        })?);
+                    }
                 }
                 rollback_permitted = false;
                 if let Some(initialize) = initialize {
@@ -886,6 +1004,13 @@ fn load_numeric_environment_internal(
                     let mut failure =
                         numeric_error(format!("{id:?}: {init_name} returned {status}"));
                     if app_function.is_some() {
+                        if let Err(message) = close_event_checked(&mut store) {
+                            failure.cleanup_errors.push(message);
+                            failure.exit_code = store.data().exit_code;
+                            close_wasi_slot(&mut store, wasi_slot);
+                            return Err(failure);
+                        }
+                        store.data_mut().event = None;
                         store.data_mut().label = None;
                     }
                     close_wasi_slot(&mut store, wasi_slot);
@@ -927,6 +1052,8 @@ fn load_numeric_environment_internal(
         }),
         Err(mut failure) => {
             if rollback_permitted && store.data().failure.is_none() {
+                store.data_mut().event = None;
+                store.data_mut().label = None;
                 close_wasi_slot(&mut store, pending_wasi_slot);
                 rollback(&mut store, &mut initialized, &mut failure);
             }

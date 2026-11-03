@@ -20,13 +20,13 @@ fn graph_bytes() -> Vec<u8> {
     read_bounded("LVW_TEST_LABEL_GRAPH", 256 * 1024 * 1024)
 }
 
-struct Fixture {
-    modules: Vec<(ModuleManifest, Vec<u8>)>,
-    hosts: Vec<ModuleHostProvider>,
-    profile: NumericProfile,
+pub(super) struct Fixture {
+    pub(super) modules: Vec<(ModuleManifest, Vec<u8>)>,
+    pub(super) hosts: Vec<ModuleHostProvider>,
+    pub(super) profile: NumericProfile,
 }
 impl Fixture {
-    fn input(&self) -> ModuleManifestInput<'_> {
+    pub(super) fn input(&self) -> ModuleManifestInput<'_> {
         ModuleManifestInput {
             modules: self
                 .modules
@@ -39,7 +39,7 @@ impl Fixture {
             hosts: self.hosts.clone(),
         }
     }
-    fn replace(&mut self, id: &str, bytes: Vec<u8>) {
+    pub(super) fn replace(&mut self, id: &str, bytes: Vec<u8>) {
         let hash = format!("{:x}", Sha256::digest(&bytes));
         let (manifest, original) = self
             .modules
@@ -79,7 +79,7 @@ fn hex(value: &str) -> Vec<u8> {
         })
         .collect()
 }
-fn graph(bytes: &[u8], name: &str) -> Fixture {
+pub(super) fn graph(bytes: &[u8], name: &str) -> Fixture {
     let cases: Value = serde_json::from_slice(bytes).unwrap();
     let value = case(&cases, name);
     let input = &value["input"];
@@ -210,7 +210,7 @@ fn graph(bytes: &[u8], name: &str) -> Fixture {
         profile,
     }
 }
-fn verify_real_core(graph: &Fixture) {
+pub(super) fn verify_real_core(graph: &Fixture) {
     let core = read_bounded("LVW_TEST_LVGL_CORE", 64 * 1024 * 1024);
     let api = read_bounded("LVW_TEST_LVGL_API", 32 * 1024 * 1024);
     let proof = read_bounded("LVW_TEST_LVGL_PROOF", 1024 * 1024);
@@ -225,7 +225,7 @@ fn verify_real_core(graph: &Fixture) {
     );
     check_core_proof(&core, &api, &proof);
 }
-fn lvgl_options() -> NumericLvglCoreOptions {
+pub(super) fn lvgl_options() -> NumericLvglCoreOptions {
     NumericLvglCoreOptions {
         module: "lvcore".into(),
         id: "host.lvw".into(),
@@ -233,7 +233,7 @@ fn lvgl_options() -> NumericLvglCoreOptions {
         abi_version: 1,
     }
 }
-fn features() -> Vec<&'static str> {
+pub(super) fn features() -> Vec<&'static str> {
     vec![
         "bulk-memory",
         "reference-types",
@@ -242,7 +242,7 @@ fn features() -> Vec<&'static str> {
         "exceptions",
     ]
 }
-fn wasi_options() -> NumericWasiOptions {
+pub(super) fn wasi_options() -> NumericWasiOptions {
     use NumericWasiService::*;
     NumericWasiOptions {
         id: "host.wasi".into(),
@@ -267,10 +267,10 @@ fn wasi_options() -> NumericWasiOptions {
     }
 }
 #[derive(Clone, Default)]
-struct Trace {
-    events: Arc<Mutex<Vec<String>>>,
+pub(super) struct Trace {
+    pub(super) events: Arc<Mutex<Vec<String>>>,
 }
-struct TraceFactory(Trace);
+pub(super) struct TraceFactory(pub(super) Trace);
 struct TraceHost(Trace, String);
 impl NumericHostFactory for TraceFactory {
     fn create(
@@ -305,7 +305,7 @@ impl NumericWasiOutput for NoOutput {
     }
 }
 
-fn options(bytes: &[u8], name: &str) -> NumericLabelOptions {
+pub(super) fn options(bytes: &[u8], name: &str) -> NumericLabelOptions {
     let cases: Value = serde_json::from_slice(bytes).unwrap();
     let label = &case(&cases, name)["label"];
     let number = |key: &str| label[key].as_u64().unwrap().try_into().unwrap();
@@ -320,7 +320,7 @@ fn options(bytes: &[u8], name: &str) -> NumericLabelOptions {
 }
 
 // Test-only access to the same instance used by the adapter; no guest pointer escapes the test.
-fn core_text(environment: &mut NumericEnvironment) -> Vec<u8> {
+pub(super) fn core_text(environment: &mut NumericEnvironment) -> Vec<u8> {
     let instance = environment
         .initialized
         .iter()

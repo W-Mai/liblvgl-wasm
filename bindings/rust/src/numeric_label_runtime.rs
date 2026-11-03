@@ -43,7 +43,7 @@ pub(crate) struct LabelState {
     frame_get: TypedFunc<(i32, i32), i32>,
 }
 
-fn reserve_token() -> Result<u32, String> {
+pub(crate) fn reserve_token() -> Result<u32, String> {
     NEXT_LABEL_TOKEN
         .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |value| {
             (value <= u64::from(u32::MAX)).then_some(value + 1)
@@ -52,7 +52,7 @@ fn reserve_token() -> Result<u32, String> {
         .map_err(|_| "LVGL label tokens exhausted".into())
 }
 
-fn guest_call<P: WasmParams, R: WasmResults>(
+pub(crate) fn guest_call<P: WasmParams, R: WasmResults>(
     context: &mut impl AsContextMut<Data = HostState>,
     function: &TypedFunc<P, R>,
     params: P,
@@ -78,6 +78,25 @@ fn guest_call<P: WasmParams, R: WasmResults>(
             .data_mut()
             .poison(panic_message(panic))),
     }
+}
+
+pub(crate) fn label_active(caller: &Caller<'_, HostState>) -> bool {
+    caller
+        .data()
+        .label
+        .as_ref()
+        .is_none_or(|label| label.active)
+}
+
+pub(crate) fn event_target(caller: &Caller<'_, HostState>, token: i32) -> Result<i32, String> {
+    caller
+        .data()
+        .label
+        .as_ref()
+        .and_then(|label| label.handles.get(&(token as u32)))
+        .filter(|handle| handle.kind == Kind::Label)
+        .map(|handle| handle.pointer)
+        .ok_or_else(|| "invalid LVGL event target".to_owned())
 }
 
 /// Bind the app's memory and create a display in its already initialized core. A null display is a recoverable status failure.

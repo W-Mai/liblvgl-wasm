@@ -96,6 +96,12 @@ LVW_TEST_LVGL_CORE="$root/target/wasm/liblvgl-bounded.wasm" \
     CARGO_TARGET_DIR="$root/target/rust" \
     cargo test --manifest-path bindings/rust/Cargo.toml --locked --lib \
         numeric_label_test -- --ignored
+LVW_TEST_LVGL_CORE="$root/target/wasm/liblvgl-bounded.wasm" \
+    LVW_TEST_LVGL_API="$root/target/wasm/api.json" \
+    LVW_TEST_LVGL_PROOF="$root/target/wasm/api-verification-bounded.json" \
+    CARGO_TARGET_DIR="$root/target/rust" \
+    cargo test --manifest-path bindings/rust/Cargo.toml --locked --lib \
+        numeric_event_test -- --ignored --test-threads=2
 facts_tmp=$(mktemp -d "$root/target/.wasm-facts.XXXXXX")
 for module in target/wasm/liblvgl.wasm target/apps/c/app.wasm
 do

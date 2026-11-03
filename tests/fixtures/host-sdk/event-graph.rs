@@ -3,8 +3,8 @@
 mod fixture;
 
 use liblvgl_wasm_host::{
-    ManifestCheck, NumericEventOptions, NumericPreflightError, WasmCheck,
-    preflight_lvgl_event_graph,
+    ManifestCheck, NumericEnvironmentState, NumericEventOptions, NumericPreflightError, WasmCheck,
+    load_lvgl_event_environment, preflight_lvgl_event_graph,
 };
 use serde_json::Value;
 use sha2::{Digest, Sha256};
@@ -78,4 +78,59 @@ fn main() {
         ),
         Err(NumericPreflightError::Numeric(message)) if message.contains("invalid LVGL event options")
     ));
+
+    let output = fixture::lvgl_fixture::wasi_fixture::Writes::default();
+    let mut first = load_lvgl_event_environment(
+        &input,
+        &graph.profile,
+        &features,
+        &mut [],
+        &lvgl,
+        &label,
+        &event,
+        Some((&wasi, Box::new(output.clone()))),
+    )
+    .unwrap();
+    let mut second = load_lvgl_event_environment(
+        &input,
+        &graph.profile,
+        &features,
+        &mut [],
+        &lvgl,
+        &label,
+        &event,
+        Some((&wasi, Box::new(output.clone()))),
+    )
+    .unwrap();
+    assert_ne!(first.run(0).unwrap(), second.run(0).unwrap());
+    let initial = first.read_frame().unwrap();
+    let other = second.read_frame().unwrap();
+    assert_eq!(initial.rgba, other.rgba);
+    assert_eq!(first.run(1).unwrap(), 2);
+    assert_eq!(first.run(4).unwrap(), 1);
+    assert_eq!(
+        (
+            first.run(5).unwrap(),
+            first.run(6).unwrap(),
+            first.run(7).unwrap(),
+            first.run(8).unwrap()
+        ),
+        (11, 12, 22, 21)
+    );
+    let updated = first.read_frame().unwrap();
+    assert_ne!(initial.rgba, updated.rgba);
+    assert_eq!(second.read_frame().unwrap().rgba, other.rgba);
+    assert_eq!(first.run(2).unwrap(), 1);
+    assert_eq!(first.run(3).unwrap(), 2);
+    assert_eq!(second.run(9).unwrap(), 2);
+    assert_eq!(second.run(3).unwrap(), 2);
+    assert_ne!(second.read_frame().unwrap().rgba, other.rgba);
+    assert_eq!(first.read_frame().unwrap().rgba, updated.rgba);
+    let copy = updated.rgba.clone();
+    first.close().unwrap();
+    assert_eq!(first.state(), NumericEnvironmentState::Closed);
+    second.close().unwrap();
+    assert_eq!(second.state(), NumericEnvironmentState::Closed);
+    assert_eq!(updated.rgba, copy);
+    assert!(output.messages().is_empty());
 }

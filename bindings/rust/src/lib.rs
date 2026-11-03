@@ -59,7 +59,8 @@ mod numeric_environment;
 pub use numeric_environment::{
     NumericEnvironment, NumericEnvironmentError, NumericEnvironmentId, NumericEnvironmentState,
     NumericHostBinding, NumericHostFactory, NumericHostInstance, load_lvgl_core_environment,
-    load_lvgl_label_environment, load_numeric_environment, load_numeric_environment_with_wasi,
+    load_lvgl_event_environment, load_lvgl_label_environment, load_numeric_environment,
+    load_numeric_environment_with_wasi,
 };
 mod numeric_lvgl;
 pub use numeric_lvgl::NumericLvglCoreOptions;
@@ -67,6 +68,7 @@ mod numeric_label;
 pub use numeric_label::{NumericFrame, NumericLabelOptions};
 mod numeric_event;
 pub use numeric_event::NumericEventOptions;
+mod numeric_event_runtime;
 mod numeric_label_runtime;
 mod numeric_wasi;
 pub use numeric_wasi::{
