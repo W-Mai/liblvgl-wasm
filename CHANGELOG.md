@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+- Static Rust module manifest identity and interface validation.
 - Bounded Wasm declaration facts for the Rust host.
 - Bounded Rust module graph validation and provider-first ordering.
 - Synchronous clicked-event callbacks for isolated LVGL applications.

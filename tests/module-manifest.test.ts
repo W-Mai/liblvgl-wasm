@@ -1,6 +1,28 @@
 import { createHash } from "node:crypto";
 import { expect, test } from "bun:test";
 import { validateModuleManifests } from "../bindings/typescript/src/index.ts";
+import { prepareModuleManifests, type ModuleManifestInput } from "../bindings/typescript/src/module-manifest.ts";
+import sharedCases from "./fixtures/module-manifest/cases.json";
+
+for (const fixture of sharedCases) {
+  test(`shared manifest: ${fixture.name}`, () => {
+    const value = structuredClone(fixture.input);
+    const modules = value.modules.map(({ manifest, hex }) => ({
+      manifest,
+      bytes: Uint8Array.from(hex.match(/../g) ?? [], (pair) => Number.parseInt(pair, 16)),
+    }));
+    const input = { modules, hosts: value.hosts } as unknown as ModuleManifestInput;
+    if (fixture.accepted) {
+      const result = prepareModuleManifests(input);
+      expect(result.order).toEqual(modules.length === 1 ? ["app"] : ["core", "widgets", "app"]);
+      for (const record of result.modules) expect(record.facts.sha256).toBe(record.manifest.artifact.sha256);
+    } else expect(() => prepareModuleManifests(input)).toThrow();
+    if (fixture.engineValid !== undefined) {
+      const binary = fixture.engineValid ? modules : modules.filter((item) => item.manifest.id === "core");
+      for (const item of binary) expect(WebAssembly.validate(item.bytes)).toBe(fixture.engineValid);
+    }
+  });
+}
 
 const leb = (value: number): number[] => {
   const out: number[] = [];
@@ -101,6 +123,63 @@ function fixture(duplicate = false): any {
 
 const validate = (value: any) => validateModuleManifests(value);
 const byId = (value: any, id: string) => value.modules.find((item: any) => item.manifest.id === id);
+
+function budgetFixture(id = "app", bytes = wasm()): any {
+  return {
+    manifest: { schema_version: 1, kind: "wasm-module", id, role: "app", artifact: { path: "app.wasm", sha256: hash(bytes) },
+      target: { abi: "wasip1", features: [] }, interface: { name: "app", version: 1 }, memory_model: "isolated",
+      requires: [], exports: [], runtime_verification: "not-run" },
+    bytes,
+  };
+}
+
+test("static manifest budgets count providers, entries and UTF-16 units", () => {
+  const input: any = { modules: [budgetFixture()], hosts: Array.from({ length: 255 }, (_, i) => ({ id: `host.${i}`, interface: { name: "h", version: 1 }, exports: [] })) };
+  expect(prepareModuleManifests(input).order).toEqual(["app"]);
+  input.hosts.push({ id: "host.extra", interface: { name: "h", version: 1 }, exports: [] });
+  expect(() => prepareModuleManifests(input)).toThrow("manifest inspection limit: providers");
+  input.hosts = [{ id: "h", interface: { name: "h", version: 1 }, exports: [] }];
+  input.modules[0].manifest.requires = Array.from({ length: 99_998 }, () => ({ provider: "h", interface: "h", version: 1, imports: [] }));
+  expect(prepareModuleManifests(input).order).toEqual(["app"]);
+  input.modules[0].manifest.requires.push({ provider: "h", interface: "h", version: 1, imports: [] });
+  expect(() => prepareModuleManifests(input)).toThrow("manifest inspection limit: entries");
+  input.hosts = [];
+  input.modules[0].manifest.requires = [];
+  input.modules[0].manifest.artifact.path = "😀".repeat(2_097_117);
+  expect(prepareModuleManifests(input).order).toEqual(["app"]);
+  input.modules[0].manifest.artifact.path += "a";
+  expect(() => prepareModuleManifests(input)).toThrow("manifest inspection limit: string units");
+}, 30_000);
+
+test("static manifest facts budget is separate from declaration budget", () => {
+  const types = (count: number) => wasm(section(1, [...leb(count), ...Array.from({ length: count }, () => [0x60, 0, 0]).flat()]));
+  const bytes = types(50_000), first = budgetFixture("first", bytes), app = budgetFixture("app", bytes);
+  first.manifest.role = "lib";
+  const input = { modules: [first, app], hosts: [] };
+  expect(prepareModuleManifests(input).order).toEqual(["first", "app"]);
+  const second = budgetFixture("second", types(1));
+  second.manifest.role = "lib";
+  input.modules.push(second);
+  expect(() => prepareModuleManifests(input)).toThrow("manifest inspection limit: total Wasm facts");
+}, 30_000);
+
+test("static manifest byte limits apply per module and across the graph", () => {
+  const size = 64 * 1024 * 1024, bytes = new Uint8Array(size);
+  bytes.set([0, 97, 115, 109, 1, 0, 0, 0]);
+  let payload = size - 9;
+  while (payload + leb(payload).length !== size - 9) payload--;
+  bytes.set([0, ...leb(payload), 0], 8);
+  const first = budgetFixture("first", bytes), app = budgetFixture("app", bytes);
+  first.manifest.role = "lib";
+  const input = { modules: [first, app], hosts: [] };
+  expect(prepareModuleManifests(input).order).toEqual(["first", "app"]);
+  const second = budgetFixture("second");
+  second.manifest.role = "lib";
+  input.modules.push(second);
+  expect(() => prepareModuleManifests(input)).toThrow("Manifest inspection limit: total bytes");
+  app.bytes = new Uint8Array(size + 1);
+  expect(() => prepareModuleManifests({ modules: [app], hosts: [] })).toThrow("Wasm facts inspection limit: input bytes");
+}, 30_000);
 
 test("actual binaries bind an app, a library DAG and host without running a start function", () => {
   const input = fixture();

@@ -23,6 +23,13 @@ mod module_graph;
 pub use module_graph::{
     ModuleDeclaration, ModuleGraph, ModuleGraphError, ModuleRole, order_module_graph,
 };
+mod module_manifest;
+pub use module_manifest::{
+    ManifestCheck, ManifestRequirement, ModuleArtifact, ModuleArtifactInput, ModuleExport,
+    ModuleExternalType, ModuleHostProvider, ModuleImport, ModuleInterface, ModuleManifest,
+    ModuleManifestChecks, ModuleManifestError, ModuleManifestInput, ModuleManifestModuleReport,
+    ModuleManifestReport, ModuleTarget, inspect_module_manifests,
+};
 mod wasm_facts;
 pub use wasm_facts::{
     WASM_FACTS_MAX_INPUT_BYTES, WASM_FACTS_MAX_NAME_BYTES, WASM_FACTS_MAX_SECTIONS,

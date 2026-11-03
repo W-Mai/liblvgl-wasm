@@ -558,6 +558,8 @@ liblvgl-wasm-host = { path = "/path/to/liblvgl-wasm/bindings/rust" }
 
 `inspect_wasm_facts` reads the declaration sections of a private Wasm byte snapshot and returns its SHA-256, imports, exports, indexed resources and start function. Repeated imports and unexported resources remain visible. The reader limits input to 64 MiB, cumulative vector elements to 50,000, names to 4 MiB and sections to 4,096. Code, element and data payloads are not examined. Validation, feature detection and ABI detection are not run; the result does not authorize loading.
 
+`inspect_module_manifests` checks a typed module graph against private Wasm snapshots. It verifies artifact hashes, complete import and export declarations, provider interfaces and static resource limits. It accepts at most 256 providers and 128 MiB of Wasm, with separate limits of 100,000 declaration entries and Wasm facts and 4 Mi UTF-16 declaration units. Its report exposes read-only checks and facts; engine compilation, features, ABI, memory isolation, host implementation and runtime are not checked. A matching hash establishes consistency with the declared bytes, not publisher identity or permission to load.
+
 ```rust
 use liblvgl_wasm_host::{Result, Runtime, UnsafePointer, values};
 

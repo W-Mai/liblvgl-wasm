@@ -70,6 +70,10 @@ do
         LVW_TEST_WASM_FACTS_REAL_REFERENCE="$facts_tmp/reference.json" \
         CARGO_TARGET_DIR="$root/target/rust" \
         cargo test --manifest-path bindings/rust/Cargo.toml --locked --test wasm_facts real_wasm_fact_comparison
+    bun tests/fixtures/module-manifest/real.ts "$module" "$facts_tmp/manifest.json"
+    LVW_TEST_MODULE_MANIFEST_REAL="$facts_tmp/manifest.json" \
+        CARGO_TARGET_DIR="$root/target/rust" \
+        cargo test --manifest-path bindings/rust/Cargo.toml --locked --test module_manifest real_manifest_case
 done
 rm -rf "$facts_tmp"
 trap - EXIT
