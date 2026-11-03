@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+- Trusted numeric module graph preflight and resource limits.
 - Wasmtime compilation checks for authorized module graph features.
 - Rust module graph inspection with feature, WASI and resource topology checks.
 - Native Rust Wasm feature validation with an explicit host allowlist.

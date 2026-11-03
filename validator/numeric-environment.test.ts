@@ -2,6 +2,8 @@ import { createHash } from "node:crypto";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { afterEach, expect, test as bunTest } from "bun:test";
 import { loadNumericEnvironment as loadEnvironment } from "../target/validator/feature-validator.js";
+import { prepareModuleManifests } from "../bindings/typescript/src/module-manifest.ts";
+import { compileNumericModules, prepareNumericProfile } from "../bindings/typescript/src/numeric-environment.ts";
 
 type Operation = { controller: AbortController; promise: ReturnType<typeof loadEnvironment> };
 type Environment = Awaited<ReturnType<typeof loadEnvironment>>;
@@ -304,6 +306,24 @@ test("unapproved business functions and lifecycle imports fail before host creat
 });
 
 function numericRead() { return { name: read.name, params: read.params, results: read.results }; }
+
+test("shared numeric preflight checks real graphs without creating a host or instance", async () => {
+  const cases = await Bun.file("target/validator/numeric-preflight.json").json() as any[];
+  expect(cases.length).toBeGreaterThan(15);
+  for (const item of cases) {
+    let factories = 0;
+    const input = { ...item.input, modules: item.input.modules.map((module: any) => ({
+      manifest: module.manifest, bytes: new Uint8Array(Buffer.from(module.hex, "hex")),
+    })) };
+    const options = { profile: "numeric-v1", modules: item.profile.modules,
+      hosts: item.profile.hosts.map((host: any) => ({ ...host, create: () => { factories++; throw new Error("factory must not run"); } })),
+      ...item.profile.limits, allowedFeatures: item.allowedFeatures, startupTimeoutMs: 30_000, executionTimeoutMs: 30_000 };
+    const check = () => { const graph = prepareModuleManifests(input); prepareNumericProfile(graph, options); compileNumericModules(graph); };
+    if (item.pass) expect(check, item.name).not.toThrow();
+    else expect(check, item.name).toThrow(item.error);
+    expect(factories, item.name).toBe(0);
+  }
+});
 
 test("unsupported numeric boundaries fail before any host factory or guest code", async () => {
   for (const variant of ["wasi", "start", "memory-import", "table-import", "unbounded", "f32", "v128", "import-init"]) {

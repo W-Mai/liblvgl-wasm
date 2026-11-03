@@ -550,6 +550,7 @@ fn snapshot_inputs<'a>(input: &'a ModuleManifestInput<'a>) -> Result<SnapshotInp
 pub(crate) struct PreparedModuleGraph<'a> {
     pub(crate) order: Vec<String>,
     pub(crate) modules: Vec<SnapshotModule<'a>>,
+    pub(crate) hosts: &'a [ModuleHostProvider],
 }
 
 pub(crate) fn prepare_module_manifests<'a>(
@@ -759,6 +760,7 @@ pub(crate) fn prepare_module_manifests<'a>(
     Ok(PreparedModuleGraph {
         order: snapshots.order,
         modules: snapshots.modules,
+        hosts: snapshots.hosts,
     })
 }
 

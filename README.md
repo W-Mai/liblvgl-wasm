@@ -570,6 +570,8 @@ liblvgl-wasm-host = { path = "/path/to/liblvgl-wasm/bindings/rust" }
 
 `compile_feature_module_graph` applies the same checks and compiles the snapshots with Wasmtime using their authorized feature declarations. It does not instantiate or execute modules. Compilation is synchronous without an execution deadline or CPU and memory limits; the report does not authorize loading.
 
+`preflight_numeric_graph` checks one app and its library graph against trusted module and host contracts, bounded memory and table limits, and i32 function signatures. It compiles the checked snapshots without instantiating them; WASI imports and cross-module pointers or callbacks are not supported. Wasm i32 types cannot distinguish numeric values from pointers or handles, so trusted contracts must authorize numeric semantics only. The report does not authorize execution.
+
 ```rust
 use liblvgl_wasm_host::{Result, Runtime, UnsafePointer, values};
 

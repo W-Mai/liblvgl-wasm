@@ -159,11 +159,24 @@ impl fmt::Display for FeatureModuleGraphError {
 impl std::error::Error for FeatureModuleGraphError {}
 
 /// Inspect a graph on private snapshots with a trusted host feature allowlist. Native feature validation is synchronous without CPU, memory, or time limits; the report does not authorize execution.
+pub(crate) struct FeaturePreparedGraph<'a> {
+    prepared: PreparedModuleGraph<'a>,
+    report: FeatureModuleGraphReport,
+    mask: u32,
+}
+
 fn prepare_feature_module_graph<'a>(
     input: &'a ModuleManifestInput<'a>,
     allowed: &[&str],
-) -> Result<(PreparedModuleGraph<'a>, FeatureModuleGraphReport, u32), FeatureModuleGraphError> {
+) -> Result<FeaturePreparedGraph<'a>, FeatureModuleGraphError> {
     let prepared = prepare_module_manifests(input).map_err(FeatureModuleGraphError::Manifest)?;
+    check_prepared_feature_graph(prepared, allowed)
+}
+
+pub(crate) fn check_prepared_feature_graph<'a>(
+    prepared: PreparedModuleGraph<'a>,
+    allowed: &[&str],
+) -> Result<FeaturePreparedGraph<'a>, FeatureModuleGraphError> {
     feature_mask(&[], allowed).map_err(FeatureModuleGraphError::Policy)?;
     let mut allowed_snapshot = Vec::new();
     allowed_snapshot
@@ -263,7 +276,11 @@ fn prepare_feature_module_graph<'a>(
         order: prepared.order.clone(),
         modules: reports,
     };
-    Ok((prepared, report, union_mask))
+    Ok(FeaturePreparedGraph {
+        prepared,
+        report,
+        mask: union_mask,
+    })
 }
 
 /// Inspect a graph on private snapshots with a trusted host feature allowlist. Native feature validation is synchronous without CPU, memory, or time limits; the report does not authorize execution.
@@ -271,8 +288,7 @@ pub fn inspect_feature_module_graph(
     input: &ModuleManifestInput<'_>,
     allowed: &[&str],
 ) -> Result<FeatureModuleGraphReport, FeatureModuleGraphError> {
-    let (_, report, _) = prepare_feature_module_graph(input, allowed)?;
-    Ok(report)
+    Ok(prepare_feature_module_graph(input, allowed)?.report)
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -395,8 +411,28 @@ pub fn compile_feature_module_graph(
     input: &ModuleManifestInput<'_>,
     allowed: &[&str],
 ) -> Result<CompiledModuleGraphReport, CompiledModuleGraphError> {
-    let (prepared, report, mask) =
+    let prepared =
         prepare_feature_module_graph(input, allowed).map_err(CompiledModuleGraphError::Precheck)?;
+    let (_, _, _, report) = compile_prepared_feature_graph(prepared)?;
+    Ok(report)
+}
+
+pub(crate) fn compile_prepared_feature_graph<'a>(
+    checked: FeaturePreparedGraph<'a>,
+) -> Result<
+    (
+        PreparedModuleGraph<'a>,
+        wasmtime::Engine,
+        Vec<wasmtime::Module>,
+        CompiledModuleGraphReport,
+    ),
+    CompiledModuleGraphError,
+> {
+    let FeaturePreparedGraph {
+        prepared,
+        report,
+        mask,
+    } = checked;
     let features = lvw_feature_validator::policy_features(mask)
         .map_err(|_| CompiledModuleGraphError::InvalidPolicy)?;
     let mut config = wasmtime::Config::new();
@@ -428,8 +464,9 @@ pub fn compile_feature_module_graph(
         };
         modules.push(CompiledModuleGraphModuleReport { precheck, checks });
     }
-    Ok(CompiledModuleGraphReport {
+    let compiled_report = CompiledModuleGraphReport {
         order: report.order,
         modules,
-    })
+    };
+    Ok((prepared, engine, compiled, compiled_report))
 }

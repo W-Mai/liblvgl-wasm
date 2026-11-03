@@ -2,10 +2,11 @@ use liblvgl_wasm_host::{
     FEATURE_POLICY, FEATURE_POLICY_VERSION, FeatureValidationCheck, IsolatedTopologyCheck,
     ManifestCheck, ManifestRequirement, ModuleArtifact, ModuleArtifactInput, ModuleDeclaration,
     ModuleExport, ModuleExternalType, ModuleGraph, ModuleHostProvider, ModuleImport,
-    ModuleInterface, ModuleManifest, ModuleManifestInput, ModuleRole, ModuleTarget, WasiEvidence,
-    WasmCheck, WasmExternal, WasmFacts, compile_feature_module_graph, inspect_feature_module_graph,
-    inspect_isolated_resources, inspect_module_manifests, inspect_wasi_preview1, inspect_wasm_facts,
-    order_module_graph, validate_wasm_features,
+    ModuleInterface, ModuleManifest, ModuleManifestInput, ModuleRole, ModuleTarget, NumericLimits,
+    NumericModuleContract, NumericProfile, WasiEvidence, WasmCheck, WasmExternal, WasmFacts,
+    WasmValueType, compile_feature_module_graph, inspect_feature_module_graph,
+    inspect_isolated_resources, inspect_module_manifests, inspect_wasi_preview1,
+    inspect_wasm_facts, order_module_graph, preflight_numeric_graph, validate_wasm_features,
 };
 use std::collections::BTreeMap;
 
@@ -129,8 +130,80 @@ fn inspect_real_graph(bytes: &[u8], facts: &WasmFacts, expected_sha: &str) {
         compile_allowed.iter().map(|name| (*name).into()).collect();
     let compiled = compile_feature_module_graph(&input, &compile_allowed).unwrap();
     assert_eq!(compiled.modules()[0].sha256(), expected_sha);
-    assert_eq!(compiled.modules()[0].checks().engine(), ManifestCheck::Passed);
+    assert_eq!(
+        compiled.modules()[0].checks().engine(),
+        ManifestCheck::Passed
+    );
     assert_eq!(compiled.modules()[0].checks().runtime(), WasmCheck::NotRun);
+}
+
+fn inspect_numeric_app() {
+    let bytes = b"\0asm\x01\0\0\0\x01\x0a\x02\x60\0\x01\x7f\x60\x01\x7f\x01\x7f\x03\x04\x03\0\0\x01\x07\x28\x03\x0bmodule_init\0\0\x0cmodule_close\0\x01\x07app_run\0\x02\x0a\x10\x03\x04\0\x41\0\x0b\x04\0\x41\0\x0b\x04\0\x20\0\x0b";
+    let sha = "4a3e9d70863a133229e42715ce4c0d0cb22a831d6fdabc7d533f87980b62eb2f";
+    let interface = ModuleInterface {
+        name: "app".into(),
+        version: 1,
+    };
+    let exports = [("module_init", 0), ("module_close", 0), ("app_run", 1)]
+        .into_iter()
+        .map(|(name, count)| ModuleExport {
+            name: name.into(),
+            ty: ModuleExternalType::Function {
+                params: vec![WasmValueType::I32; count],
+                results: vec![WasmValueType::I32],
+            },
+        })
+        .collect();
+    let input = ModuleManifestInput {
+        modules: vec![ModuleArtifactInput {
+            manifest: ModuleManifest {
+                schema_version: 1,
+                kind: "wasm-module".into(),
+                id: "app".into(),
+                role: ModuleRole::App,
+                artifact: ModuleArtifact {
+                    path: "app.wasm".into(),
+                    sha256: sha.into(),
+                },
+                target: ModuleTarget {
+                    abi: "wasip1".into(),
+                    features: Vec::new(),
+                },
+                interface: interface.clone(),
+                memory_model: "isolated".into(),
+                requires: Vec::new(),
+                exports,
+                runtime_verification: "not-run".into(),
+            },
+            bytes,
+        }],
+        hosts: Vec::new(),
+    };
+    let profile = NumericProfile {
+        modules: vec![NumericModuleContract {
+            id: "app".into(),
+            sha256: sha.into(),
+            interface,
+            exports: Vec::new(),
+        }],
+        hosts: Vec::new(),
+        limits: NumericLimits {
+            max_memory_pages: 0,
+            max_total_memory_pages: 0,
+            max_table_elements: 0,
+            max_total_table_elements: 0,
+        },
+    };
+    let result = preflight_numeric_graph(&input, &profile, &[]).unwrap();
+    assert_eq!(result.app_id(), "app");
+    assert_eq!(
+        result.graph().modules()[0].checks().engine(),
+        ManifestCheck::Passed
+    );
+    assert_eq!(
+        result.graph().modules()[0].checks().runtime(),
+        WasmCheck::NotRun
+    );
 }
 
 fn main() {
@@ -174,6 +247,7 @@ fn main() {
     assert_eq!(isolated.checks().engine(), WasmCheck::NotRun);
     assert_eq!(isolated.checks().wasi_abi(), WasmCheck::NotRun);
     inspect_real_graph(&bytes, &facts, &expected_sha);
+    inspect_numeric_app();
 
     let empty = b"\0asm\x01\0\0\0";
     let feature = validate_wasm_features(empty, &[], &[]).unwrap();

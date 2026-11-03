@@ -28,6 +28,7 @@ wasm-tools validate --features=wasm1,bulk-memory,reference-types,sign-extension 
 bun run test
 python3 -B validator/fixtures.py
 python3 -B validator/numeric-fixtures.py
+bun tests/fixtures/numeric-preflight/generate.ts
 python3 -B validator/wasi-numeric-fixtures.py
 python3 -B validator/lvgl-core-fixture.py
 python3 -B validator/lvgl-lifecycle-fixtures.py

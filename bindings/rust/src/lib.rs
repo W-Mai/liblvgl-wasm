@@ -48,6 +48,12 @@ pub use module_graph_check::{
     FeatureModuleGraphModuleReport, FeatureModuleGraphReport, compile_feature_module_graph,
     inspect_feature_module_graph,
 };
+mod numeric_profile;
+pub use numeric_profile::{
+    NumericFunctionContract, NumericHostContract, NumericLimits, NumericModuleContract,
+    NumericPreflightError, NumericPreflightReport, NumericProfile, NumericResult,
+    preflight_numeric_graph,
+};
 mod wasm_facts;
 pub use wasm_facts::{
     WASM_FACTS_MAX_INPUT_BYTES, WASM_FACTS_MAX_NAME_BYTES, WASM_FACTS_MAX_SECTIONS,
