@@ -1,6 +1,7 @@
 """Prepare the shared numeric graph for relocated Rust SDK consumers."""
 
 from pathlib import Path
+import json
 import os
 import shutil
 import subprocess
@@ -70,7 +71,7 @@ def reject_ndk_links(root):
             raise ValueError("label fixture NDK must not contain symbolic links")
 
 
-def prepare_label(directory, ndk):
+def prepare_label(directory, ndk, *, event=False):
     directory = Path(directory).resolve()
     ndk = Path(ndk).resolve(strict=True)
     target = (ROOT / "target/validator").resolve()
@@ -90,11 +91,13 @@ def prepare_label(directory, ndk):
         for path in paths:
             path.chmod(0o555 if path.is_dir() else 0o444 | (path.stat().st_mode & 0o111))
         try:
-            subprocess.run([sys.executable, "-B", str(ROOT / "validator/lvgl-label-fixture.py"),
+            fixture = "event" if event else "label"
+            subprocess.run([sys.executable, "-B", str(ROOT / f"validator/lvgl-{fixture}-fixture.py"),
                             "--ndk", str(copied_ndk), "--output", str(work / "app")], cwd=ROOT, check=True)
             subprocess.run(["bun", str(ROOT / "tests/fixtures/numeric-label/generate.ts"), "--real-only",
+                            *(["--event"] if event else []),
                             "--core", str(ROOT / "target/wasm/liblvgl-bounded.wasm"),
-                            "--app", str(work / "app/lvgl-label-app.wasm"),
+                            "--app", str(work / f"app/lvgl-{fixture}-app.wasm"),
                             "--api", str(ROOT / "target/wasm/api.json"),
                             "--proof", str(ROOT / "target/wasm/api-verification-bounded.json"),
                             "--output", str(output)], cwd=ROOT, check=True)
@@ -102,3 +105,23 @@ def prepare_label(directory, ndk):
             for path in paths:
                 path.chmod(0o755 if path.is_dir() else 0o644 | (path.stat().st_mode & 0o111))
     return output
+
+
+def prepare_event(directory, ndk):
+    return prepare_label(directory, ndk, event=True)
+
+
+def run_event_consumer(package, project, graph, environment):
+    consumer = Path(project) / "rust-event"
+    (consumer / "src").mkdir(parents=True)
+    shutil.copyfile(ROOT / "tests/fixtures/host-sdk/event-graph.rs", consumer / "src/main.rs")
+    install(consumer / "src")
+    (consumer / "Cargo.toml").write_text('[package]\nname="lvw-event-consumer"\n'
+        'version="0.1.0"\nedition="2024"\n[dependencies]\nliblvgl-wasm-host={path='
+        + json.dumps(str(Path(package) / "rust")) + '}\nserde_json="=1.0.151"\nsha2="=0.10.9"\n')
+    shutil.copyfile(Path(package) / "rust/Cargo.lock", consumer / "Cargo.lock")
+    manifest = consumer / "Cargo.toml"
+    subprocess.run(["cargo", "metadata", "--offline", "--format-version", "1", "--manifest-path", str(manifest)],
+                   env=environment, stdout=subprocess.DEVNULL, check=True)
+    subprocess.run(["cargo", "run", "--locked", "--offline", "--manifest-path", str(manifest), "--", str(graph)],
+                   env=environment, check=True)

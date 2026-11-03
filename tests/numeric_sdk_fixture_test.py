@@ -4,7 +4,7 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from numeric_sdk_fixture import ROOT, prepare_label
+from numeric_sdk_fixture import ROOT, prepare_event, prepare_label
 
 
 class LabelFixturePaths(unittest.TestCase):
@@ -22,6 +22,15 @@ class LabelFixturePaths(unittest.TestCase):
             output = ndk / "output"
             with self.assertRaisesRegex(ValueError, "must not overlap"):
                 prepare_label(output, ndk)
+            self.assertFalse(output.exists())
+
+    def test_event_output_cannot_overlap_ndk(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            ndk = Path(temporary) / "ndk"
+            ndk.mkdir()
+            output = ndk / "output"
+            with self.assertRaisesRegex(ValueError, "must not overlap"):
+                prepare_event(output, ndk)
             self.assertFalse(output.exists())
 
     def test_ndk_cannot_link_to_fixture_workspace(self):

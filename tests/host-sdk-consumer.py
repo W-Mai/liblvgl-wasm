@@ -11,7 +11,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "toolchains"))
 from host_sdk import build_host_sdk, verify_rust_validator
 from lvw import file_inventory, publish_package
-from numeric_sdk_fixture import install as install_numeric_fixture, prepare as prepare_numeric_fixture, prepare_label, prepare_lvgl, prepare_wasi
+from numeric_sdk_fixture import install as install_numeric_fixture, prepare as prepare_numeric_fixture, prepare_event, prepare_label, prepare_lvgl, prepare_wasi, run_event_consumer
 
 
 def run(*command, **kwargs):
@@ -40,6 +40,7 @@ def check(output, build=None):
     run("cmake", "--build", build, "--target", "lvw_ndk", "-j", "4")
     run("cmake", "--install", build, "--prefix", ndk, "--component", "ndk")
     label_graph = None if custom else prepare_label(output / "numeric-label-fixture", ndk)
+    event_graph = None if custom else prepare_event(output / "numeric-event-fixture", ndk)
     notices = file_inventory(ndk / "share/liblvgl-wasm/licenses")
     sdk = subprocess.check_output(["sh", str(ROOT / "scripts/resolve-wasi-sdk.sh"), str(ROOT)], text=True).strip()
     run("cmake", "-S", ndk / "examples/c", "-B", output / "native build", "-G", "Ninja",
@@ -124,6 +125,8 @@ def check(output, build=None):
             run("cargo", "run", "--locked", "--offline", "--manifest-path", graph_consumer / "Cargo.toml", "--",
                 package / "runtime/liblvgl.wasm", metadata["identity"]["wasm_sha256"], numeric_graph, wasi_graph,
                 lvgl_graph if lvgl_graph else "--skip-lvgl", label_graph if label_graph else "--skip-label", env=environment)
+            if event_graph is not None:
+                run_event_consumer(package, project, event_graph, environment)
             if contracts:
                 environment = {**os.environ, "LVW_TEST_CORE": str(package / "runtime/liblvgl.wasm"),
                                "LVW_TEST_API": str(package / "metadata/api.json"),

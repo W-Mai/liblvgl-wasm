@@ -49,12 +49,16 @@ export LVW_TEST_LABEL_GRAPH
 bun tests/fixtures/numeric-label/generate.ts --output "$LVW_TEST_LABEL_GRAPH"
 python3 -B validator/lvgl-event-fixture.py
 python3 -B validator/lvgl-event-negative-fixtures.py
+LVW_TEST_EVENT_GRAPH="$label_tmp/event-graph.json"
+export LVW_TEST_EVENT_GRAPH
+bun tests/fixtures/numeric-label/generate.ts --event --output "$LVW_TEST_EVENT_GRAPH"
 bun test validator/feature-validator.test.ts
 bun test validator/feature-worker.test.ts validator/feature-worker-live.test.ts validator/feature-graph.test.ts validator/numeric-environment.test.ts validator/wasi-numeric-loader.test.ts
 bun test validator/lvgl-core-profile.test.ts validator/lvgl-lifecycle.test.ts
 bun test validator/lvgl-label-profile.test.ts validator/lvgl-label-negative.test.ts
 bun test validator/numeric-label-preflight.test.ts
 bun test validator/lvgl-event-profile.test.ts validator/lvgl-event-negative.test.ts
+bun test validator/numeric-event-preflight.test.ts
 bun test validator/feature-sdk.test.ts
 bun test validator/bounded-core.test.ts
 python3 -B validator/bounded-core.test.py

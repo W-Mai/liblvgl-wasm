@@ -58,6 +58,53 @@ def main() -> None:
                                                      "local.get $eventToken call $event_target drop")
     inputs["app-multilabel"] = inputs["app-multilabel"].replace("if global.get $label i32.const 123 i32.const 0 call $send drop end",
                                                                  "if global.get $secondLabel i32.const 123 i32.const 0 call $send drop end")
+    def replace_once(source, before, after):
+        if source.count(before) != 1:
+            raise ValueError(f"unexpected event fixture marker: {before!r}")
+        return source.replace(before, after)
+
+    for name, params in [
+        ("lvw_event_clicked", ""), ("lvw_event_current", ""),
+        ("lvw_event_add", " (param i32 i32 i32)"), ("lvw_event_remove", " (param i32 i32)"),
+        ("lv_obj_send_event", " (param i32 i32 i32)"), ("lv_event_get_target_obj", " (param i32)"),
+    ]:
+        export = f'(export "{name}")'
+        inputs[f"core-missing-{name}"] = replace_once(inputs["core"], export, f'(export "hidden_{name}")')
+        original = export + params + ' (result i32)'
+        bad = export + (params[:-1] + ' i32)' if params else ' (param i32)') + ' (result i32)'
+        inputs[f"core-badsig-{name}"] = replace_once(inputs["core"], original, bad)
+    clicked = '(func (export "lvw_event_clicked") (result i32) i32.const 45 call $trace i32.const 123)'
+    imported = replace_once(inputs["core"], '(import "trace" "event" (func $trace (param i32)))',
+        '(import "trace" "event" (func $trace (param i32)))\n  (import "trace" "clicked" (func $imported_clicked (result i32)))')
+    inputs["core-imported-clicked"] = replace_once(imported, clicked, '(export "lvw_event_clicked" (func $imported_clicked))')
+    event_import = '  (import "lvw" "event" (func $event (param i32 i32 i32)))'
+    no_event = replace_once(inputs["core"], event_import, '')
+    inputs["core-no-event"] = replace_once(no_event, 'call $event', 'drop drop drop')
+    bad_event = replace_once(inputs["core"], event_import,
+        '  (import "lvw" "event" (func $event (param i32 i32 i32 i32)))')
+    inputs["core-badsig-event"] = replace_once(bad_event, 'call $event', 'i32.const 0 call $event')
+    inputs["app-no-table"] = replace_once(inputs["app"], '  (table 4 4 funcref)\n  (elem (i32.const 1) $callback $wrong_signature)', '')
+    inputs["app-no-table"] = replace_once(inputs["app-no-table"], dispatch,
+        '(func (export "app_event_dispatch") (param i32 i32))')
+    imported_table = replace_once(inputs["app"], '  (table 4 4 funcref)\n', '')
+    inputs["app-imported-table"] = replace_once(imported_table, '  (memory (export "memory") 1 2)',
+        '  (import "lvgl" "table" (table 4 4 funcref))\n  (memory (export "memory") 1 2)')
+    inputs["app-growable-table"] = replace_once(inputs["app"], '(table 4 4 funcref)', '(table 4 5 funcref)')
+    inputs["app-unbounded-table"] = replace_once(inputs["app"], '(table 4 4 funcref)', '(table 4 funcref)')
+    inputs["app-multiple-tables"] = replace_once(inputs["app"], '(table 4 4 funcref)', '(table 4 4 funcref)\n  (table 1 1 funcref)')
+    inputs["app-dispatch-trap"] = replace_once(inputs["app"], dispatch,
+        '(func (export "app_event_dispatch") (param i32 i32) unreachable)')
+    inputs["app-dispatch-alias"] = replace_once(inputs["app"], dispatch,
+        '(func $dispatcher (export "app_event_dispatch") (param i32 i32) local.get 1 local.get 0 call_indirect (type $callback))\n'
+        '  (export "dispatch_alias" (func $dispatcher))')
+    add_import = '(import "lvgl" "lv_obj_add_event_cb" (func $add (param i32 i32 i32 i32) (result i32)))'
+    bad_add = replace_once(inputs["app"], add_import,
+        '(import "lvgl" "lv_obj_add_event_cb" (func $add (param i32 i32 i32 i32 i32) (result i32)))')
+    inputs["app-badsig-add"] = bad_add.replace('call $add', 'i32.const 0 call $add')
+    inputs["app-init-trap"] = replace_once(inputs["app"], 'if (result i32) i32.const 0 else i32.const 9 end',
+        'if (result i32) unreachable else i32.const 9 end')
+    inputs["app-reactor-trap"] = replace_once(inputs["app"], '(func (export "_initialize"))',
+        '(func (export "_initialize") unreachable)')
     parent = OUTPUT.parent
     parent.mkdir(parents=True, exist_ok=True)
     names = {f"{name}.wasm" for name in inputs}
@@ -80,7 +127,8 @@ def main() -> None:
                     wat, wasm = work / f"{name}.wat", published / f"{name}.wasm"
                     wat.write_text(text)
                     subprocess.run(["wasm-tools", "parse", str(wat), "-o", str(wasm)], check=True)
-                    subprocess.run(["wasm-tools", "validate", "--features", "wasm1", str(wasm)], check=True)
+                    features = "wasm1,reference-types" if name == "app-multiple-tables" else "wasm1"
+                    subprocess.run(["wasm-tools", "validate", "--features", features, str(wasm)], check=True)
                 check_output()
                 if OUTPUT.exists():
                     OUTPUT.replace(work / "previous")

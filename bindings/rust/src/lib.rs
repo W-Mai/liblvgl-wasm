@@ -52,8 +52,8 @@ mod numeric_profile;
 pub use numeric_profile::{
     NumericFunctionContract, NumericHostContract, NumericLimits, NumericModuleContract,
     NumericPreflightError, NumericPreflightReport, NumericProfile, NumericResult,
-    preflight_lvgl_core_graph, preflight_lvgl_label_graph, preflight_numeric_graph,
-    preflight_numeric_graph_with_wasi,
+    preflight_lvgl_core_graph, preflight_lvgl_event_graph, preflight_lvgl_label_graph,
+    preflight_numeric_graph, preflight_numeric_graph_with_wasi,
 };
 mod numeric_environment;
 pub use numeric_environment::{
@@ -65,6 +65,8 @@ mod numeric_lvgl;
 pub use numeric_lvgl::NumericLvglCoreOptions;
 mod numeric_label;
 pub use numeric_label::{NumericFrame, NumericLabelOptions};
+mod numeric_event;
+pub use numeric_event::NumericEventOptions;
 mod numeric_label_runtime;
 mod numeric_wasi;
 pub use numeric_wasi::{

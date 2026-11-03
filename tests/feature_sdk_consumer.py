@@ -20,7 +20,7 @@ from lvw import file_inventory
 from host_sdk import verify_feature_validator, verify_rust_validator
 from feature_sdk_browser import run_browser
 from bounded_core import MAX_API_BYTES, MAX_CORE_BYTES, check_proof, read
-from numeric_sdk_fixture import install as install_numeric_fixture, prepare as prepare_numeric_fixture, prepare_label, prepare_lvgl, prepare_wasi
+from numeric_sdk_fixture import install as install_numeric_fixture, prepare as prepare_numeric_fixture, prepare_event, prepare_label, prepare_lvgl, prepare_wasi, run_event_consumer
 
 
 def run(*command, cwd=None, env=None):
@@ -299,6 +299,7 @@ def check(sdk, ndk, chromium=None):
         wasi_graph = prepare_wasi(work / "numeric-wasi-fixture")
         lvgl_graph = prepare_lvgl(work / "numeric-lvgl-fixture")
         label_graph = prepare_label(work / "numeric-label-fixture", ndk)
+        event_graph = prepare_event(work / "numeric-event-fixture", ndk)
         bounded = read(ROOT / "target/wasm/liblvgl-bounded.wasm", MAX_CORE_BYTES)
         api = read(ROOT / "target/wasm/api.json", MAX_API_BYTES)
         proof = read(ROOT / "target/wasm/api-verification-bounded.json", 1024 * 1024)
@@ -369,6 +370,7 @@ def check(sdk, ndk, chromium=None):
                            env=rust_env, stdout=subprocess.DEVNULL, check=True)
             run("cargo", "run", "--locked", "--offline", "--manifest-path", rust_consumer / "Cargo.toml", "--",
                 moved / "runtime/liblvgl.wasm", manifest["identity"]["wasm_sha256"], numeric_graph, wasi_graph, lvgl_graph, label_graph, env=rust_env)
+            run_event_consumer(moved, project, event_graph, rust_env)
             (project / "package.json").write_text('{"type":"module"}\n')
             (project / "node_modules").mkdir()
             (project / "node_modules/liblvgl-wasm").symlink_to(typescript, target_is_directory=True)

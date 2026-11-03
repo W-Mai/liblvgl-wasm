@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+- Static validation for isolated LVGL clicked event adapter contracts in Rust.
 - Copied RGBA frames for Rust isolated LVGL label environments.
 - Isolated LVGL screen and label calls with copied text in Rust numeric environments.
 - Static validation for isolated LVGL label adapter contracts.
