@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+- Rust WASI Preview 1 import signature inspection.
 - Static Rust module manifest identity and interface validation.
 - Bounded Wasm declaration facts for the Rust host.
 - Bounded Rust module graph validation and provider-first ordering.

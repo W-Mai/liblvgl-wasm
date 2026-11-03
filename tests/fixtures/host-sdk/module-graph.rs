@@ -1,7 +1,7 @@
 use liblvgl_wasm_host::{
     ManifestCheck, ModuleArtifact, ModuleArtifactInput, ModuleDeclaration, ModuleGraph,
-    ModuleInterface, ModuleManifest, ModuleManifestInput, ModuleRole, ModuleTarget, WasmCheck,
-    inspect_module_manifests, inspect_wasm_facts, order_module_graph,
+    ModuleInterface, ModuleManifest, ModuleManifestInput, ModuleRole, ModuleTarget, WasiEvidence,
+    WasmCheck, inspect_module_manifests, inspect_wasi_preview1, inspect_wasm_facts, order_module_graph,
 };
 
 fn main() {
@@ -32,8 +32,13 @@ fn main() {
     assert_eq!(facts.validation, WasmCheck::NotRun);
     assert_eq!(facts.feature_detection, WasmCheck::NotRun);
     assert_eq!(facts.abi_detection, WasmCheck::NotRun);
+    let wasi = inspect_wasi_preview1(&bytes).unwrap();
+    assert_eq!(wasi.sha256(), expected_sha);
+    assert_eq!(wasi.checks().engine(), WasmCheck::NotRun);
+    assert_eq!(wasi.checks().runtime(), WasmCheck::NotRun);
 
     let empty = b"\0asm\x01\0\0\0";
+    assert_eq!(inspect_wasi_preview1(empty).unwrap().evidence(), WasiEvidence::Absent);
     let input = ModuleManifestInput {
         modules: vec![ModuleArtifactInput {
             manifest: ModuleManifest {

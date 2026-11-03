@@ -1,0 +1,1327 @@
+[
+  {
+    "name": "args_get correct",
+    "hex": "0061736d0100000001070160027f7f017f02230116776173695f736e617073686f745f707265766965773108617267735f6765740000",
+    "accepted": true,
+    "imports": [
+      "args_get"
+    ]
+  },
+  {
+    "name": "args_get wrong parameter",
+    "hex": "0061736d0100000001070160027e7f017f02230116776173695f736e617073686f745f707265766965773108617267735f6765740000",
+    "accepted": false,
+    "error": "signature"
+  },
+  {
+    "name": "args_get wrong result",
+    "hex": "0061736d0100000001060160027f7f0002230116776173695f736e617073686f745f707265766965773108617267735f6765740000",
+    "accepted": false,
+    "error": "signature"
+  },
+  {
+    "name": "args_get wrong kind",
+    "hex": "0061736d0100000002240116776173695f736e617073686f745f707265766965773108617267735f676574037f00",
+    "accepted": false,
+    "error": "function"
+  },
+  {
+    "name": "args_sizes_get correct",
+    "hex": "0061736d0100000001070160027f7f017f02290116776173695f736e617073686f745f70726576696577310e617267735f73697a65735f6765740000",
+    "accepted": true,
+    "imports": [
+      "args_sizes_get"
+    ]
+  },
+  {
+    "name": "args_sizes_get wrong parameter",
+    "hex": "0061736d0100000001070160027e7f017f02290116776173695f736e617073686f745f70726576696577310e617267735f73697a65735f6765740000",
+    "accepted": false,
+    "error": "signature"
+  },
+  {
+    "name": "args_sizes_get wrong result",
+    "hex": "0061736d0100000001060160027f7f0002290116776173695f736e617073686f745f70726576696577310e617267735f73697a65735f6765740000",
+    "accepted": false,
+    "error": "signature"
+  },
+  {
+    "name": "args_sizes_get wrong kind",
+    "hex": "0061736d01000000022a0116776173695f736e617073686f745f70726576696577310e617267735f73697a65735f676574037f00",
+    "accepted": false,
+    "error": "function"
+  },
+  {
+    "name": "clock_res_get correct",
+    "hex": "0061736d0100000001070160027f7f017f02280116776173695f736e617073686f745f70726576696577310d636c6f636b5f7265735f6765740000",
+    "accepted": true,
+    "imports": [
+      "clock_res_get"
+    ]
+  },
+  {
+    "name": "clock_res_get wrong parameter",
+    "hex": "0061736d0100000001070160027e7f017f02280116776173695f736e617073686f745f70726576696577310d636c6f636b5f7265735f6765740000",
+    "accepted": false,
+    "error": "signature"
+  },
+  {
+    "name": "clock_res_get wrong result",
+    "hex": "0061736d0100000001060160027f7f0002280116776173695f736e617073686f745f70726576696577310d636c6f636b5f7265735f6765740000",
+    "accepted": false,
+    "error": "signature"
+  },
+  {
+    "name": "clock_res_get wrong kind",
+    "hex": "0061736d0100000002290116776173695f736e617073686f745f70726576696577310d636c6f636b5f7265735f676574037f00",
+    "accepted": false,
+    "error": "function"
+  },
+  {
+    "name": "clock_time_get correct",
+    "hex": "0061736d0100000001080160037f7e7f017f02290116776173695f736e617073686f745f70726576696577310e636c6f636b5f74696d655f6765740000",
+    "accepted": true,
+    "imports": [
+      "clock_time_get"
+    ]
+  },
+  {
+    "name": "clock_time_get wrong parameter",
+    "hex": "0061736d0100000001080160037e7e7f017f02290116776173695f736e617073686f745f70726576696577310e636c6f636b5f74696d655f6765740000",
+    "accepted": false,
+    "error": "signature"
+  },
+  {
+    "name": "clock_time_get wrong result",
+    "hex": "0061736d0100000001070160037f7e7f0002290116776173695f736e617073686f745f70726576696577310e636c6f636b5f74696d655f6765740000",
+    "accepted": false,
+    "error": "signature"
+  },
+  {
+    "name": "clock_time_get wrong kind",
+    "hex": "0061736d01000000022a0116776173695f736e617073686f745f70726576696577310e636c6f636b5f74696d655f676574037f00",
+    "accepted": false,
+    "error": "function"
+  },
+  {
+    "name": "environ_get correct",
+    "hex": "0061736d0100000001070160027f7f017f02260116776173695f736e617073686f745f70726576696577310b656e7669726f6e5f6765740000",
+    "accepted": true,
+    "imports": [
+      "environ_get"
+    ]
+  },
+  {
+    "name": "environ_get wrong parameter",
+    "hex": "0061736d0100000001070160027e7f017f02260116776173695f736e617073686f745f70726576696577310b656e7669726f6e5f6765740000",
+    "accepted": false,
+    "error": "signature"
+  },
+  {
+    "name": "environ_get wrong result",
+    "hex": "0061736d0100000001060160027f7f0002260116776173695f736e617073686f745f70726576696577310b656e7669726f6e5f6765740000",
+    "accepted": false,
+    "error": "signature"
+  },
+  {
+    "name": "environ_get wrong kind",
+    "hex": "0061736d0100000002270116776173695f736e617073686f745f70726576696577310b656e7669726f6e5f676574037f00",
+    "accepted": false,
+    "error": "function"
+  },
+  {
+    "name": "environ_sizes_get correct",
+    "hex": "0061736d0100000001070160027f7f017f022c0116776173695f736e617073686f745f707265766965773111656e7669726f6e5f73697a65735f6765740000",
+    "accepted": true,
+    "imports": [
+      "environ_sizes_get"
+    ]
+  },
+  {
+    "name": "environ_sizes_get wrong parameter",
+    "hex": "0061736d0100000001070160027e7f017f022c0116776173695f736e617073686f745f707265766965773111656e7669726f6e5f73697a65735f6765740000",
+    "accepted": false,
+    "error": "signature"
+  },
+  {
+    "name": "environ_sizes_get wrong result",
+    "hex": "0061736d0100000001060160027f7f00022c0116776173695f736e617073686f745f707265766965773111656e7669726f6e5f73697a65735f6765740000",
+    "accepted": false,
+    "error": "signature"
+  },
+  {
+    "name": "environ_sizes_get wrong kind",
+    "hex": "0061736d01000000022d0116776173695f736e617073686f745f707265766965773111656e7669726f6e5f73697a65735f676574037f00",
+    "accepted": false,
+    "error": "function"
+  },
+  {
+    "name": "fd_advise correct",
+    "hex": "0061736d0100000001090160047f7e7e7f017f02240116776173695f736e617073686f745f70726576696577310966645f6164766973650000",
+    "accepted": true,
+    "imports": [
+      "fd_advise"
+    ]
+  },
+  {
+    "name": "fd_advise wrong parameter",
+    "hex": "0061736d0100000001090160047e7e7e7f017f02240116776173695f736e617073686f745f70726576696577310966645f6164766973650000",
+    "accepted": false,
+    "error": "signature"
+  },
+  {
+    "name": "fd_advise wrong result",
+    "hex": "0061736d0100000001080160047f7e7e7f0002240116776173695f736e617073686f745f70726576696577310966645f6164766973650000",
+    "accepted": false,
+    "error": "signature"
+  },
+  {
+    "name": "fd_advise wrong kind",
+    "hex": "0061736d0100000002250116776173695f736e617073686f745f70726576696577310966645f616476697365037f00",
+    "accepted": false,
+    "error": "function"
+  },
+  {
+    "name": "fd_allocate correct",
+    "hex": "0061736d0100000001080160037f7e7e017f02260116776173695f736e617073686f745f70726576696577310b66645f616c6c6f636174650000",
+    "accepted": true,
+    "imports": [
+      "fd_allocate"
+    ]
+  },
+  {
+    "name": "fd_allocate wrong parameter",
+    "hex": "0061736d0100000001080160037e7e7e017f02260116776173695f736e617073686f745f70726576696577310b66645f616c6c6f636174650000",
+    "accepted": false,
+    "error": "signature"
+  },
+  {
+    "name": "fd_allocate wrong result",
+    "hex": "0061736d0100000001070160037f7e7e0002260116776173695f736e617073686f745f70726576696577310b66645f616c6c6f636174650000",
+    "accepted": false,
+    "error": "signature"
+  },
+  {
+    "name": "fd_allocate wrong kind",
+    "hex": "0061736d0100000002270116776173695f736e617073686f745f70726576696577310b66645f616c6c6f63617465037f00",
+    "accepted": false,
+    "error": "function"
+  },
+  {
+    "name": "fd_close correct",
+    "hex": "0061736d0100000001060160017f017f02230116776173695f736e617073686f745f70726576696577310866645f636c6f73650000",
+    "accepted": true,
+    "imports": [
+      "fd_close"
+    ]
+  },
+  {
+    "name": "fd_close wrong parameter",
+    "hex": "0061736d0100000001060160017e017f02230116776173695f736e617073686f745f70726576696577310866645f636c6f73650000",
+    "accepted": false,
+    "error": "signature"
+  },
+  {
+    "name": "fd_close wrong result",
+    "hex": "0061736d0100000001050160017f0002230116776173695f736e617073686f745f70726576696577310866645f636c6f73650000",
+    "accepted": false,
+    "error": "signature"
+  },
+  {
+    "name": "fd_close wrong kind",
+    "hex": "0061736d0100000002240116776173695f736e617073686f745f70726576696577310866645f636c6f7365037f00",
+    "accepted": false,
+    "error": "function"
+  },
+  {
+    "name": "fd_datasync correct",
+    "hex": "0061736d0100000001060160017f017f02260116776173695f736e617073686f745f70726576696577310b66645f6461746173796e630000",
+    "accepted": true,
+    "imports": [
+      "fd_datasync"
+    ]
+  },
+  {
+    "name": "fd_datasync wrong parameter",
+    "hex": "0061736d0100000001060160017e017f02260116776173695f736e617073686f745f70726576696577310b66645f6461746173796e630000",
+    "accepted": false,
+    "error": "signature"
+  },
+  {
+    "name": "fd_datasync wrong result",
+    "hex": "0061736d0100000001050160017f0002260116776173695f736e617073686f745f70726576696577310b66645f6461746173796e630000",
+    "accepted": false,
+    "error": "signature"
+  },
+  {
+    "name": "fd_datasync wrong kind",
+    "hex": "0061736d0100000002270116776173695f736e617073686f745f70726576696577310b66645f6461746173796e63037f00",
+    "accepted": false,
+    "error": "function"
+  },
+  {
+    "name": "fd_fdstat_get correct",
+    "hex": "0061736d0100000001070160027f7f017f02280116776173695f736e617073686f745f70726576696577310d66645f6664737461745f6765740000",
+    "accepted": true,
+    "imports": [
+      "fd_fdstat_get"
+    ]
+  },
+  {
+    "name": "fd_fdstat_get wrong parameter",
+    "hex": "0061736d0100000001070160027e7f017f02280116776173695f736e617073686f745f70726576696577310d66645f6664737461745f6765740000",
+    "accepted": false,
+    "error": "signature"
+  },
+  {
+    "name": "fd_fdstat_get wrong result",
+    "hex": "0061736d0100000001060160027f7f0002280116776173695f736e617073686f745f70726576696577310d66645f6664737461745f6765740000",
+    "accepted": false,
+    "error": "signature"
+  },
+  {
+    "name": "fd_fdstat_get wrong kind",
+    "hex": "0061736d0100000002290116776173695f736e617073686f745f70726576696577310d66645f6664737461745f676574037f00",
+    "accepted": false,
+    "error": "function"
+  },
+  {
+    "name": "fd_fdstat_set_flags correct",
+    "hex": "0061736d0100000001070160027f7f017f022e0116776173695f736e617073686f745f70726576696577311366645f6664737461745f7365745f666c6167730000",
+    "accepted": true,
+    "imports": [
+      "fd_fdstat_set_flags"
+    ]
+  },
+  {
+    "name": "fd_fdstat_set_flags wrong parameter",
+    "hex": "0061736d0100000001070160027e7f017f022e0116776173695f736e617073686f745f70726576696577311366645f6664737461745f7365745f666c6167730000",
+    "accepted": false,
+    "error": "signature"
+  },
+  {
+    "name": "fd_fdstat_set_flags wrong result",
+    "hex": "0061736d0100000001060160027f7f00022e0116776173695f736e617073686f745f70726576696577311366645f6664737461745f7365745f666c6167730000",
+    "accepted": false,
+    "error": "signature"
+  },
+  {
+    "name": "fd_fdstat_set_flags wrong kind",
+    "hex": "0061736d01000000022f0116776173695f736e617073686f745f70726576696577311366645f6664737461745f7365745f666c616773037f00",
+    "accepted": false,
+    "error": "function"
+  },
+  {
+    "name": "fd_fdstat_set_rights correct",
+    "hex": "0061736d0100000001080160037f7e7e017f022f0116776173695f736e617073686f745f70726576696577311466645f6664737461745f7365745f7269676874730000",
+    "accepted": true,
+    "imports": [
+      "fd_fdstat_set_rights"
+    ]
+  },
+  {
+    "name": "fd_fdstat_set_rights wrong parameter",
+    "hex": "0061736d0100000001080160037e7e7e017f022f0116776173695f736e617073686f745f70726576696577311466645f6664737461745f7365745f7269676874730000",
+    "accepted": false,
+    "error": "signature"
+  },
+  {
+    "name": "fd_fdstat_set_rights wrong result",
+    "hex": "0061736d0100000001070160037f7e7e00022f0116776173695f736e617073686f745f70726576696577311466645f6664737461745f7365745f7269676874730000",
+    "accepted": false,
+    "error": "signature"
+  },
+  {
+    "name": "fd_fdstat_set_rights wrong kind",
+    "hex": "0061736d0100000002300116776173695f736e617073686f745f70726576696577311466645f6664737461745f7365745f726967687473037f00",
+    "accepted": false,
+    "error": "function"
+  },
+  {
+    "name": "fd_filestat_get correct",
+    "hex": "0061736d0100000001070160027f7f017f022a0116776173695f736e617073686f745f70726576696577310f66645f66696c65737461745f6765740000",
+    "accepted": true,
+    "imports": [
+      "fd_filestat_get"
+    ]
+  },
+  {
+    "name": "fd_filestat_get wrong parameter",
+    "hex": "0061736d0100000001070160027e7f017f022a0116776173695f736e617073686f745f70726576696577310f66645f66696c65737461745f6765740000",
+    "accepted": false,
+    "error": "signature"
+  },
+  {
+    "name": "fd_filestat_get wrong result",
+    "hex": "0061736d0100000001060160027f7f00022a0116776173695f736e617073686f745f70726576696577310f66645f66696c65737461745f6765740000",
+    "accepted": false,
+    "error": "signature"
+  },
+  {
+    "name": "fd_filestat_get wrong kind",
+    "hex": "0061736d01000000022b0116776173695f736e617073686f745f70726576696577310f66645f66696c65737461745f676574037f00",
+    "accepted": false,
+    "error": "function"
+  },
+  {
+    "name": "fd_filestat_set_size correct",
+    "hex": "0061736d0100000001070160027f7e017f022f0116776173695f736e617073686f745f70726576696577311466645f66696c65737461745f7365745f73697a650000",
+    "accepted": true,
+    "imports": [
+      "fd_filestat_set_size"
+    ]
+  },
+  {
+    "name": "fd_filestat_set_size wrong parameter",
+    "hex": "0061736d0100000001070160027e7e017f022f0116776173695f736e617073686f745f70726576696577311466645f66696c65737461745f7365745f73697a650000",
+    "accepted": false,
+    "error": "signature"
+  },
+  {
+    "name": "fd_filestat_set_size wrong result",
+    "hex": "0061736d0100000001060160027f7e00022f0116776173695f736e617073686f745f70726576696577311466645f66696c65737461745f7365745f73697a650000",
+    "accepted": false,
+    "error": "signature"
+  },
+  {
+    "name": "fd_filestat_set_size wrong kind",
+    "hex": "0061736d0100000002300116776173695f736e617073686f745f70726576696577311466645f66696c65737461745f7365745f73697a65037f00",
+    "accepted": false,
+    "error": "function"
+  },
+  {
+    "name": "fd_filestat_set_times correct",
+    "hex": "0061736d0100000001090160047f7e7e7f017f02300116776173695f736e617073686f745f70726576696577311566645f66696c65737461745f7365745f74696d65730000",
+    "accepted": true,
+    "imports": [
+      "fd_filestat_set_times"
+    ]
+  },
+  {
+    "name": "fd_filestat_set_times wrong parameter",
+    "hex": "0061736d0100000001090160047e7e7e7f017f02300116776173695f736e617073686f745f70726576696577311566645f66696c65737461745f7365745f74696d65730000",
+    "accepted": false,
+    "error": "signature"
+  },
+  {
+    "name": "fd_filestat_set_times wrong result",
+    "hex": "0061736d0100000001080160047f7e7e7f0002300116776173695f736e617073686f745f70726576696577311566645f66696c65737461745f7365745f74696d65730000",
+    "accepted": false,
+    "error": "signature"
+  },
+  {
+    "name": "fd_filestat_set_times wrong kind",
+    "hex": "0061736d0100000002310116776173695f736e617073686f745f70726576696577311566645f66696c65737461745f7365745f74696d6573037f00",
+    "accepted": false,
+    "error": "function"
+  },
+  {
+    "name": "fd_pread correct",
+    "hex": "0061736d01000000010a0160057f7f7f7e7f017f02230116776173695f736e617073686f745f70726576696577310866645f70726561640000",
+    "accepted": true,
+    "imports": [
+      "fd_pread"
+    ]
+  },
+  {
+    "name": "fd_pread wrong parameter",
+    "hex": "0061736d01000000010a0160057e7f7f7e7f017f02230116776173695f736e617073686f745f70726576696577310866645f70726561640000",
+    "accepted": false,
+    "error": "signature"
+  },
+  {
+    "name": "fd_pread wrong result",
+    "hex": "0061736d0100000001090160057f7f7f7e7f0002230116776173695f736e617073686f745f70726576696577310866645f70726561640000",
+    "accepted": false,
+    "error": "signature"
+  },
+  {
+    "name": "fd_pread wrong kind",
+    "hex": "0061736d0100000002240116776173695f736e617073686f745f70726576696577310866645f7072656164037f00",
+    "accepted": false,
+    "error": "function"
+  },
+  {
+    "name": "fd_prestat_dir_name correct",
+    "hex": "0061736d0100000001080160037f7f7f017f022e0116776173695f736e617073686f745f70726576696577311366645f707265737461745f6469725f6e616d650000",
+    "accepted": true,
+    "imports": [
+      "fd_prestat_dir_name"
+    ]
+  },
+  {
+    "name": "fd_prestat_dir_name wrong parameter",
+    "hex": "0061736d0100000001080160037e7f7f017f022e0116776173695f736e617073686f745f70726576696577311366645f707265737461745f6469725f6e616d650000",
+    "accepted": false,
+    "error": "signature"
+  },
+  {
+    "name": "fd_prestat_dir_name wrong result",
+    "hex": "0061736d0100000001070160037f7f7f00022e0116776173695f736e617073686f745f70726576696577311366645f707265737461745f6469725f6e616d650000",
+    "accepted": false,
+    "error": "signature"
+  },
+  {
+    "name": "fd_prestat_dir_name wrong kind",
+    "hex": "0061736d01000000022f0116776173695f736e617073686f745f70726576696577311366645f707265737461745f6469725f6e616d65037f00",
+    "accepted": false,
+    "error": "function"
+  },
+  {
+    "name": "fd_prestat_get correct",
+    "hex": "0061736d0100000001070160027f7f017f02290116776173695f736e617073686f745f70726576696577310e66645f707265737461745f6765740000",
+    "accepted": true,
+    "imports": [
+      "fd_prestat_get"
+    ]
+  },
+  {
+    "name": "fd_prestat_get wrong parameter",
+    "hex": "0061736d0100000001070160027e7f017f02290116776173695f736e617073686f745f70726576696577310e66645f707265737461745f6765740000",
+    "accepted": false,
+    "error": "signature"
+  },
+  {
+    "name": "fd_prestat_get wrong result",
+    "hex": "0061736d0100000001060160027f7f0002290116776173695f736e617073686f745f70726576696577310e66645f707265737461745f6765740000",
+    "accepted": false,
+    "error": "signature"
+  },
+  {
+    "name": "fd_prestat_get wrong kind",
+    "hex": "0061736d01000000022a0116776173695f736e617073686f745f70726576696577310e66645f707265737461745f676574037f00",
+    "accepted": false,
+    "error": "function"
+  },
+  {
+    "name": "fd_pwrite correct",
+    "hex": "0061736d01000000010a0160057f7f7f7e7f017f02240116776173695f736e617073686f745f70726576696577310966645f7077726974650000",
+    "accepted": true,
+    "imports": [
+      "fd_pwrite"
+    ]
+  },
+  {
+    "name": "fd_pwrite wrong parameter",
+    "hex": "0061736d01000000010a0160057e7f7f7e7f017f02240116776173695f736e617073686f745f70726576696577310966645f7077726974650000",
+    "accepted": false,
+    "error": "signature"
+  },
+  {
+    "name": "fd_pwrite wrong result",
+    "hex": "0061736d0100000001090160057f7f7f7e7f0002240116776173695f736e617073686f745f70726576696577310966645f7077726974650000",
+    "accepted": false,
+    "error": "signature"
+  },
+  {
+    "name": "fd_pwrite wrong kind",
+    "hex": "0061736d0100000002250116776173695f736e617073686f745f70726576696577310966645f707772697465037f00",
+    "accepted": false,
+    "error": "function"
+  },
+  {
+    "name": "fd_read correct",
+    "hex": "0061736d0100000001090160047f7f7f7f017f02220116776173695f736e617073686f745f70726576696577310766645f726561640000",
+    "accepted": true,
+    "imports": [
+      "fd_read"
+    ]
+  },
+  {
+    "name": "fd_read wrong parameter",
+    "hex": "0061736d0100000001090160047e7f7f7f017f02220116776173695f736e617073686f745f70726576696577310766645f726561640000",
+    "accepted": false,
+    "error": "signature"
+  },
+  {
+    "name": "fd_read wrong result",
+    "hex": "0061736d0100000001080160047f7f7f7f0002220116776173695f736e617073686f745f70726576696577310766645f726561640000",
+    "accepted": false,
+    "error": "signature"
+  },
+  {
+    "name": "fd_read wrong kind",
+    "hex": "0061736d0100000002230116776173695f736e617073686f745f70726576696577310766645f72656164037f00",
+    "accepted": false,
+    "error": "function"
+  },
+  {
+    "name": "fd_readdir correct",
+    "hex": "0061736d01000000010a0160057f7f7f7e7f017f02250116776173695f736e617073686f745f70726576696577310a66645f726561646469720000",
+    "accepted": true,
+    "imports": [
+      "fd_readdir"
+    ]
+  },
+  {
+    "name": "fd_readdir wrong parameter",
+    "hex": "0061736d01000000010a0160057e7f7f7e7f017f02250116776173695f736e617073686f745f70726576696577310a66645f726561646469720000",
+    "accepted": false,
+    "error": "signature"
+  },
+  {
+    "name": "fd_readdir wrong result",
+    "hex": "0061736d0100000001090160057f7f7f7e7f0002250116776173695f736e617073686f745f70726576696577310a66645f726561646469720000",
+    "accepted": false,
+    "error": "signature"
+  },
+  {
+    "name": "fd_readdir wrong kind",
+    "hex": "0061736d0100000002260116776173695f736e617073686f745f70726576696577310a66645f72656164646972037f00",
+    "accepted": false,
+    "error": "function"
+  },
+  {
+    "name": "fd_renumber correct",
+    "hex": "0061736d0100000001070160027f7f017f02260116776173695f736e617073686f745f70726576696577310b66645f72656e756d6265720000",
+    "accepted": true,
+    "imports": [
+      "fd_renumber"
+    ]
+  },
+  {
+    "name": "fd_renumber wrong parameter",
+    "hex": "0061736d0100000001070160027e7f017f02260116776173695f736e617073686f745f70726576696577310b66645f72656e756d6265720000",
+    "accepted": false,
+    "error": "signature"
+  },
+  {
+    "name": "fd_renumber wrong result",
+    "hex": "0061736d0100000001060160027f7f0002260116776173695f736e617073686f745f70726576696577310b66645f72656e756d6265720000",
+    "accepted": false,
+    "error": "signature"
+  },
+  {
+    "name": "fd_renumber wrong kind",
+    "hex": "0061736d0100000002270116776173695f736e617073686f745f70726576696577310b66645f72656e756d626572037f00",
+    "accepted": false,
+    "error": "function"
+  },
+  {
+    "name": "fd_seek correct",
+    "hex": "0061736d0100000001090160047f7e7f7f017f02220116776173695f736e617073686f745f70726576696577310766645f7365656b0000",
+    "accepted": true,
+    "imports": [
+      "fd_seek"
+    ]
+  },
+  {
+    "name": "fd_seek wrong parameter",
+    "hex": "0061736d0100000001090160047e7e7f7f017f02220116776173695f736e617073686f745f70726576696577310766645f7365656b0000",
+    "accepted": false,
+    "error": "signature"
+  },
+  {
+    "name": "fd_seek wrong result",
+    "hex": "0061736d0100000001080160047f7e7f7f0002220116776173695f736e617073686f745f70726576696577310766645f7365656b0000",
+    "accepted": false,
+    "error": "signature"
+  },
+  {
+    "name": "fd_seek wrong kind",
+    "hex": "0061736d0100000002230116776173695f736e617073686f745f70726576696577310766645f7365656b037f00",
+    "accepted": false,
+    "error": "function"
+  },
+  {
+    "name": "fd_sync correct",
+    "hex": "0061736d0100000001060160017f017f02220116776173695f736e617073686f745f70726576696577310766645f73796e630000",
+    "accepted": true,
+    "imports": [
+      "fd_sync"
+    ]
+  },
+  {
+    "name": "fd_sync wrong parameter",
+    "hex": "0061736d0100000001060160017e017f02220116776173695f736e617073686f745f70726576696577310766645f73796e630000",
+    "accepted": false,
+    "error": "signature"
+  },
+  {
+    "name": "fd_sync wrong result",
+    "hex": "0061736d0100000001050160017f0002220116776173695f736e617073686f745f70726576696577310766645f73796e630000",
+    "accepted": false,
+    "error": "signature"
+  },
+  {
+    "name": "fd_sync wrong kind",
+    "hex": "0061736d0100000002230116776173695f736e617073686f745f70726576696577310766645f73796e63037f00",
+    "accepted": false,
+    "error": "function"
+  },
+  {
+    "name": "fd_tell correct",
+    "hex": "0061736d0100000001070160027f7f017f02220116776173695f736e617073686f745f70726576696577310766645f74656c6c0000",
+    "accepted": true,
+    "imports": [
+      "fd_tell"
+    ]
+  },
+  {
+    "name": "fd_tell wrong parameter",
+    "hex": "0061736d0100000001070160027e7f017f02220116776173695f736e617073686f745f70726576696577310766645f74656c6c0000",
+    "accepted": false,
+    "error": "signature"
+  },
+  {
+    "name": "fd_tell wrong result",
+    "hex": "0061736d0100000001060160027f7f0002220116776173695f736e617073686f745f70726576696577310766645f74656c6c0000",
+    "accepted": false,
+    "error": "signature"
+  },
+  {
+    "name": "fd_tell wrong kind",
+    "hex": "0061736d0100000002230116776173695f736e617073686f745f70726576696577310766645f74656c6c037f00",
+    "accepted": false,
+    "error": "function"
+  },
+  {
+    "name": "fd_write correct",
+    "hex": "0061736d0100000001090160047f7f7f7f017f02230116776173695f736e617073686f745f70726576696577310866645f77726974650000",
+    "accepted": true,
+    "imports": [
+      "fd_write"
+    ]
+  },
+  {
+    "name": "fd_write wrong parameter",
+    "hex": "0061736d0100000001090160047e7f7f7f017f02230116776173695f736e617073686f745f70726576696577310866645f77726974650000",
+    "accepted": false,
+    "error": "signature"
+  },
+  {
+    "name": "fd_write wrong result",
+    "hex": "0061736d0100000001080160047f7f7f7f0002230116776173695f736e617073686f745f70726576696577310866645f77726974650000",
+    "accepted": false,
+    "error": "signature"
+  },
+  {
+    "name": "fd_write wrong kind",
+    "hex": "0061736d0100000002240116776173695f736e617073686f745f70726576696577310866645f7772697465037f00",
+    "accepted": false,
+    "error": "function"
+  },
+  {
+    "name": "path_create_directory correct",
+    "hex": "0061736d0100000001080160037f7f7f017f02300116776173695f736e617073686f745f707265766965773115706174685f6372656174655f6469726563746f72790000",
+    "accepted": true,
+    "imports": [
+      "path_create_directory"
+    ]
+  },
+  {
+    "name": "path_create_directory wrong parameter",
+    "hex": "0061736d0100000001080160037e7f7f017f02300116776173695f736e617073686f745f707265766965773115706174685f6372656174655f6469726563746f72790000",
+    "accepted": false,
+    "error": "signature"
+  },
+  {
+    "name": "path_create_directory wrong result",
+    "hex": "0061736d0100000001070160037f7f7f0002300116776173695f736e617073686f745f707265766965773115706174685f6372656174655f6469726563746f72790000",
+    "accepted": false,
+    "error": "signature"
+  },
+  {
+    "name": "path_create_directory wrong kind",
+    "hex": "0061736d0100000002310116776173695f736e617073686f745f707265766965773115706174685f6372656174655f6469726563746f7279037f00",
+    "accepted": false,
+    "error": "function"
+  },
+  {
+    "name": "path_filestat_get correct",
+    "hex": "0061736d01000000010a0160057f7f7f7f7f017f022c0116776173695f736e617073686f745f707265766965773111706174685f66696c65737461745f6765740000",
+    "accepted": true,
+    "imports": [
+      "path_filestat_get"
+    ]
+  },
+  {
+    "name": "path_filestat_get wrong parameter",
+    "hex": "0061736d01000000010a0160057e7f7f7f7f017f022c0116776173695f736e617073686f745f707265766965773111706174685f66696c65737461745f6765740000",
+    "accepted": false,
+    "error": "signature"
+  },
+  {
+    "name": "path_filestat_get wrong result",
+    "hex": "0061736d0100000001090160057f7f7f7f7f00022c0116776173695f736e617073686f745f707265766965773111706174685f66696c65737461745f6765740000",
+    "accepted": false,
+    "error": "signature"
+  },
+  {
+    "name": "path_filestat_get wrong kind",
+    "hex": "0061736d01000000022d0116776173695f736e617073686f745f707265766965773111706174685f66696c65737461745f676574037f00",
+    "accepted": false,
+    "error": "function"
+  },
+  {
+    "name": "path_filestat_set_times correct",
+    "hex": "0061736d01000000010c0160077f7f7f7f7e7e7f017f02320116776173695f736e617073686f745f707265766965773117706174685f66696c65737461745f7365745f74696d65730000",
+    "accepted": true,
+    "imports": [
+      "path_filestat_set_times"
+    ]
+  },
+  {
+    "name": "path_filestat_set_times wrong parameter",
+    "hex": "0061736d01000000010c0160077e7f7f7f7e7e7f017f02320116776173695f736e617073686f745f707265766965773117706174685f66696c65737461745f7365745f74696d65730000",
+    "accepted": false,
+    "error": "signature"
+  },
+  {
+    "name": "path_filestat_set_times wrong result",
+    "hex": "0061736d01000000010b0160077f7f7f7f7e7e7f0002320116776173695f736e617073686f745f707265766965773117706174685f66696c65737461745f7365745f74696d65730000",
+    "accepted": false,
+    "error": "signature"
+  },
+  {
+    "name": "path_filestat_set_times wrong kind",
+    "hex": "0061736d0100000002330116776173695f736e617073686f745f707265766965773117706174685f66696c65737461745f7365745f74696d6573037f00",
+    "accepted": false,
+    "error": "function"
+  },
+  {
+    "name": "path_link correct",
+    "hex": "0061736d01000000010c0160077f7f7f7f7f7f7f017f02240116776173695f736e617073686f745f707265766965773109706174685f6c696e6b0000",
+    "accepted": true,
+    "imports": [
+      "path_link"
+    ]
+  },
+  {
+    "name": "path_link wrong parameter",
+    "hex": "0061736d01000000010c0160077e7f7f7f7f7f7f017f02240116776173695f736e617073686f745f707265766965773109706174685f6c696e6b0000",
+    "accepted": false,
+    "error": "signature"
+  },
+  {
+    "name": "path_link wrong result",
+    "hex": "0061736d01000000010b0160077f7f7f7f7f7f7f0002240116776173695f736e617073686f745f707265766965773109706174685f6c696e6b0000",
+    "accepted": false,
+    "error": "signature"
+  },
+  {
+    "name": "path_link wrong kind",
+    "hex": "0061736d0100000002250116776173695f736e617073686f745f707265766965773109706174685f6c696e6b037f00",
+    "accepted": false,
+    "error": "function"
+  },
+  {
+    "name": "path_open correct",
+    "hex": "0061736d01000000010e0160097f7f7f7f7f7e7e7f7f017f02240116776173695f736e617073686f745f707265766965773109706174685f6f70656e0000",
+    "accepted": true,
+    "imports": [
+      "path_open"
+    ]
+  },
+  {
+    "name": "path_open wrong parameter",
+    "hex": "0061736d01000000010e0160097e7f7f7f7f7e7e7f7f017f02240116776173695f736e617073686f745f707265766965773109706174685f6f70656e0000",
+    "accepted": false,
+    "error": "signature"
+  },
+  {
+    "name": "path_open wrong result",
+    "hex": "0061736d01000000010d0160097f7f7f7f7f7e7e7f7f0002240116776173695f736e617073686f745f707265766965773109706174685f6f70656e0000",
+    "accepted": false,
+    "error": "signature"
+  },
+  {
+    "name": "path_open wrong kind",
+    "hex": "0061736d0100000002250116776173695f736e617073686f745f707265766965773109706174685f6f70656e037f00",
+    "accepted": false,
+    "error": "function"
+  },
+  {
+    "name": "path_readlink correct",
+    "hex": "0061736d01000000010b0160067f7f7f7f7f7f017f02280116776173695f736e617073686f745f70726576696577310d706174685f726561646c696e6b0000",
+    "accepted": true,
+    "imports": [
+      "path_readlink"
+    ]
+  },
+  {
+    "name": "path_readlink wrong parameter",
+    "hex": "0061736d01000000010b0160067e7f7f7f7f7f017f02280116776173695f736e617073686f745f70726576696577310d706174685f726561646c696e6b0000",
+    "accepted": false,
+    "error": "signature"
+  },
+  {
+    "name": "path_readlink wrong result",
+    "hex": "0061736d01000000010a0160067f7f7f7f7f7f0002280116776173695f736e617073686f745f70726576696577310d706174685f726561646c696e6b0000",
+    "accepted": false,
+    "error": "signature"
+  },
+  {
+    "name": "path_readlink wrong kind",
+    "hex": "0061736d0100000002290116776173695f736e617073686f745f70726576696577310d706174685f726561646c696e6b037f00",
+    "accepted": false,
+    "error": "function"
+  },
+  {
+    "name": "path_remove_directory correct",
+    "hex": "0061736d0100000001080160037f7f7f017f02300116776173695f736e617073686f745f707265766965773115706174685f72656d6f76655f6469726563746f72790000",
+    "accepted": true,
+    "imports": [
+      "path_remove_directory"
+    ]
+  },
+  {
+    "name": "path_remove_directory wrong parameter",
+    "hex": "0061736d0100000001080160037e7f7f017f02300116776173695f736e617073686f745f707265766965773115706174685f72656d6f76655f6469726563746f72790000",
+    "accepted": false,
+    "error": "signature"
+  },
+  {
+    "name": "path_remove_directory wrong result",
+    "hex": "0061736d0100000001070160037f7f7f0002300116776173695f736e617073686f745f707265766965773115706174685f72656d6f76655f6469726563746f72790000",
+    "accepted": false,
+    "error": "signature"
+  },
+  {
+    "name": "path_remove_directory wrong kind",
+    "hex": "0061736d0100000002310116776173695f736e617073686f745f707265766965773115706174685f72656d6f76655f6469726563746f7279037f00",
+    "accepted": false,
+    "error": "function"
+  },
+  {
+    "name": "path_rename correct",
+    "hex": "0061736d01000000010b0160067f7f7f7f7f7f017f02260116776173695f736e617073686f745f70726576696577310b706174685f72656e616d650000",
+    "accepted": true,
+    "imports": [
+      "path_rename"
+    ]
+  },
+  {
+    "name": "path_rename wrong parameter",
+    "hex": "0061736d01000000010b0160067e7f7f7f7f7f017f02260116776173695f736e617073686f745f70726576696577310b706174685f72656e616d650000",
+    "accepted": false,
+    "error": "signature"
+  },
+  {
+    "name": "path_rename wrong result",
+    "hex": "0061736d01000000010a0160067f7f7f7f7f7f0002260116776173695f736e617073686f745f70726576696577310b706174685f72656e616d650000",
+    "accepted": false,
+    "error": "signature"
+  },
+  {
+    "name": "path_rename wrong kind",
+    "hex": "0061736d0100000002270116776173695f736e617073686f745f70726576696577310b706174685f72656e616d65037f00",
+    "accepted": false,
+    "error": "function"
+  },
+  {
+    "name": "path_symlink correct",
+    "hex": "0061736d01000000010a0160057f7f7f7f7f017f02270116776173695f736e617073686f745f70726576696577310c706174685f73796d6c696e6b0000",
+    "accepted": true,
+    "imports": [
+      "path_symlink"
+    ]
+  },
+  {
+    "name": "path_symlink wrong parameter",
+    "hex": "0061736d01000000010a0160057e7f7f7f7f017f02270116776173695f736e617073686f745f70726576696577310c706174685f73796d6c696e6b0000",
+    "accepted": false,
+    "error": "signature"
+  },
+  {
+    "name": "path_symlink wrong result",
+    "hex": "0061736d0100000001090160057f7f7f7f7f0002270116776173695f736e617073686f745f70726576696577310c706174685f73796d6c696e6b0000",
+    "accepted": false,
+    "error": "signature"
+  },
+  {
+    "name": "path_symlink wrong kind",
+    "hex": "0061736d0100000002280116776173695f736e617073686f745f70726576696577310c706174685f73796d6c696e6b037f00",
+    "accepted": false,
+    "error": "function"
+  },
+  {
+    "name": "path_unlink_file correct",
+    "hex": "0061736d0100000001080160037f7f7f017f022b0116776173695f736e617073686f745f707265766965773110706174685f756e6c696e6b5f66696c650000",
+    "accepted": true,
+    "imports": [
+      "path_unlink_file"
+    ]
+  },
+  {
+    "name": "path_unlink_file wrong parameter",
+    "hex": "0061736d0100000001080160037e7f7f017f022b0116776173695f736e617073686f745f707265766965773110706174685f756e6c696e6b5f66696c650000",
+    "accepted": false,
+    "error": "signature"
+  },
+  {
+    "name": "path_unlink_file wrong result",
+    "hex": "0061736d0100000001070160037f7f7f00022b0116776173695f736e617073686f745f707265766965773110706174685f756e6c696e6b5f66696c650000",
+    "accepted": false,
+    "error": "signature"
+  },
+  {
+    "name": "path_unlink_file wrong kind",
+    "hex": "0061736d01000000022c0116776173695f736e617073686f745f707265766965773110706174685f756e6c696e6b5f66696c65037f00",
+    "accepted": false,
+    "error": "function"
+  },
+  {
+    "name": "poll_oneoff correct",
+    "hex": "0061736d0100000001090160047f7f7f7f017f02260116776173695f736e617073686f745f70726576696577310b706f6c6c5f6f6e656f66660000",
+    "accepted": true,
+    "imports": [
+      "poll_oneoff"
+    ]
+  },
+  {
+    "name": "poll_oneoff wrong parameter",
+    "hex": "0061736d0100000001090160047e7f7f7f017f02260116776173695f736e617073686f745f70726576696577310b706f6c6c5f6f6e656f66660000",
+    "accepted": false,
+    "error": "signature"
+  },
+  {
+    "name": "poll_oneoff wrong result",
+    "hex": "0061736d0100000001080160047f7f7f7f0002260116776173695f736e617073686f745f70726576696577310b706f6c6c5f6f6e656f66660000",
+    "accepted": false,
+    "error": "signature"
+  },
+  {
+    "name": "poll_oneoff wrong kind",
+    "hex": "0061736d0100000002270116776173695f736e617073686f745f70726576696577310b706f6c6c5f6f6e656f6666037f00",
+    "accepted": false,
+    "error": "function"
+  },
+  {
+    "name": "proc_exit correct",
+    "hex": "0061736d0100000001050160017f0002240116776173695f736e617073686f745f70726576696577310970726f635f657869740000",
+    "accepted": true,
+    "imports": [
+      "proc_exit"
+    ]
+  },
+  {
+    "name": "proc_exit wrong parameter",
+    "hex": "0061736d0100000001050160017e0002240116776173695f736e617073686f745f70726576696577310970726f635f657869740000",
+    "accepted": false,
+    "error": "signature"
+  },
+  {
+    "name": "proc_exit wrong result",
+    "hex": "0061736d0100000001060160017f017f02240116776173695f736e617073686f745f70726576696577310970726f635f657869740000",
+    "accepted": false,
+    "error": "signature"
+  },
+  {
+    "name": "proc_exit wrong kind",
+    "hex": "0061736d0100000002250116776173695f736e617073686f745f70726576696577310970726f635f65786974037f00",
+    "accepted": false,
+    "error": "function"
+  },
+  {
+    "name": "proc_raise correct",
+    "hex": "0061736d0100000001060160017f017f02250116776173695f736e617073686f745f70726576696577310a70726f635f72616973650000",
+    "accepted": true,
+    "imports": [
+      "proc_raise"
+    ]
+  },
+  {
+    "name": "proc_raise wrong parameter",
+    "hex": "0061736d0100000001060160017e017f02250116776173695f736e617073686f745f70726576696577310a70726f635f72616973650000",
+    "accepted": false,
+    "error": "signature"
+  },
+  {
+    "name": "proc_raise wrong result",
+    "hex": "0061736d0100000001050160017f0002250116776173695f736e617073686f745f70726576696577310a70726f635f72616973650000",
+    "accepted": false,
+    "error": "signature"
+  },
+  {
+    "name": "proc_raise wrong kind",
+    "hex": "0061736d0100000002260116776173695f736e617073686f745f70726576696577310a70726f635f7261697365037f00",
+    "accepted": false,
+    "error": "function"
+  },
+  {
+    "name": "random_get correct",
+    "hex": "0061736d0100000001070160027f7f017f02250116776173695f736e617073686f745f70726576696577310a72616e646f6d5f6765740000",
+    "accepted": true,
+    "imports": [
+      "random_get"
+    ]
+  },
+  {
+    "name": "random_get wrong parameter",
+    "hex": "0061736d0100000001070160027e7f017f02250116776173695f736e617073686f745f70726576696577310a72616e646f6d5f6765740000",
+    "accepted": false,
+    "error": "signature"
+  },
+  {
+    "name": "random_get wrong result",
+    "hex": "0061736d0100000001060160027f7f0002250116776173695f736e617073686f745f70726576696577310a72616e646f6d5f6765740000",
+    "accepted": false,
+    "error": "signature"
+  },
+  {
+    "name": "random_get wrong kind",
+    "hex": "0061736d0100000002260116776173695f736e617073686f745f70726576696577310a72616e646f6d5f676574037f00",
+    "accepted": false,
+    "error": "function"
+  },
+  {
+    "name": "sched_yield correct",
+    "hex": "0061736d010000000105016000017f02260116776173695f736e617073686f745f70726576696577310b73636865645f7969656c640000",
+    "accepted": true,
+    "imports": [
+      "sched_yield"
+    ]
+  },
+  {
+    "name": "sched_yield wrong parameter",
+    "hex": "0061736d0100000001060160017f017f02260116776173695f736e617073686f745f70726576696577310b73636865645f7969656c640000",
+    "accepted": false,
+    "error": "signature"
+  },
+  {
+    "name": "sched_yield wrong result",
+    "hex": "0061736d0100000001040160000002260116776173695f736e617073686f745f70726576696577310b73636865645f7969656c640000",
+    "accepted": false,
+    "error": "signature"
+  },
+  {
+    "name": "sched_yield wrong kind",
+    "hex": "0061736d0100000002270116776173695f736e617073686f745f70726576696577310b73636865645f7969656c64037f00",
+    "accepted": false,
+    "error": "function"
+  },
+  {
+    "name": "sock_accept correct",
+    "hex": "0061736d0100000001080160037f7f7f017f02260116776173695f736e617073686f745f70726576696577310b736f636b5f6163636570740000",
+    "accepted": true,
+    "imports": [
+      "sock_accept"
+    ]
+  },
+  {
+    "name": "sock_accept wrong parameter",
+    "hex": "0061736d0100000001080160037e7f7f017f02260116776173695f736e617073686f745f70726576696577310b736f636b5f6163636570740000",
+    "accepted": false,
+    "error": "signature"
+  },
+  {
+    "name": "sock_accept wrong result",
+    "hex": "0061736d0100000001070160037f7f7f0002260116776173695f736e617073686f745f70726576696577310b736f636b5f6163636570740000",
+    "accepted": false,
+    "error": "signature"
+  },
+  {
+    "name": "sock_accept wrong kind",
+    "hex": "0061736d0100000002270116776173695f736e617073686f745f70726576696577310b736f636b5f616363657074037f00",
+    "accepted": false,
+    "error": "function"
+  },
+  {
+    "name": "sock_recv correct",
+    "hex": "0061736d01000000010b0160067f7f7f7f7f7f017f02240116776173695f736e617073686f745f707265766965773109736f636b5f726563760000",
+    "accepted": true,
+    "imports": [
+      "sock_recv"
+    ]
+  },
+  {
+    "name": "sock_recv wrong parameter",
+    "hex": "0061736d01000000010b0160067e7f7f7f7f7f017f02240116776173695f736e617073686f745f707265766965773109736f636b5f726563760000",
+    "accepted": false,
+    "error": "signature"
+  },
+  {
+    "name": "sock_recv wrong result",
+    "hex": "0061736d01000000010a0160067f7f7f7f7f7f0002240116776173695f736e617073686f745f707265766965773109736f636b5f726563760000",
+    "accepted": false,
+    "error": "signature"
+  },
+  {
+    "name": "sock_recv wrong kind",
+    "hex": "0061736d0100000002250116776173695f736e617073686f745f707265766965773109736f636b5f72656376037f00",
+    "accepted": false,
+    "error": "function"
+  },
+  {
+    "name": "sock_send correct",
+    "hex": "0061736d01000000010a0160057f7f7f7f7f017f02240116776173695f736e617073686f745f707265766965773109736f636b5f73656e640000",
+    "accepted": true,
+    "imports": [
+      "sock_send"
+    ]
+  },
+  {
+    "name": "sock_send wrong parameter",
+    "hex": "0061736d01000000010a0160057e7f7f7f7f017f02240116776173695f736e617073686f745f707265766965773109736f636b5f73656e640000",
+    "accepted": false,
+    "error": "signature"
+  },
+  {
+    "name": "sock_send wrong result",
+    "hex": "0061736d0100000001090160057f7f7f7f7f0002240116776173695f736e617073686f745f707265766965773109736f636b5f73656e640000",
+    "accepted": false,
+    "error": "signature"
+  },
+  {
+    "name": "sock_send wrong kind",
+    "hex": "0061736d0100000002250116776173695f736e617073686f745f707265766965773109736f636b5f73656e64037f00",
+    "accepted": false,
+    "error": "function"
+  },
+  {
+    "name": "sock_shutdown correct",
+    "hex": "0061736d0100000001070160027f7f017f02280116776173695f736e617073686f745f70726576696577310d736f636b5f73687574646f776e0000",
+    "accepted": true,
+    "imports": [
+      "sock_shutdown"
+    ]
+  },
+  {
+    "name": "sock_shutdown wrong parameter",
+    "hex": "0061736d0100000001070160027e7f017f02280116776173695f736e617073686f745f70726576696577310d736f636b5f73687574646f776e0000",
+    "accepted": false,
+    "error": "signature"
+  },
+  {
+    "name": "sock_shutdown wrong result",
+    "hex": "0061736d0100000001060160027f7f0002280116776173695f736e617073686f745f70726576696577310d736f636b5f73687574646f776e0000",
+    "accepted": false,
+    "error": "signature"
+  },
+  {
+    "name": "sock_shutdown wrong kind",
+    "hex": "0061736d0100000002290116776173695f736e617073686f745f70726576696577310d736f636b5f73687574646f776e037f00",
+    "accepted": false,
+    "error": "function"
+  },
+  {
+    "name": "empty module",
+    "hex": "0061736d01000000",
+    "accepted": true,
+    "imports": []
+  },
+  {
+    "name": "duplicate ordered imports",
+    "hex": "0061736d0100000001060160017f017f02670316776173695f736e617073686f745f70726576696577310866645f636c6f7365000016776173695f736e617073686f745f70726576696577310866645f636c6f7365000016776173695f736e617073686f745f70726576696577310866645f636c6f73650000",
+    "accepted": true,
+    "imports": [
+      "fd_close",
+      "fd_close",
+      "fd_close"
+    ]
+  },
+  {
+    "name": "unknown import",
+    "hex": "0061736d0100000001040160000002240116776173695f736e617073686f745f7072657669657731095f5f70726f746f5f5f0000",
+    "accepted": false,
+    "error": "unsupported WASI Preview 1 import"
+  },
+  {
+    "name": "empty WASI import name",
+    "hex": "0061736d01000000010401600000021b0116776173695f736e617073686f745f7072657669657731000000",
+    "accepted": false,
+    "error": "unsupported WASI Preview 1 import"
+  },
+  {
+    "name": "empty ordinary namespace",
+    "hex": "0061736d010000000104016000000206010001660000",
+    "accepted": true,
+    "imports": []
+  },
+  {
+    "name": "10000 repeated imports",
+    "recipe": "fd_close",
+    "repeat": 10000,
+    "accepted": true
+  },
+  {
+    "name": "unsupported namespace wasi_unstable",
+    "hex": "0061736d010000000104016000000213010d776173695f756e737461626c6501660000",
+    "accepted": false,
+    "error": "namespace"
+  },
+  {
+    "name": "unsupported namespace wasi:cli/environment@0.2.0",
+    "hex": "0061736d010000000104016000000220011a776173693a636c692f656e7669726f6e6d656e7440302e322e3001660000",
+    "accepted": false,
+    "error": "namespace"
+  },
+  {
+    "name": "ordinary namespace wasi_custom",
+    "hex": "0061736d010000000104016000000211010b776173695f637573746f6d01660000",
+    "accepted": true,
+    "imports": []
+  },
+  {
+    "name": "ordinary namespace wasi",
+    "hex": "0061736d01000000010401600000020a01047761736901660000",
+    "accepted": true,
+    "imports": []
+  },
+  {
+    "name": "ordinary namespace WASI",
+    "hex": "0061736d01000000010401600000020a01045741534901660000",
+    "accepted": true,
+    "imports": []
+  },
+  {
+    "name": "ordinary namespace my.wasi:foo",
+    "hex": "0061736d010000000104016000000211010b6d792e776173693a666f6f01660000",
+    "accepted": true,
+    "imports": []
+  },
+  {
+    "name": "_initialize valid",
+    "hex": "0061736d0100000001040160000003020100070f010b5f696e697469616c697a6500000a040102000b",
+    "accepted": true,
+    "imports": [],
+    "entrypoint": "_initialize"
+  },
+  {
+    "name": "_initialize wrong signature",
+    "hex": "0061736d0100000001050160017f0003020100070f010b5f696e697469616c697a6500000a040102000b",
+    "accepted": false,
+    "error": "entrypoint"
+  },
+  {
+    "name": "_initialize wrong kind",
+    "hex": "0061736d010000000606017f0041000b070f010b5f696e697469616c697a650300",
+    "accepted": false,
+    "error": "entrypoint"
+  },
+  {
+    "name": "_start valid",
+    "hex": "0061736d0100000001040160000003020100070a01065f737461727400000a040102000b",
+    "accepted": true,
+    "imports": [],
+    "entrypoint": "_start"
+  },
+  {
+    "name": "_start wrong signature",
+    "hex": "0061736d0100000001050160017f0003020100070a01065f737461727400000a040102000b",
+    "accepted": false,
+    "error": "entrypoint"
+  },
+  {
+    "name": "_start wrong kind",
+    "hex": "0061736d010000000606017f0041000b070a01065f73746172740300",
+    "accepted": false,
+    "error": "entrypoint"
+  },
+  {
+    "name": "trapping start not executed",
+    "hex": "0061736d01000000010401600000030201000801000a05010300000b",
+    "accepted": true,
+    "imports": [],
+    "startSection": true,
+    "engineValid": true
+  },
+  {
+    "name": "opaque invalid code",
+    "hex": "0061736d01000000010401600000030201000a0401020000",
+    "accepted": true,
+    "imports": [],
+    "engineValid": false
+  }
+]

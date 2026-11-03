@@ -560,6 +560,8 @@ liblvgl-wasm-host = { path = "/path/to/liblvgl-wasm/bindings/rust" }
 
 `inspect_module_manifests` checks a typed module graph against private Wasm snapshots. It verifies artifact hashes, complete import and export declarations, provider interfaces and static resource limits. It accepts at most 256 providers and 128 MiB of Wasm, with separate limits of 100,000 declaration entries and Wasm facts and 4 Mi UTF-16 declaration units. Its report exposes read-only checks and facts; engine compilation, features, ABI, memory isolation, host implementation and runtime are not checked. A matching hash establishes consistency with the declared bytes, not publisher identity or permission to load.
 
+`inspect_wasi_preview1` checks the names and signatures of observed WASI Preview 1 imports against a private snapshot and reports the presence of WASI imports and entrypoints. An absent result does not establish the target ABI. The check does not compile or run the module or verify host services.
+
 ```rust
 use liblvgl_wasm_host::{Result, Runtime, UnsafePointer, values};
 

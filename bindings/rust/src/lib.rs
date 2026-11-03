@@ -38,6 +38,11 @@ pub use wasm_facts::{
     WasmIndexedFunction, WasmMemoryType, WasmReferenceType, WasmStart, WasmTableType,
     WasmValueType, inspect_wasm_facts,
 };
+mod wasi_preview1;
+pub use wasi_preview1::{
+    WASI_PREVIEW1_SIGNATURES, WasiEntrypoints, WasiEvidence, WasiImportCheck, WasiPreview1Checks,
+    WasiPreview1Error, WasiPreview1Report, inspect_wasi_preview1,
+};
 
 mod timer;
 pub use timer::Timer;

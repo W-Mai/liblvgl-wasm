@@ -74,7 +74,20 @@ do
     LVW_TEST_MODULE_MANIFEST_REAL="$facts_tmp/manifest.json" \
         CARGO_TARGET_DIR="$root/target/rust" \
         cargo test --manifest-path bindings/rust/Cargo.toml --locked --test module_manifest real_manifest_case
+    bun tests/fixtures/wasi-preview1/real.ts "$module" "$facts_tmp/wasi.json"
+    LVW_TEST_WASI_REAL_INPUT="$root/$module" \
+        LVW_TEST_WASI_REAL_REFERENCE="$facts_tmp/wasi.json" \
+        CARGO_TARGET_DIR="$root/target/rust" \
+        cargo test --manifest-path bindings/rust/Cargo.toml --locked --test wasi_preview1 real_wasi_preview1
 done
+wasi_sdk=$(sh "$root/scripts/resolve-wasi-sdk.sh" "$root")
+"$wasi_sdk/bin/clang" --target=wasm32-wasip1 -std=c11 -O0 -Werror \
+    -Wl,--no-entry -Wl,--export-memory tests/fixtures/wasi/preview1-imports.c -o "$facts_tmp/wasi45.wasm"
+bun tests/fixtures/wasi-preview1/real.ts "$facts_tmp/wasi45.wasm" "$facts_tmp/wasi.json" sdk45
+LVW_TEST_WASI_REAL_INPUT="$facts_tmp/wasi45.wasm" \
+    LVW_TEST_WASI_REAL_REFERENCE="$facts_tmp/wasi.json" \
+    CARGO_TARGET_DIR="$root/target/rust" \
+    cargo test --manifest-path bindings/rust/Cargo.toml --locked --test wasi_preview1 real_wasi_preview1
 rm -rf "$facts_tmp"
 trap - EXIT
 CARGO_TARGET_DIR="$root/target/rust" \

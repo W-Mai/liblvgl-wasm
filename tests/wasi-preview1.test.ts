@@ -4,6 +4,26 @@ import { resolve } from "node:path";
 import { expect, test } from "bun:test";
 import { inspectWasiPreview1, WASI_PREVIEW1_IMPORT_NAMES } from "../bindings/typescript/src/index.ts";
 import { createWasiImports, WASI_IMPORT_NAMES } from "../bindings/typescript/src/wasi.ts";
+import { inspectWasiFacts } from "../bindings/typescript/src/wasi-preview1.ts";
+import { inspectWasmFacts } from "../bindings/typescript/src/wasm-facts.ts";
+import sharedCases from "./fixtures/wasi-preview1/cases.json";
+
+for (const fixture of sharedCases) {
+  test(`shared WASI facts: ${fixture.name}`, () => {
+    const bytes = fixture.recipe === "fd_close"
+      ? wasm(section(1, vec(fn([0x7f], [0x7f]))), section(2, vec(...new Array(fixture.repeat).fill(imported("wasi_snapshot_preview1", "fd_close", 0, 0)))))
+      : Uint8Array.from(fixture.hex!.match(/../g) ?? [], (pair) => Number.parseInt(pair, 16));
+    const inspect = () => inspectWasiFacts(inspectWasmFacts(bytes));
+    if (fixture.accepted) {
+      const result = inspect();
+      const expected = fixture.recipe === "fd_close" ? new Array(fixture.repeat).fill("fd_close") : fixture.imports!;
+      expect(result.evidence).toBe(expected.length ? "present" : "absent");
+      expect(result.imports).toEqual(expected);
+      expect(result.entrypoints).toEqual({ initialize: fixture.entrypoint === "_initialize", start: fixture.entrypoint === "_start", startSection: fixture.startSection === true });
+    } else expect(inspect).toThrow(fixture.error);
+    if (fixture.engineValid !== undefined) expect(WebAssembly.validate(bytes)).toBe(fixture.engineValid);
+  });
+}
 
 const leb = (value: number): number[] => {
   const bytes: number[] = [];
