@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+- Static validation for isolated LVGL label adapter contracts.
 - Trusted standalone LVGL core lifecycle for Rust numeric environments.
 - Restricted WASI Preview 1 services for Rust numeric environments.
 - Rust numeric module graph environments with trusted host bindings and managed lifecycle.

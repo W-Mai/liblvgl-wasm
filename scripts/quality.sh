@@ -39,12 +39,21 @@ python3 -B tests/fixtures/numeric-lvgl/generate.py
 bun tests/fixtures/numeric-lvgl/generate.ts
 python3 -B validator/lvgl-label-fixture.py
 python3 -B validator/lvgl-label-negative-fixtures.py
+python3 -B tests/fixtures/numeric-label/generate-test.py
+python3 -B tests/fixtures/numeric-label/generate.py
+label_tmp=$(mktemp -d "$root/target/.numeric-label.XXXXXX")
+facts_tmp=
+trap 'rm -rf "$label_tmp"; if [ -n "$facts_tmp" ]; then rm -rf "$facts_tmp"; fi' EXIT
+LVW_TEST_LABEL_GRAPH="$label_tmp/graph.json"
+export LVW_TEST_LABEL_GRAPH
+bun tests/fixtures/numeric-label/generate.ts --output "$LVW_TEST_LABEL_GRAPH"
 python3 -B validator/lvgl-event-fixture.py
 python3 -B validator/lvgl-event-negative-fixtures.py
 bun test validator/feature-validator.test.ts
 bun test validator/feature-worker.test.ts validator/feature-worker-live.test.ts validator/feature-graph.test.ts validator/numeric-environment.test.ts validator/wasi-numeric-loader.test.ts
 bun test validator/lvgl-core-profile.test.ts validator/lvgl-lifecycle.test.ts
 bun test validator/lvgl-label-profile.test.ts validator/lvgl-label-negative.test.ts
+bun test validator/numeric-label-preflight.test.ts
 bun test validator/lvgl-event-profile.test.ts validator/lvgl-event-negative.test.ts
 bun test validator/feature-sdk.test.ts
 bun test validator/bounded-core.test.ts
@@ -56,6 +65,7 @@ python3 -B validator/build-worker.test.py
 python3 -B validator/notices.test.py
 python3 -B tests/native-validator-package.py
 python3 -B tests/multimodule-build.py
+python3 -B tests/numeric_sdk_fixture_test.py
 
 cargo fmt --manifest-path bindings/rust/Cargo.toml --all -- --check
 cargo fmt --manifest-path toolchains/rust/Cargo.toml --all -- --check
@@ -76,7 +86,6 @@ LVW_TEST_LVGL_CORE="$root/target/wasm/liblvgl-bounded.wasm" \
     cargo test --manifest-path bindings/rust/Cargo.toml --locked --lib \
         real_lvgl_failed_app_rolls_back_same_core -- --ignored
 facts_tmp=$(mktemp -d "$root/target/.wasm-facts.XXXXXX")
-trap 'rm -rf "$facts_tmp"' EXIT
 for module in target/wasm/liblvgl.wasm target/apps/c/app.wasm
 do
     bun tests/fixtures/wasm-facts/reference.ts "$module" "$facts_tmp/reference.json"
@@ -123,7 +132,7 @@ LVW_TEST_ISOLATED_REAL_INPUT="$facts_tmp/wasi45.wasm" \
     LVW_TEST_ISOLATED_REAL_REFERENCE="$facts_tmp/isolated.json" \
     CARGO_TARGET_DIR="$root/target/rust" \
     cargo test --manifest-path bindings/rust/Cargo.toml --locked --test isolated_resources real_isolated_resources
-rm -rf "$facts_tmp"
+rm -rf "$facts_tmp" "$label_tmp"
 trap - EXIT
 CARGO_TARGET_DIR="$root/target/rust" \
     cargo run --manifest-path bindings/rust/Cargo.toml --locked -- "$root/target/wasm/liblvgl.wasm"

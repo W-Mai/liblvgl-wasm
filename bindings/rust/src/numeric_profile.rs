@@ -12,6 +12,7 @@ use crate::module_manifest::{
     ModuleExternalType, ModuleInterface, ModuleManifestError, ModuleManifestInput,
     PreparedModuleGraph, SnapshotModule, prepare_module_manifests,
 };
+use crate::numeric_label::{NumericLabelOptions, label_signature};
 use crate::numeric_lvgl::{LVGL_LIFECYCLE, NumericLvglCoreOptions, bridge_signature};
 use crate::numeric_wasi::{NumericWasiOptions, NumericWasiService};
 use crate::wasm_facts::{WasmExternal, WasmValueType};
@@ -192,11 +193,28 @@ fn entrypoint(
     Ok(())
 }
 
+fn owned_memory(module: &SnapshotModule<'_>) -> Result<()> {
+    if module.facts.memories.len() != 1
+        || module.facts.memories[0].imported
+        || module.facts.memories[0].ty.shared
+        || !module.facts.exports.iter().any(|item| {
+            item.name == "memory" && matches!(item.external, WasmExternal::Memory { index: 0, .. })
+        })
+    {
+        return Err(fail(format!(
+            "{:?}: label profile requires owned exported memory",
+            module.manifest.id
+        )));
+    }
+    Ok(())
+}
+
 fn check_profile<'a>(
     prepared: &PreparedModuleGraph<'_>,
     profile: &'a NumericProfile,
     wasi: Option<&NumericWasiOptions>,
     lvgl: Option<&NumericLvglCoreOptions>,
+    label: Option<&NumericLabelOptions>,
 ) -> Result<&'a str> {
     if profile.modules.len() > 256 || profile.hosts.len() > 256 {
         return Err(fail("numeric provider limit exceeded"));
@@ -259,8 +277,23 @@ fn check_profile<'a>(
     {
         return Err(fail("invalid LVGL core options"));
     }
+    if let Some(label) = label
+        && (!label.valid()
+            || !valid_name(&label.id)
+            || !valid_interface(&label.interface)
+            || lvgl.is_none()
+            || hosts.contains_key(label.id.as_str())
+            || modules.contains_key(label.id.as_str())
+            || wasi.is_some_and(|wasi| wasi.id == label.id)
+            || lvgl.is_some_and(|lvgl| lvgl.id == label.id))
+    {
+        return Err(fail("invalid LVGL label options"));
+    }
     if modules.len() != prepared.modules.len()
-        || hosts.len() + usize::from(wasi.is_some()) + usize::from(lvgl.is_some())
+        || hosts.len()
+            + usize::from(wasi.is_some())
+            + usize::from(lvgl.is_some())
+            + usize::from(label.is_some())
             != prepared.hosts.len()
     {
         return Err(fail("numeric provider inventory differs"));
@@ -300,6 +333,17 @@ fn check_profile<'a>(
                 &[WasmValueType::I32],
                 true,
             )?;
+            if label.is_some() {
+                owned_memory(module)?;
+                if !module
+                    .manifest
+                    .requires
+                    .iter()
+                    .any(|requirement| lvgl.is_some_and(|lvgl| requirement.provider == lvgl.module))
+                {
+                    return Err(fail("label app must depend on its LVGL core"));
+                }
+            }
         }
         if module.facts.start.is_some() {
             return Err(fail(format!("{id:?}: start section is unsupported")));
@@ -320,6 +364,23 @@ fn check_profile<'a>(
             entrypoint(module, "_initialize", &[], &[], true)?;
             for entry in LVGL_LIFECYCLE {
                 entrypoint(module, entry, &[], &[WasmValueType::I32], true)?;
+            }
+            if label.is_some() {
+                owned_memory(module)?;
+                use WasmValueType::I32;
+                let entries: &[(&str, &[WasmValueType], &[WasmValueType])] = &[
+                    ("lvw_display_create", &[I32, I32, I32], &[I32]),
+                    ("lvw_alloc", &[I32], &[I32]),
+                    ("lvw_free", &[I32], &[]),
+                    ("lv_display_get_screen_active", &[I32], &[I32]),
+                    ("lv_label_create", &[I32], &[I32]),
+                    ("lv_label_set_text", &[I32, I32], &[]),
+                    ("lv_refr_now", &[I32], &[]),
+                    ("lvw_frame_get", &[I32, I32], &[I32]),
+                ];
+                for (entry, params, results) in entries {
+                    entrypoint(module, entry, params, results, true)?;
+                }
             }
             if contract.exports.iter().any(|function| {
                 !matches!(function.name.as_str(), "lv_is_initialized" | "lv_tick_get")
@@ -434,6 +495,17 @@ fn check_profile<'a>(
         return Err(fail("numeric environment resource limit exceeded"));
     }
     for host in prepared.hosts {
+        if let Some(label) = label.filter(|label| label.id == host.id) {
+            if label.interface != host.interface
+                || host
+                    .exports
+                    .iter()
+                    .any(|item| !label_signature(&item.name, &item.ty))
+            {
+                return Err(fail("LVGL label host contract differs"));
+            }
+            continue;
+        }
         if let Some(lvgl) = lvgl.filter(|lvgl| lvgl.id == host.id) {
             if lvgl.interface != host.interface
                 || host
@@ -485,14 +557,35 @@ fn check_profile<'a>(
         }
     }
     let mut lvgl_imports = HashSet::new();
+    let mut label_imports = HashSet::new();
     for module in &prepared.modules {
         for requirement in &module.manifest.requires {
+            if label
+                .is_some_and(|label| requirement.provider == label.id && module.manifest.id != app)
+            {
+                return Err(fail("LVGL label host is reserved for its app"));
+            }
             if lvgl.is_some_and(|lvgl| {
                 requirement.provider == lvgl.id && module.manifest.id != lvgl.module
             }) {
                 return Err(fail("LVGL host is reserved for its core"));
             }
             for item in &requirement.imports {
+                if label
+                    .is_some_and(|label| item.module == "lvgl" || requirement.provider == label.id)
+                {
+                    if !label.is_some_and(|label| {
+                        module.manifest.id == app
+                            && requirement.provider == label.id
+                            && item.module == "lvgl"
+                            && item.provider_export == item.name
+                            && label_signature(&item.name, &item.ty)
+                    }) {
+                        return Err(fail("LVGL label import is not authorized"));
+                    }
+                    label_imports.insert(item.name.as_str());
+                    continue;
+                }
                 if lvgl.is_some_and(|lvgl| item.module == "lvw" || requirement.provider == lvgl.id)
                 {
                     if !lvgl.is_some_and(|lvgl| {
@@ -560,6 +653,21 @@ fn check_profile<'a>(
                 .any(|item| !lvgl_imports.contains(item.name.as_str()))
         {
             return Err(fail("LVGL host inventory differs from core imports"));
+        }
+    }
+    if let Some(label) = label {
+        let host = prepared
+            .hosts
+            .iter()
+            .find(|host| host.id == label.id)
+            .ok_or_else(|| fail("LVGL label host is missing"))?;
+        if host.exports.len() != label_imports.len()
+            || host
+                .exports
+                .iter()
+                .any(|item| !label_imports.contains(item.name.as_str()))
+        {
+            return Err(fail("LVGL label host inventory differs from app imports"));
         }
     }
     Ok(app)
@@ -640,8 +748,34 @@ pub(crate) fn prepare_numeric_graph_with_options<'a>(
     wasi: Option<&NumericWasiOptions>,
     lvgl: Option<&NumericLvglCoreOptions>,
 ) -> Result<PreparedNumericGraph<'a>> {
+    prepare_numeric_graph_with_label(input, profile, allowed, wasi, lvgl, None)
+}
+
+/// Validate and compile a graph with an isolated LVGL label adapter without instantiation.
+pub fn preflight_lvgl_label_graph(
+    input: &ModuleManifestInput<'_>,
+    profile: &NumericProfile,
+    allowed: &[&str],
+    lvgl: &NumericLvglCoreOptions,
+    wasi: Option<&NumericWasiOptions>,
+    label: &NumericLabelOptions,
+) -> Result<NumericPreflightReport> {
+    Ok(
+        prepare_numeric_graph_with_label(input, profile, allowed, wasi, Some(lvgl), Some(label))?
+            .report,
+    )
+}
+
+pub(crate) fn prepare_numeric_graph_with_label<'a>(
+    input: &'a ModuleManifestInput<'a>,
+    profile: &'a NumericProfile,
+    allowed: &[&str],
+    wasi: Option<&NumericWasiOptions>,
+    lvgl: Option<&NumericLvglCoreOptions>,
+    label: Option<&NumericLabelOptions>,
+) -> Result<PreparedNumericGraph<'a>> {
     let prepared = prepare_module_manifests(input).map_err(NumericPreflightError::Manifest)?;
-    let app_id = check_profile(&prepared, profile, wasi, lvgl)?.to_owned();
+    let app_id = check_profile(&prepared, profile, wasi, lvgl, label)?.to_owned();
     let checked =
         check_prepared_feature_graph(prepared, allowed).map_err(NumericPreflightError::Feature)?;
     let (prepared, engine, modules, graph) =

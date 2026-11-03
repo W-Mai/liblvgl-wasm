@@ -14,6 +14,9 @@ use std::collections::BTreeMap;
 #[path = "fixtures/numeric-environment/fixture.rs"]
 #[allow(dead_code)]
 mod numeric_fixture;
+#[path = "fixtures/numeric-label/fixture.rs"]
+#[allow(dead_code)]
+mod numeric_label_fixture;
 #[path = "fixtures/numeric-lvgl/fixture.rs"]
 #[allow(dead_code)]
 mod numeric_lvgl_fixture;
@@ -270,6 +273,12 @@ fn main() {
     let path = args.next().expect("numeric LVGL graph path or skip marker");
     if path != "--skip-lvgl" {
         numeric_lvgl_fixture::run_positive(&std::fs::read(path).unwrap());
+    }
+    let path = args
+        .next()
+        .expect("numeric label graph path or skip marker");
+    if path != "--skip-label" {
+        numeric_label_fixture::run_preflight(&std::fs::read(path).unwrap());
     }
 
     let empty = b"\0asm\x01\0\0\0";
