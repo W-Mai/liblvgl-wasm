@@ -572,6 +572,8 @@ liblvgl-wasm-host = { path = "/path/to/liblvgl-wasm/bindings/rust" }
 
 `preflight_numeric_graph` checks one app and its library graph against trusted module and host contracts, bounded memory and table limits, and i32 function signatures. It compiles the checked snapshots without instantiating them; WASI imports and cross-module pointers or callbacks are not supported. Wasm i32 types cannot distinguish numeric values from pointers or handles, so trusted contracts must authorize numeric semantics only. The report does not authorize execution.
 
+`load_numeric_environment` validates and compiles the same private module snapshots before creating trusted host instances and loading one app with its libraries. Initialization follows dependency order; `close` invokes initialized modules in reverse order and releases host instances. A nonzero initialization status rolls back earlier successful modules. A trap, host error or panic poisons the environment and stops further guest calls; dropping an environment does not execute guest cleanup. Host functions exchange only i32 values and do not receive guest memory or Wasmtime handles. WASI imports, cross-instance pointer semantics and callbacks are unsupported. Validation, compilation and guest execution are synchronous and have no CPU or execution deadline.
+
 ```rust
 use liblvgl_wasm_host::{Result, Runtime, UnsafePointer, values};
 

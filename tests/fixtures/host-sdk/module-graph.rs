@@ -2,13 +2,18 @@ use liblvgl_wasm_host::{
     FEATURE_POLICY, FEATURE_POLICY_VERSION, FeatureValidationCheck, IsolatedTopologyCheck,
     ManifestCheck, ManifestRequirement, ModuleArtifact, ModuleArtifactInput, ModuleDeclaration,
     ModuleExport, ModuleExternalType, ModuleGraph, ModuleHostProvider, ModuleImport,
-    ModuleInterface, ModuleManifest, ModuleManifestInput, ModuleRole, ModuleTarget, NumericLimits,
-    NumericModuleContract, NumericProfile, WasiEvidence, WasmCheck, WasmExternal, WasmFacts,
-    WasmValueType, compile_feature_module_graph, inspect_feature_module_graph,
-    inspect_isolated_resources, inspect_module_manifests, inspect_wasi_preview1,
-    inspect_wasm_facts, order_module_graph, preflight_numeric_graph, validate_wasm_features,
+    ModuleInterface, ModuleManifest, ModuleManifestInput, ModuleRole, ModuleTarget,
+    NumericEnvironmentState, NumericLimits, NumericModuleContract, NumericProfile, WasiEvidence,
+    WasmCheck, WasmExternal, WasmFacts, WasmValueType, compile_feature_module_graph,
+    inspect_feature_module_graph, inspect_isolated_resources, inspect_module_manifests,
+    inspect_wasi_preview1, inspect_wasm_facts, load_numeric_environment, order_module_graph,
+    preflight_numeric_graph, validate_wasm_features,
 };
 use std::collections::BTreeMap;
+
+#[path = "fixtures/numeric-environment/fixture.rs"]
+#[allow(dead_code)]
+mod numeric_fixture;
 
 fn descriptor(facts: &WasmFacts, external: WasmExternal) -> ModuleExternalType {
     match external {
@@ -204,6 +209,10 @@ fn inspect_numeric_app() {
         result.graph().modules()[0].checks().runtime(),
         WasmCheck::NotRun
     );
+    let mut environment = load_numeric_environment(&input, &profile, &[], &mut []).unwrap();
+    assert_eq!(environment.run(42).unwrap(), 42);
+    environment.close().unwrap();
+    assert_eq!(environment.state(), NumericEnvironmentState::Closed);
 }
 
 fn main() {
@@ -248,6 +257,8 @@ fn main() {
     assert_eq!(isolated.checks().wasi_abi(), WasmCheck::NotRun);
     inspect_real_graph(&bytes, &facts, &expected_sha);
     inspect_numeric_app();
+    let numeric_graph = std::fs::read(args.next().expect("numeric graph path")).unwrap();
+    numeric_fixture::run_positive(&numeric_graph);
 
     let empty = b"\0asm\x01\0\0\0";
     let feature = validate_wasm_features(empty, &[], &[]).unwrap();

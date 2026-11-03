@@ -400,6 +400,18 @@ pub(crate) struct PreparedNumericGraph<'a> {
     _profile: &'a NumericProfile,
     report: NumericPreflightReport,
 }
+impl<'a> PreparedNumericGraph<'a> {
+    pub(crate) fn into_parts(
+        self,
+    ) -> (
+        PreparedModuleGraph<'a>,
+        wasmtime::Engine,
+        Vec<wasmtime::Module>,
+        &'a NumericProfile,
+    ) {
+        (self._prepared, self._engine, self._modules, self._profile)
+    }
+}
 
 /// Validate trusted numeric contracts and compile the same private snapshots without creating an instance. The report does not authorize execution, and i32 contracts must exclude pointer and handle semantics.
 pub fn preflight_numeric_graph(

@@ -54,6 +54,11 @@ pub use numeric_profile::{
     NumericPreflightError, NumericPreflightReport, NumericProfile, NumericResult,
     preflight_numeric_graph,
 };
+mod numeric_environment;
+pub use numeric_environment::{
+    NumericEnvironment, NumericEnvironmentError, NumericEnvironmentId, NumericEnvironmentState,
+    NumericHostBinding, NumericHostFactory, NumericHostInstance, load_numeric_environment,
+};
 mod wasm_facts;
 pub use wasm_facts::{
     WASM_FACTS_MAX_INPUT_BYTES, WASM_FACTS_MAX_NAME_BYTES, WASM_FACTS_MAX_SECTIONS,

@@ -1,6 +1,9 @@
 import { inspectWasmFacts } from "../../../bindings/typescript/src/wasm-facts.ts";
+import { parseArgs } from "node:util";
 
-const directory = "target/validator/numeric-fixtures";
+const { values } = parseArgs({ args: process.argv.slice(2), options: { fixtures: { type: "string" }, output: { type: "string" } } });
+const directory = values.fixtures ?? "target/validator/numeric-fixtures";
+const output = values.output ?? "target/validator/numeric-preflight.json";
 const names = ["app", "a", "b", "core"];
 const tableVariants: Record<string, string> = {
   "core-table": "(table 1 2 funcref)", "b-table": "(table 1 2 funcref)",
@@ -124,4 +127,4 @@ for (const raw of descriptions) {
       maxTotalMemoryPages: spec.maxTotalMemoryPages ?? 8, maxTableElements: spec.maxTableElements ?? 0,
       maxTotalTableElements: spec.maxTotalTableElements ?? 0 } }, allowedFeatures: spec.features ?? [] });
 }
-await Bun.write("target/validator/numeric-preflight.json", JSON.stringify(cases));
+await Bun.write(output, JSON.stringify(cases));

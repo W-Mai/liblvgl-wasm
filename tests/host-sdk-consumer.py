@@ -11,6 +11,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "toolchains"))
 from host_sdk import build_host_sdk, verify_rust_validator
 from lvw import file_inventory, publish_package
+from numeric_sdk_fixture import install as install_numeric_fixture, prepare as prepare_numeric_fixture
 
 
 def run(*command, **kwargs):
@@ -32,6 +33,7 @@ def check(output, build=None):
         raise ValueError(f"unknown software contract: {software}")
     contracts = callbacks + software
     build = build or ROOT / "target/wasm"
+    numeric_graph = prepare_numeric_fixture(output / "numeric-fixture")
     ndk = output / "ndk"
     run("cmake", "--build", build, "--target", "lvw_ndk", "-j", "4")
     run("cmake", "--install", build, "--prefix", ndk, "--component", "ndk")
@@ -104,9 +106,10 @@ def check(output, build=None):
             graph_consumer = project / "rust graph"
             (graph_consumer / "src").mkdir(parents=True)
             shutil.copyfile(ROOT / "tests/fixtures/host-sdk/module-graph.rs", graph_consumer / "src/main.rs")
+            install_numeric_fixture(graph_consumer / "src")
             (graph_consumer / "Cargo.toml").write_text('[package]\nname="lvw-graph-consumer"\n'
                 'version="0.1.0"\nedition="2024"\n[dependencies]\nliblvgl-wasm-host={path='
-                + json.dumps(str(package / "rust")) + '}\n')
+                + json.dumps(str(package / "rust")) + '}\nserde_json="=1.0.151"\nsha2="=0.10.9"\n')
             shutil.copyfile(package / "rust/Cargo.lock", graph_consumer / "Cargo.lock")
             environment = {**os.environ, "CARGO_TARGET_DIR": str(ROOT / "target/rust")}
             environment.pop("LVW_RUST_BINDINGS", None)
@@ -114,7 +117,7 @@ def check(output, build=None):
             subprocess.run(["cargo", "metadata", "--offline", "--format-version", "1", "--manifest-path", str(graph_consumer / "Cargo.toml")],
                            env=environment, stdout=subprocess.DEVNULL, check=True)
             run("cargo", "run", "--locked", "--offline", "--manifest-path", graph_consumer / "Cargo.toml", "--",
-                package / "runtime/liblvgl.wasm", metadata["identity"]["wasm_sha256"], env=environment)
+                package / "runtime/liblvgl.wasm", metadata["identity"]["wasm_sha256"], numeric_graph, env=environment)
             if contracts:
                 environment = {**os.environ, "LVW_TEST_CORE": str(package / "runtime/liblvgl.wasm"),
                                "LVW_TEST_API": str(package / "metadata/api.json"),

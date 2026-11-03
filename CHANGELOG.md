@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+- Rust numeric module graph environments with trusted host bindings and managed lifecycle.
 - Trusted numeric module graph preflight and resource limits.
 - Wasmtime compilation checks for authorized module graph features.
 - Rust module graph inspection with feature, WASI and resource topology checks.

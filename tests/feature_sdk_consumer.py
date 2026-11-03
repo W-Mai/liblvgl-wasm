@@ -20,6 +20,7 @@ from lvw import file_inventory
 from host_sdk import verify_feature_validator, verify_rust_validator
 from feature_sdk_browser import run_browser
 from bounded_core import MAX_API_BYTES, MAX_CORE_BYTES, check_proof, read
+from numeric_sdk_fixture import install as install_numeric_fixture, prepare as prepare_numeric_fixture
 
 
 def run(*command, cwd=None, env=None):
@@ -294,6 +295,7 @@ def check(sdk, ndk, chromium=None):
         raise ValueError("missing LVGL numeric example; run examples/c/multimodule/build.py")
     with tempfile.TemporaryDirectory(prefix="lvw feature sdk ", dir=ROOT / "target/validator") as temporary:
         work = Path(temporary)
+        numeric_graph = prepare_numeric_fixture(work / "numeric-fixture")
         bounded = read(ROOT / "target/wasm/liblvgl-bounded.wasm", MAX_CORE_BYTES)
         api = read(ROOT / "target/wasm/api.json", MAX_API_BYTES)
         proof = read(ROOT / "target/wasm/api-verification-bounded.json", 1024 * 1024)
@@ -350,9 +352,10 @@ def check(sdk, ndk, chromium=None):
             rust_consumer = project / "rust-validator"
             (rust_consumer / "src").mkdir(parents=True)
             shutil.copyfile(ROOT / "tests/fixtures/host-sdk/module-graph.rs", rust_consumer / "src/main.rs")
+            install_numeric_fixture(rust_consumer / "src")
             (rust_consumer / "Cargo.toml").write_text('[package]\nname="lvw-feature-sdk-rust-consumer"\n'
                 'version="0.1.0"\nedition="2024"\n[dependencies]\nliblvgl-wasm-host={path='
-                + json.dumps(str(moved / "rust")) + '}\n')
+                + json.dumps(str(moved / "rust")) + '}\nserde_json="=1.0.151"\nsha2="=0.10.9"\n')
             shutil.copyfile(moved / "rust/Cargo.lock", rust_consumer / "Cargo.lock")
             rust_env = {**os.environ, "CARGO_TARGET_DIR": str(ROOT / "target/rust")}
             rust_env.pop("LVW_RUST_BINDINGS", None)
@@ -360,7 +363,7 @@ def check(sdk, ndk, chromium=None):
             subprocess.run(["cargo", "metadata", "--offline", "--format-version", "1", "--manifest-path", str(rust_consumer / "Cargo.toml")],
                            env=rust_env, stdout=subprocess.DEVNULL, check=True)
             run("cargo", "run", "--locked", "--offline", "--manifest-path", rust_consumer / "Cargo.toml", "--",
-                moved / "runtime/liblvgl.wasm", manifest["identity"]["wasm_sha256"], env=rust_env)
+                moved / "runtime/liblvgl.wasm", manifest["identity"]["wasm_sha256"], numeric_graph, env=rust_env)
             (project / "package.json").write_text('{"type":"module"}\n')
             (project / "node_modules").mkdir()
             (project / "node_modules/liblvgl-wasm").symlink_to(typescript, target_is_directory=True)

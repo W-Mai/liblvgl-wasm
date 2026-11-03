@@ -1,6 +1,7 @@
 """Compile the numeric-only environment fixtures."""
 
 from pathlib import Path
+import argparse
 import subprocess
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -8,6 +9,10 @@ OUTPUT = ROOT / "target/validator/numeric-fixtures"
 
 
 def main():
+    global OUTPUT
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--output", type=Path, default=OUTPUT)
+    OUTPUT = parser.parse_args().output
     OUTPUT.mkdir(parents=True, exist_ok=True)
     for name in ("core", "b", "a", "app"):
         source = (ROOT / "validator" / f"numeric-{name}.wat").read_text()
