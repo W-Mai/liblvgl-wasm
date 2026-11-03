@@ -19,6 +19,11 @@ use wasmtime_wasi::p1::{self, WasiP1Ctx};
 
 pub use wasmtime::{Error, Result};
 
+mod module_graph;
+pub use module_graph::{
+    ModuleDeclaration, ModuleGraph, ModuleGraphError, ModuleRole, order_module_graph,
+};
+
 mod timer;
 pub use timer::Timer;
 mod animation;

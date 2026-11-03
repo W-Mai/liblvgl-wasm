@@ -1,5 +1,23 @@
 import { expect, test } from "bun:test";
 import { orderModuleGraph, type ModuleDeclaration } from "../bindings/typescript/src/index.ts";
+import cases from "./fixtures/module-graph/cases.json";
+
+for (const fixture of cases) {
+  test(`shared module graph: ${fixture.name}`, () => {
+    const modules = fixture.modules as ModuleDeclaration[];
+    const inputs = fixture.permutations
+      ? modules.flatMap((_, i) => {
+        const rotated = [...modules.slice(i), ...modules.slice(0, i)];
+        return [rotated, [...rotated].reverse()];
+      })
+      : [modules];
+    for (const input of inputs) {
+      const run = () => orderModuleGraph({ modules: input, hostProviders: fixture.hostProviders });
+      if (fixture.error !== undefined) expect(run).toThrow(fixture.error);
+      else expect(run()).toEqual(fixture.order);
+    }
+  });
+}
 
 test("module declarations produce the same provider-first order for any input order", () => {
   const modules: ModuleDeclaration[] = [

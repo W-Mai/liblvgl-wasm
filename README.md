@@ -554,6 +554,8 @@ The TypeScript runtime and Studio require the `lvw_event_remove` export for mana
 liblvgl-wasm-host = { path = "/path/to/liblvgl-wasm/bindings/rust" }
 ```
 
+`order_module_graph` orders typed library and app declarations by their provider dependencies. It checks IDs, edges and cycles; it does not inspect Wasm files or authorize loading. Libraries precede apps, and IDs use UTF-16 code-unit order. The Rust graph accepts at most 256 providers, 100,000 entries and 4 Mi UTF-16 code units across all ID occurrences. Entries count providers and requirements, including duplicate requirements.
+
 ```rust
 use liblvgl_wasm_host::{Result, Runtime, UnsafePointer, values};
 

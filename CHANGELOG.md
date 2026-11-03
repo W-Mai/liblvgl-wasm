@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+- Bounded Rust module graph validation and provider-first ordering.
 - Synchronous clicked-event callbacks for isolated LVGL applications.
 - Isolated C label adapter and copied RGBA frames for LVGL module graphs.
 - Trusted LVGL core lifecycle for isolated numeric module graphs.

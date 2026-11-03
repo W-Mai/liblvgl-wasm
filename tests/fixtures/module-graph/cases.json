@@ -1,0 +1,59 @@
+[
+  {
+    "name": "provider-first order and repeated requirements",
+    "modules": [
+      { "id": "app-a", "role": "app", "requires": [{ "provider": "widgets" }, { "provider": "lvgl" }, { "provider": "host.clock" }] },
+      { "id": "widgets", "role": "lib", "requires": [{ "provider": "lvgl", "interface": "drawing" }, { "provider": "lvgl", "interface": "input" }] },
+      { "id": "lvgl", "role": "lib", "requires": [{ "provider": "host.clock" }] },
+      { "id": "app-b", "role": "app", "requires": [{ "provider": "lvgl" }] },
+      { "id": "other", "role": "lib", "requires": [] }
+    ],
+    "hostProviders": ["host.clock"],
+    "order": ["lvgl", "other", "widgets", "app-a", "app-b"],
+    "permutations": true
+  },
+  {
+    "name": "UTF-16 ready library and application order",
+    "modules": [
+      { "id": "\ue000", "role": "lib", "requires": [] },
+      { "id": "😀", "role": "lib", "requires": [] },
+      { "id": "app.\ue000", "role": "app", "requires": [] },
+      { "id": "app.😀", "role": "app", "requires": [] }
+    ],
+    "hostProviders": [],
+    "order": ["😀", "\ue000", "app.😀", "app.\ue000"],
+    "permutations": true
+  },
+  {
+    "name": "UTF-16 cycle traversal",
+    "modules": [
+      { "id": "\ue000", "role": "lib", "requires": [{ "provider": "😀" }] },
+      { "id": "😀", "role": "lib", "requires": [{ "provider": "\ue000" }] }
+    ],
+    "hostProviders": [],
+    "error": "Library dependency cycle: \"😀\" -> \"\" -> \"😀\"",
+    "cycle": ["😀", "\ue000", "😀"]
+  },
+  { "name": "empty module", "modules": [{ "id": "", "role": "lib", "requires": [] }], "hostProviders": [], "error": "Invalid module ID" },
+  { "name": "empty host", "modules": [], "hostProviders": [""], "error": "Invalid host provider ID" },
+  { "name": "duplicate modules", "modules": [{ "id": "a", "role": "lib", "requires": [] }, { "id": "a", "role": "lib", "requires": [] }], "hostProviders": [], "error": "Duplicate provider ID" },
+  { "name": "duplicate host", "modules": [], "hostProviders": ["a", "a"], "error": "Duplicate provider ID" },
+  { "name": "host module collision", "modules": [{ "id": "a", "role": "lib", "requires": [] }], "hostProviders": ["a"], "error": "Duplicate provider ID" },
+  { "name": "missing provider", "modules": [{ "id": "a", "role": "lib", "requires": [{ "provider": "missing" }] }], "hostProviders": [], "error": "Missing provider" },
+  { "name": "self dependency", "modules": [{ "id": "a", "role": "lib", "requires": [{ "provider": "a" }] }], "hostProviders": [], "error": "Self dependency" },
+  { "name": "application provider", "modules": [{ "id": "a", "role": "lib", "requires": [{ "provider": "app" }] }, { "id": "app", "role": "app", "requires": [] }], "hostProviders": [], "error": "App cannot be a provider" },
+  { "name": "application depends on application", "modules": [{ "id": "a", "role": "app", "requires": [{ "provider": "app" }] }, { "id": "app", "role": "app", "requires": [] }], "hostProviders": [], "error": "App cannot be a provider" },
+  { "name": "dependency cycle", "modules": [{ "id": "a", "role": "lib", "requires": [{ "provider": "b" }] }, { "id": "b", "role": "lib", "requires": [{ "provider": "c" }] }, { "id": "c", "role": "lib", "requires": [{ "provider": "a" }] }], "hostProviders": [], "error": "Library dependency cycle" },
+  { "name": "BOM module prefix", "modules": [{ "id": "\ufeffa", "role": "lib", "requires": [] }], "hostProviders": [], "error": "Invalid module ID" },
+  { "name": "BOM module suffix", "modules": [{ "id": "a\ufeff", "role": "lib", "requires": [] }], "hostProviders": [], "error": "Invalid module ID" },
+  { "name": "BOM host", "modules": [], "hostProviders": ["\ufeffhost"], "error": "Invalid host provider ID" },
+  { "name": "BOM requirement", "modules": [{ "id": "a", "role": "lib", "requires": [{ "provider": "host\ufeff" }] }], "hostProviders": [], "error": "Invalid provider ID" },
+  { "name": "next line accepted at module boundaries", "modules": [{ "id": "\u0085a\u0085", "role": "lib", "requires": [] }], "hostProviders": [], "order": ["\u0085a\u0085"] },
+  { "name": "next line accepted at host boundaries", "modules": [{ "id": "a", "role": "lib", "requires": [{ "provider": "\u0085host\u0085" }] }], "hostProviders": ["\u0085host\u0085"], "order": ["a"] },
+  { "name": "interior whitespace accepted", "modules": [{ "id": "a\ufeffb", "role": "lib", "requires": [] }], "hostProviders": [], "order": ["a\ufeffb"] },
+  { "name": "line separator rejected", "modules": [{ "id": "a\u2028", "role": "lib", "requires": [] }], "hostProviders": [], "error": "Invalid module ID" },
+  { "name": "non-breaking space rejected", "modules": [], "hostProviders": ["\u00a0host"], "error": "Invalid host provider ID" },
+  { "name": "zero width space accepted", "modules": [{ "id": "\u200ba", "role": "lib", "requires": [] }], "hostProviders": [], "order": ["\u200ba"] },
+  { "name": "mongolian vowel separator accepted", "modules": [{ "id": "a\u180e", "role": "lib", "requires": [] }], "hostProviders": [], "order": ["a\u180e"] },
+  { "name": "escaped diagnostic", "modules": [{ "id": "a -> b\nline", "role": "lib", "requires": [{ "provider": "missing\nnext" }] }], "hostProviders": [], "error": "Missing provider: \"a -> b\\nline\" -> \"missing\\nnext\"" }
+]

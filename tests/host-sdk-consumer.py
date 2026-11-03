@@ -97,6 +97,18 @@ def check(output, build=None):
                 if path.suffix in (".ts", ".js"):
                     assert str(ROOT) not in path.read_text() and str(output) not in path.read_text(), path
             packages.append({"package": str(package), "consumer": str(project), **metadata})
+            graph_consumer = project / "rust graph"
+            (graph_consumer / "src").mkdir(parents=True)
+            shutil.copyfile(ROOT / "tests/fixtures/host-sdk/module-graph.rs", graph_consumer / "src/main.rs")
+            (graph_consumer / "Cargo.toml").write_text('[package]\nname="lvw-graph-consumer"\n'
+                'version="0.1.0"\nedition="2024"\n[dependencies]\nliblvgl-wasm-host={path='
+                + json.dumps(str(package / "rust")) + '}\n')
+            shutil.copyfile(package / "rust/Cargo.lock", graph_consumer / "Cargo.lock")
+            environment = {**os.environ, "CARGO_TARGET_DIR": str(ROOT / "target/rust")}
+            environment.pop("LVW_RUST_BINDINGS", None)
+            subprocess.run(["cargo", "metadata", "--offline", "--format-version", "1", "--manifest-path", str(graph_consumer / "Cargo.toml")],
+                           env=environment, stdout=subprocess.DEVNULL, check=True)
+            run("cargo", "run", "--locked", "--offline", "--manifest-path", graph_consumer / "Cargo.toml", env=environment)
             if contracts:
                 environment = {**os.environ, "LVW_TEST_CORE": str(package / "runtime/liblvgl.wasm"),
                                "LVW_TEST_API": str(package / "metadata/api.json"),
