@@ -28,6 +28,12 @@ pub use isolated_resources::{
     IsolatedResourceChecks, IsolatedResourceError, IsolatedResourceReport, IsolatedTopologyCheck,
     inspect_isolated_resources,
 };
+mod feature_validation;
+pub use feature_validation::{
+    FEATURE_POLICY, FEATURE_POLICY_VERSION, FeaturePolicyEntry, FeaturePolicyError,
+    FeatureValidationCheck, FeatureValidationChecks, FeatureValidationError,
+    FeatureValidationReport, validate_wasm_features,
+};
 mod module_manifest;
 pub use module_manifest::{
     ManifestCheck, ManifestRequirement, ModuleArtifact, ModuleArtifactInput, ModuleExport,

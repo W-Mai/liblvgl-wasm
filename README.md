@@ -564,6 +564,8 @@ liblvgl-wasm-host = { path = "/path/to/liblvgl-wasm/bindings/rust" }
 
 `inspect_isolated_resources` checks a private Wasm snapshot for isolated memory and table topology and restricted cross-instance types. The report does not verify WASI signatures, pointer or handle contracts, host implementations, or execution; it does not authorize loading.
 
+`validate_wasm_features` validates a private Wasm snapshot against declared features and an explicit host allowlist. The report records the snapshot SHA-256 and policy version. Native validation runs synchronously without an execution deadline or CPU and memory limits; it does not compile or run the module or authorize loading.
+
 ```rust
 use liblvgl_wasm_host::{Result, Runtime, UnsafePointer, values};
 

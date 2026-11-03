@@ -4,6 +4,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 from pathlib import Path
 import stat
 import tempfile
@@ -131,6 +132,99 @@ def copy_notices(project, noble_license, destination):
         staged.rename(destination)
     return {"kind": manifest["kind"], "manifest_sha256": MANIFEST_SHA256,
             "noble_license_sha256": noble["license_sha256"], "files": len(snapshot)}
+
+
+def validate_rust_locks(validator_lock, rust_lock, manifest):
+    """Match the native validator's pinned crates in both Cargo lockfiles."""
+    def packages(data):
+        text = data.decode("utf-8")
+        sections = re.split(r"(?m)^\[\[package\]\]\s*$", text)[1:]
+        result = []
+        for section in sections:
+            entry = {}
+            for key in ("name", "version", "source", "checksum"):
+                matches = re.findall(rf'(?m)^{key} = ("[^"\n]*")$', section)
+                if len(matches) > 1:
+                    raise ValueError("duplicate Cargo lock field")
+                if matches:
+                    entry[key] = json.loads(matches[0])
+            if "name" not in entry or "version" not in entry:
+                raise ValueError("invalid Cargo lock package")
+            dependencies = re.findall(r'(?ms)^dependencies = \[\n(.*?)^\]', section)
+            if len(dependencies) > 1:
+                raise ValueError("duplicate Cargo lock dependencies")
+            if dependencies:
+                entry["dependencies"] = re.findall(r'(?m)^ "([^"\n]+)",$', dependencies[0])
+            result.append(entry)
+        if not result:
+            raise ValueError("empty Cargo lock package inventory")
+        return result
+    standalone = packages(validator_lock)
+    combined = packages(rust_lock)
+    for name in ("wasmparser", "bitflags"):
+        source = manifest["sources"][name]
+        expected = (source["version"], source["archive_sha256"])
+        for lock in (standalone, combined):
+            matches = [entry for entry in lock
+                       if entry.get("name") == name and entry.get("version") == expected[0]]
+            if (len(matches) != 1 or matches[0].get("source") != "registry+https://github.com/rust-lang/crates.io-index"
+                    or matches[0].get("checksum") != expected[1]):
+                raise ValueError(f"native validator dependency identity mismatch: {name}")
+    standalone_packages = {entry.get("name") for entry in standalone}
+    if standalone_packages != {"lvw-feature-validator", "wasmparser", "bitflags"}:
+        raise ValueError("native validator dependency inventory differs")
+    for lock in (standalone, combined):
+        validators = [entry for entry in lock if entry.get("name") == "lvw-feature-validator"]
+        if (len(validators) != 1 or validators[0].get("version") != "0.1.0"
+                or "source" in validators[0] or validators[0].get("dependencies") != ["wasmparser"]):
+            raise ValueError("native validator package identity differs")
+    hosts = [entry for entry in combined if entry.get("name") == "liblvgl-wasm-host"]
+    if len(hosts) != 1 or "lvw-feature-validator" not in hosts[0].get("dependencies", []):
+        raise ValueError("native validator is missing from host Cargo.lock")
+
+
+def copy_rust_notices(project, rust_lock, destination):
+    """Copy the pinned validator notice tree into a staged Rust SDK."""
+    project = Path(project).resolve(strict=True)
+    destination = Path(destination)
+    materials = project / "third_party/validator"
+    if destination.name != "validator" or destination.parent.name != "licenses" or destination.parent.parent.name != "rust":
+        raise ValueError("native validator notices must be in rust/licenses/validator")
+    if destination.exists() or destination.is_symlink() or destination.parent.is_symlink():
+        raise ValueError("native validator notice output already exists or is a symbolic link")
+    source, target = materials.resolve(strict=True), destination.resolve()
+    if target.is_relative_to(source) or source.is_relative_to(target):
+        raise ValueError("notice output overlaps material source")
+    snapshot = contents(materials)
+    manifest_bytes = snapshot.get("manifest.json", b"")
+    manifest = parse_manifest(manifest_bytes)
+    expected = manifest["files"]
+    if set(snapshot) != set(expected) | {"manifest.json"}:
+        raise ValueError("validator notice inventory mismatch")
+    for name, entry in expected.items():
+        if digest(snapshot[name]) != entry["sha256"]:
+            raise ValueError(f"validator notice identity mismatch: {name}")
+    validator_lock = regular_file(project / "validator/Cargo.lock")
+    if digest(validator_lock) != manifest["validator_cargo_lock_sha256"]:
+        raise ValueError("validator Cargo.lock does not match notice materials")
+    lock_bytes = regular_file(rust_lock)
+    validate_rust_locks(validator_lock, lock_bytes, manifest)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix=".validator-notices-", dir=destination.parent) as temporary:
+        staged = Path(temporary) / "validator"
+        staged.mkdir()
+        for name, data in snapshot.items():
+            path = staged / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(data)
+        if (contents(staged) != snapshot or contents(materials) != snapshot
+                or regular_file(project / "validator/Cargo.lock") != validator_lock
+                or regular_file(rust_lock) != lock_bytes):
+            raise ValueError("native validator notice inputs changed during collection")
+        if destination.exists() or destination.is_symlink():
+            raise ValueError("native validator notice output appeared during collection")
+        staged.rename(destination)
+    return {"manifest_sha256": MANIFEST_SHA256, "files": len(expected)}
 
 
 def main():

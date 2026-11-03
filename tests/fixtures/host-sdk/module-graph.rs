@@ -1,8 +1,9 @@
 use liblvgl_wasm_host::{
-    IsolatedTopologyCheck, ManifestCheck, ModuleArtifact, ModuleArtifactInput, ModuleDeclaration,
-    ModuleGraph, ModuleInterface, ModuleManifest, ModuleManifestInput, ModuleRole, ModuleTarget,
-    WasiEvidence, WasmCheck, inspect_isolated_resources, inspect_module_manifests,
-    inspect_wasi_preview1, inspect_wasm_facts, order_module_graph,
+    FEATURE_POLICY_VERSION, FeatureValidationCheck, IsolatedTopologyCheck, ManifestCheck,
+    ModuleArtifact, ModuleArtifactInput, ModuleDeclaration, ModuleGraph, ModuleInterface,
+    ModuleManifest, ModuleManifestInput, ModuleRole, ModuleTarget, WasiEvidence, WasmCheck,
+    inspect_isolated_resources, inspect_module_manifests, inspect_wasi_preview1, inspect_wasm_facts,
+    order_module_graph, validate_wasm_features,
 };
 
 fn main() {
@@ -47,6 +48,14 @@ fn main() {
     assert_eq!(isolated.checks().wasi_abi(), WasmCheck::NotRun);
 
     let empty = b"\0asm\x01\0\0\0";
+    let feature = validate_wasm_features(empty, &[], &[]).unwrap();
+    assert_eq!(feature.policy_version(), FEATURE_POLICY_VERSION);
+    assert_eq!(feature.checks().feature(), FeatureValidationCheck::Passed);
+    assert_eq!(feature.checks().engine(), WasmCheck::NotRun);
+    assert!(validate_wasm_features(empty, &["simd"], &[]).is_err());
+    let simd = b"\0asm\x01\0\0\0\x01\x05\x01\x60\0\x01\x7b\x03\x02\x01\0\x0a\x16\x01\x14\0\xfd\x0c\x01\0\0\0\x02\0\0\0\x03\0\0\0\x04\0\0\0\x0b";
+    assert!(validate_wasm_features(simd, &["simd"], &["simd"]).is_ok());
+    assert!(validate_wasm_features(simd, &[], &["simd"]).is_err());
     assert_eq!(inspect_wasi_preview1(empty).unwrap().evidence(), WasiEvidence::Absent);
     let input = ModuleManifestInput {
         modules: vec![ModuleArtifactInput {

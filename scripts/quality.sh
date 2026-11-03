@@ -48,6 +48,7 @@ python3 -B validator/build-data.test.py
 python3 -B validator/build-helper.test.py
 python3 -B validator/build-worker.test.py
 python3 -B validator/notices.test.py
+python3 -B tests/native-validator-package.py
 python3 -B tests/multimodule-build.py
 
 cargo fmt --manifest-path bindings/rust/Cargo.toml --all -- --check

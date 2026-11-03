@@ -11,6 +11,7 @@ bundled-bindings = []
 
 [dependencies]
 sha2 = "=0.10.9"
+lvw-feature-validator = { path = "../../validator" }
 wasmparser = { version = "=0.246.2", default-features = false, features = ["std"] }
 wasmtime = { version = "=44.0.1", default-features = false, features = ["cranelift", "runtime", "gc-drc"] }
 wasmtime-wasi = { version = "=44.0.1", default-features = false, features = ["p1"] }

@@ -9,7 +9,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "toolchains"))
-from host_sdk import build_host_sdk
+from host_sdk import build_host_sdk, verify_rust_validator
 from lvw import file_inventory, publish_package
 
 
@@ -49,6 +49,7 @@ def check(output, build=None):
                        ("native", output / "native build/lvgl_native_example.wasm")):
         original = output / name
         metadata = build_host_sdk(ROOT, ndk, core, original, "wasm-tools")
+        verify_rust_validator(original, metadata["rust_validator"], ROOT)
         if contracts:
             (original / "rust/tests").mkdir()
             for contract in contracts:
@@ -67,6 +68,9 @@ def check(output, build=None):
         readonly(package, True)
         try:
             assert file_inventory(package / "licenses") == notices
+            verify_rust_validator(package, metadata["rust_validator"], ROOT)
+            assert 'lvw-feature-validator = { path = "../validator" }' in (package / "rust/Cargo.toml").read_text()
+            assert (package / "validator/src/lib.rs").read_bytes() == (ROOT / "validator/src/lib.rs").read_bytes()
             project = output / f"consumer {name}"
             project.mkdir()
             (project / "package.json").write_text('{"type":"module"}\n')
@@ -106,6 +110,7 @@ def check(output, build=None):
             shutil.copyfile(package / "rust/Cargo.lock", graph_consumer / "Cargo.lock")
             environment = {**os.environ, "CARGO_TARGET_DIR": str(ROOT / "target/rust")}
             environment.pop("LVW_RUST_BINDINGS", None)
+            run("cargo", "check", "--locked", "--offline", "--manifest-path", package / "rust/Cargo.toml", env=environment)
             subprocess.run(["cargo", "metadata", "--offline", "--format-version", "1", "--manifest-path", str(graph_consumer / "Cargo.toml")],
                            env=environment, stdout=subprocess.DEVNULL, check=True)
             run("cargo", "run", "--locked", "--offline", "--manifest-path", graph_consumer / "Cargo.toml", "--",

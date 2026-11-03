@@ -1,4 +1,5 @@
 import json
+import re
 import shutil
 import sys
 import tempfile
@@ -55,6 +56,16 @@ def make_package(root, dirty=False):
     (source / "bridge/lvw.c").write_text("/* bridge input */\n")
     for name in ("timer", "animation", "observer", "decoder"):
         (source / f"cmake/{name}.cmake").write_text(f"# {name} input\n")
+    repository = Path(__file__).parents[1]
+    rust_source = source / "bindings/rust"
+    (rust_source / "src").mkdir(parents=True)
+    legacy_manifest = (repository / "bindings/rust/Cargo.toml").read_text().replace(
+        'lvw-feature-validator = { path = "../../validator" }\n', "")
+    legacy_lock = (repository / "bindings/rust/Cargo.lock").read_text().replace(' "lvw-feature-validator",\n', "")
+    legacy_lock = re.sub(r'(?ms)^\[\[package\]\]\nname = "lvw-feature-validator"\n.*?(?=^\[\[package\]\]|\Z)', "", legacy_lock)
+    (rust_source / "Cargo.toml").write_text(legacy_manifest)
+    (rust_source / "Cargo.lock").write_text(legacy_lock)
+    (rust_source / "src/lib.rs").write_text("pub fn legacy() {}\n")
     source_manifest = {
         "schema_version": 1,
         "kind": "liblvgl-wasm-source",
@@ -95,6 +106,10 @@ def make_package(root, dirty=False):
     (sdk / "metadata").mkdir()
     (sdk / "runtime/liblvgl.wasm").write_bytes(core_bytes)
     (sdk / "metadata/api.json").write_bytes(api_bytes)
+    (sdk / "rust/src").mkdir(parents=True)
+    (sdk / "rust/Cargo.toml").write_text(legacy_manifest.replace('default = []', 'default = ["bundled-bindings"]'))
+    (sdk / "rust/Cargo.lock").write_text(legacy_lock)
+    (sdk / "rust/src/lib.rs").write_text("pub fn legacy() {}\n")
     core_sha = lvw.file_sha256(sdk / "runtime/liblvgl.wasm")
     api_sha = lvw.file_sha256(sdk / "metadata/api.json")
     reference = {"schema_version": 1, "wasm_sha256": core_sha, "api_sha256": api_sha,

@@ -678,11 +678,19 @@ def verify_package(package, allow_dirty=False):
     if (ndk_entry.get("manifest") != "ndk/ndk.json"
             or sdk_entry.get("manifest") != "host-sdk/sdk.json"):
         raise ValueError("package manifest paths are inconsistent")
+    from host_sdk import verify_rust_validator
+    sdk_path = package_member(package, sdk_entry["path"])
+    rust_validator = sdk.get("rust_validator")
+    verify_rust_validator(sdk_path, rust_validator, source_path)
     feature = sdk.get("feature_validator")
-    typescript = package_member(package, sdk_entry["path"]) / "typescript"
+    typescript = sdk_path / "typescript"
     if feature is not None:
         from host_sdk import verify_feature_validator
         verify_feature_validator(typescript, feature, source_path)
+        if rust_validator is not None:
+            feature_sources = feature["identity"]["sourceIdentity"]["files"]
+            if any(feature_sources.get(name) != digest for name, digest in rust_validator["source_files"].items()):
+                raise ValueError("native and TypeScript validators use different source snapshots")
     else:
         artifacts = ("feature-validator.js", "feature-validator.d.ts", "feature-validator.identity.json", "licenses/validator")
         package_file = typescript / "package.json"

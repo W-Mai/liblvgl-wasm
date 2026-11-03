@@ -35,13 +35,174 @@ def read_limited(path, limit):
     return data
 
 
+def validator_notices(project):
+    spec = importlib.util.spec_from_file_location("lvw_validator_notices", project / "validator/notices.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def validate_native_cargo(cargo):
+    # A changed dependency configuration requires corresponding notice review.
+    dependency = b'wasmparser = { version = "=0.246.2", default-features = false, features = ["validate", "features", "prefer-btree-collections", "simd"] }'
+    lines = [line.strip() for line in cargo.splitlines() if line.strip() and not line.lstrip().startswith(b"#")]
+    expected = [b"[package]", b'name = "lvw-feature-validator"', b'version = "0.1.0"', b'edition = "2024"',
+                b'rust-version = "1.92"', b"publish = false", b"[lib]", b'crate-type = ["rlib", "cdylib"]',
+                b"[dependencies]", dependency]
+    if lines != expected:
+        raise ValueError("native validator Cargo manifest differs from pinned configuration")
+
+
+def native_validator_inputs(project):
+    project = Path(project)
+    validator = project / "validator"
+    if validator.is_symlink() or not validator.is_dir():
+        raise ValueError("validator source must be a real directory")
+    notices = validator_notices(Path(__file__).resolve().parent.parent)
+    source = notices.contents(validator / "src")
+    if "lib.rs" not in source:
+        raise ValueError("validator source is missing lib.rs")
+    cargo = read_limited(validator / "Cargo.toml", 1024 * 1024)
+    lock = read_limited(validator / "Cargo.lock", 1024 * 1024)
+    validate_native_cargo(cargo)
+    return {"Cargo.toml": cargo, "Cargo.lock": lock, **{f"src/{name}": data for name, data in source.items()}}
+
+
+def native_host_inputs(project):
+    root = Path(project) / "bindings/rust"
+    notices = validator_notices(Path(__file__).resolve().parent.parent)
+    source = notices.contents(root / "src")
+    source.pop("main.rs", None)
+    if "lib.rs" not in source:
+        raise ValueError("Rust host source is missing lib.rs")
+    return {"build.rs": read_limited(root / "build.rs", 1024 * 1024),
+            **{f"src/{name}": data for name, data in source.items()}}
+
+
+def validate_legacy_host_manifest(data, bundled, native=False):
+    """Accept only the supported host dependency configurations."""
+    lines = [line.strip() for line in data.splitlines() if line.strip() and not line.lstrip().startswith(b"#")]
+    expected = [b"[package]", b'name = "liblvgl-wasm-host"', b'version = "0.1.0"', b'edition = "2024"',
+                b'rust-version = "1.92"', b"publish = false", b"[features]",
+                b'default = ["bundled-bindings"]' if bundled else b"default = []", b"bundled-bindings = []",
+                b"[dependencies]", b'sha2 = "=0.10.9"',
+                b'wasmtime = { version = "=44.0.1", default-features = false, features = ["cranelift", "runtime", "gc-drc"] }',
+                b'wasmtime-wasi = { version = "=44.0.1", default-features = false, features = ["p1"] }',
+                b"[dev-dependencies]", b'serde_json = "=1.0.151"']
+    with_parser = expected.copy()
+    with_parser.insert(11, b'wasmparser = { version = "=0.246.2", default-features = false, features = ["std"] }')
+    if native:
+        with_parser.insert(11, b'lvw-feature-validator = { path = "../validator" }' if bundled else
+                           b'lvw-feature-validator = { path = "../../validator" }')
+        if lines != with_parser:
+            raise ValueError("native validator host manifest differs from supported configuration")
+        return True
+    if lines not in (expected, with_parser):
+        raise ValueError("native validator metadata is missing or legacy host manifest is unsupported")
+    return lines == with_parser
+
+
+def validate_legacy_host_lock(data):
+    sections = re.split(rb'(?m)^\[\[package\]\]\s*$', data)[1:]
+    if not sections:
+        raise ValueError("invalid legacy Cargo.lock")
+    for section in sections:
+        names = re.findall(rb'(?m)^name = "([A-Za-z0-9_-]+)"$', section)
+        if len(names) != 1 or names[0] == b"lvw-feature-validator":
+            raise ValueError("native validator metadata is missing or legacy Cargo.lock is unsupported")
+
+
+def verify_rust_validator(sdk, expected, source=None):
+    """Verify a relocated Rust validator and its pinned notice inventory."""
+    sdk = Path(sdk)
+    rust_manifest = read_limited(sdk / "rust/Cargo.toml", 1024 * 1024)
+    marker = b'lvw-feature-validator = { path = "../validator" }'
+    if expected is None:
+        notices = validator_notices(Path(__file__).resolve().parent.parent)
+        lock = read_limited(sdk / "rust/Cargo.lock", 8 * 1024 * 1024)
+        source_files = notices.contents(sdk / "rust/src")
+        legacy_parser = validate_legacy_host_manifest(rust_manifest, True)
+        validate_legacy_host_lock(lock)
+        if (any(b"lvw_feature_validator" in data for data in source_files.values())
+                or (sdk / "validator").exists() or (sdk / "rust/licenses/validator").exists()):
+            raise ValueError("native validator package metadata is missing")
+        if source is not None:
+            source = Path(source)
+            source_manifest = read_limited(source / "bindings/rust/Cargo.toml", 1024 * 1024)
+            source_lock = read_limited(source / "bindings/rust/Cargo.lock", 8 * 1024 * 1024)
+            source_files = notices.contents(source / "bindings/rust/src")
+            if (validate_legacy_host_manifest(source_manifest, False) != legacy_parser
+                    or any(b"lvw_feature_validator" in data for data in source_files.values())):
+                raise ValueError("native validator package metadata is missing")
+            validate_legacy_host_lock(source_lock)
+        return
+    if not isinstance(expected, dict) or set(expected) != {"source_files", "host_files", "notices", "rust_lock_sha256"}:
+        raise ValueError("invalid native validator package metadata")
+    validate_legacy_host_manifest(rust_manifest, True, native=True)
+    project = Path(__file__).resolve().parent.parent
+    notices = validator_notices(project)
+    root = sdk / "validator"
+    if root.is_symlink() or not root.is_dir():
+        raise ValueError("native validator source directory is missing")
+    material = notices.contents(root)
+    files = expected["source_files"]
+    if (not isinstance(files, dict) or set(material) != set(files)
+            or not {"Cargo.toml", "Cargo.lock", "src/lib.rs"} <= set(files)):
+        raise ValueError("native validator source inventory differs")
+    for name, data in material.items():
+        if hashlib.sha256(data).hexdigest() != files[name]:
+            raise ValueError(f"native validator source identity mismatch: {name}")
+    validate_native_cargo(material["Cargo.toml"])
+    host_material = {"build.rs": read_limited(sdk / "rust/build.rs", 1024 * 1024),
+                     **{f"src/{name}": data for name, data in notices.contents(sdk / "rust/src").items()}}
+    host_files = expected["host_files"]
+    if (not isinstance(host_files, dict) or set(host_material) != set(host_files)
+            or any(hashlib.sha256(data).hexdigest() != host_files[name] for name, data in host_material.items())):
+        raise ValueError("Rust host source inventory differs")
+    if source is not None:
+        inputs = native_validator_inputs(source)
+        if inputs != material:
+            raise ValueError("native validator source differs from package source")
+        source_manifest = read_limited(Path(source) / "bindings/rust/Cargo.toml", 1024 * 1024)
+        validate_legacy_host_manifest(source_manifest, False, native=True)
+        expected_manifest = source_manifest.replace(b'default = []\nbundled-bindings = []',
+            b'default = ["bundled-bindings"]\nbundled-bindings = []').replace(
+            b'lvw-feature-validator = { path = "../../validator" }', marker)
+        if (rust_manifest != expected_manifest or native_host_inputs(source) != host_material
+                or read_limited(sdk / "rust/Cargo.lock", 8 * 1024 * 1024)
+                != read_limited(Path(source) / "bindings/rust/Cargo.lock", 8 * 1024 * 1024)):
+            raise ValueError("Rust SDK differs from package source")
+    directory = sdk / "rust/licenses/validator"
+    notice_files = notices.contents(directory)
+    manifest_bytes = notice_files.get("manifest.json", b"")
+    manifest = notices.parse_manifest(manifest_bytes)
+    known = manifest["files"]
+    if set(notice_files) != set(known) | {"manifest.json"}:
+        raise ValueError("native validator notice inventory differs")
+    for name, entry in known.items():
+        if hashlib.sha256(notice_files[name]).hexdigest() != entry["sha256"]:
+            raise ValueError(f"native validator notice identity mismatch: {name}")
+    if expected["notices"] != {"manifest_sha256": notices.MANIFEST_SHA256, "files": len(known)}:
+        raise ValueError("native validator notice metadata differs")
+    if hashlib.sha256(material["Cargo.lock"]).hexdigest() != manifest["validator_cargo_lock_sha256"]:
+        raise ValueError("native validator Cargo.lock identity differs")
+    rust_lock = read_limited(sdk / "rust/Cargo.lock", 8 * 1024 * 1024)
+    if hashlib.sha256(rust_lock).hexdigest() != expected["rust_lock_sha256"]:
+        raise ValueError("native validator host Cargo.lock identity differs")
+    notices.validate_rust_locks(material["Cargo.lock"], rust_lock, manifest)
+
+
 def build_host_sdk(project, ndk, core, output, validator, *, with_validator=False):
-    inputs = [project / "bindings", project / "node_modules", ndk]
+    inputs = [project / "bindings", project / "node_modules", project / "validator", project / "third_party/validator", ndk, core]
     if with_validator:
-        inputs.extend((project / "validator", project / "generator", project / "third_party/validator"))
+        inputs.append(project / "generator")
     for source in inputs:
-        if output.resolve().is_relative_to(source.resolve()):
+        if output.resolve().is_relative_to(source.resolve()) or source.resolve().is_relative_to(output.resolve()):
             raise ValueError(f"SDK output overlaps an input directory: {source}")
+    native_inputs = native_validator_inputs(project)
+    host_inputs = native_host_inputs(project)
+    rust_lock = read_limited(project / "bindings/rust/Cargo.lock", 8 * 1024 * 1024)
+    rust_manifest = read_limited(project / "bindings/rust/Cargo.toml", 1024 * 1024)
 
     def run(*command, cwd=None, env=None):
         subprocess.run([str(item) for item in command], cwd=cwd or project,
@@ -70,15 +231,28 @@ def build_host_sdk(project, ndk, core, output, validator, *, with_validator=Fals
     shutil.copytree(data / "licenses", output / "licenses")
 
     rust = output / "rust"
-    shutil.copytree(project / "bindings/rust/src", rust / "src", ignore=shutil.ignore_patterns("main.rs"))
-    for name in ("Cargo.lock", "build.rs"):
-        shutil.copyfile(project / "bindings/rust" / name, rust / name)
-    manifest = (project / "bindings/rust/Cargo.toml").read_text()
+    for name, contents in host_inputs.items():
+        destination = rust / name
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_bytes(contents)
+    (rust / "Cargo.lock").write_bytes(rust_lock)
+    manifest = rust_manifest.decode("utf-8")
     features = '[features]\ndefault = []\nbundled-bindings = []\n'
-    if manifest.count(features) != 1:
-        raise ValueError("Rust manifest must define the expected bundled-bindings feature")
+    dependency = 'lvw-feature-validator = { path = "../../validator" }'
+    if manifest.count(features) != 1 or manifest.count(dependency) != 1:
+        raise ValueError("Rust manifest must define the expected bundled bindings and validator dependency")
     (rust / "Cargo.toml").write_text(manifest.replace(features,
-        '[features]\ndefault = ["bundled-bindings"]\nbundled-bindings = []\n'))
+        '[features]\ndefault = ["bundled-bindings"]\nbundled-bindings = []\n').replace(dependency,
+        'lvw-feature-validator = { path = "../validator" }'))
+    for name, contents in native_inputs.items():
+        destination = output / "validator" / name
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_bytes(contents)
+    notices = validator_notices(project)
+    rust_notice = notices.copy_rust_notices(project, rust / "Cargo.lock", rust / "licenses/validator")
+    rust_validator = {"source_files": {name: hashlib.sha256(data).hexdigest() for name, data in native_inputs.items()},
+                      "host_files": {name: hashlib.sha256(data).hexdigest() for name, data in host_inputs.items()},
+                      "notices": rust_notice, "rust_lock_sha256": hashlib.sha256(rust_lock).hexdigest()}
     run(sys.executable, "-B", data / "generator/rust.py", "--api", api,
         "--wasm", core, "--verification", proof, "--output", rust / "generated/raw.rs")
 
@@ -117,10 +291,19 @@ def build_host_sdk(project, ndk, core, output, validator, *, with_validator=Fals
     }, indent=2) + "\n")
     if feature_validator is not None:
         verify_feature_validator(typescript, feature_validator, project)
+        feature_sources = feature_validator["identity"]["sourceIdentity"]["files"]
+        if any(feature_sources.get(name) != digest for name, digest in rust_validator["source_files"].items()):
+            raise ValueError("native and TypeScript validators use different source snapshots")
+    if (native_validator_inputs(project) != native_inputs or native_host_inputs(project) != host_inputs
+            or read_limited(project / "bindings/rust/Cargo.lock", 8 * 1024 * 1024) != rust_lock
+            or read_limited(project / "bindings/rust/Cargo.toml", 1024 * 1024) != rust_manifest):
+        raise ValueError("native validator inputs changed during SDK export")
+    verify_rust_validator(output, rust_validator, project)
     metadata = {"identity": identity, "version": project_manifest["version"],
             "tools": {"bun": bun_version, "typescript": versions["typescript"]},
             "dependencies": versions,
-            "packages": {"typescript": "typescript/package.json", "rust": "rust/Cargo.toml"}}
+            "packages": {"typescript": "typescript/package.json", "rust": "rust/Cargo.toml"},
+            "rust_validator": rust_validator}
     if feature_validator is not None:
         metadata["feature_validator"] = feature_validator
     return metadata

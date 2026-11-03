@@ -26,6 +26,8 @@ class ValidatorNoticesTest(unittest.TestCase):
         shutil.copytree(ROOT / "third_party/validator", self.materials)
         (self.project / "validator").mkdir()
         shutil.copyfile(ROOT / "validator/Cargo.lock", self.project / "validator/Cargo.lock")
+        (self.project / "bindings/rust").mkdir(parents=True)
+        shutil.copyfile(ROOT / "bindings/rust/Cargo.lock", self.project / "bindings/rust/Cargo.lock")
         source = ROOT / "node_modules/@noble/hashes"
         dependency = self.project / "node_modules/@noble/hashes"
         dependency.mkdir(parents=True)
@@ -124,6 +126,41 @@ class ValidatorNoticesTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "TypeScript licenses/validator"):
             notices.copy_notices(self.project, self.license, wrong)
         self.assertFalse(wrong.exists())
+
+    def test_native_notice_inventory_and_both_lockfiles(self):
+        destination = self.sdk / "rust/licenses/validator"
+        lock = self.project / "bindings/rust/Cargo.lock"
+        result = notices.copy_rust_notices(self.project, lock, destination)
+        self.assertEqual(result["manifest_sha256"], notices.MANIFEST_SHA256)
+        self.assertEqual(notices.contents(destination), notices.contents(self.materials))
+        renamed = self.root / "moved sdk"
+        self.sdk.rename(renamed)
+        self.assertEqual(notices.contents(renamed / "rust/licenses/validator"), notices.contents(self.materials))
+
+    def test_native_notice_rejects_dependency_and_material_drift(self):
+        destination = self.sdk / "rust/licenses/validator"
+        lock = self.project / "bindings/rust/Cargo.lock"
+        original = lock.read_bytes()
+        for altered in (original.replace(b"3ded4057c258ba199e2d26386d3af3780957ecaee6c4ef4041c6b4b8b97c0b06", b"0" * 64),
+                        original.replace(b' "lvw-feature-validator",\n', b"")):
+            lock.write_bytes(altered)
+            with self.assertRaises(ValueError):
+                notices.copy_rust_notices(self.project, lock, destination)
+            self.assertFalse(destination.exists())
+        lock.write_bytes(original)
+        material = self.materials / "wasmparser-0.246.2/LICENSE-MIT"
+        material.write_bytes(material.read_bytes() + b"changed")
+        with self.assertRaisesRegex(ValueError, "notice identity mismatch"):
+            notices.copy_rust_notices(self.project, lock, destination)
+        self.assertFalse(destination.exists())
+
+    def test_native_notice_existing_output_is_preserved(self):
+        destination = self.sdk / "rust/licenses/validator"
+        destination.mkdir(parents=True)
+        (destination / "keep").write_text("current")
+        with self.assertRaises(ValueError):
+            notices.copy_rust_notices(self.project, self.project / "bindings/rust/Cargo.lock", destination)
+        self.assertEqual((destination / "keep").read_text(), "current")
 
 
 if __name__ == "__main__":

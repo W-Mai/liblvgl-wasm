@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+- Native Rust Wasm feature validation with an explicit host allowlist.
 - Rust isolated Wasm resource topology inspection.
 - Rust WASI Preview 1 import signature inspection.
 - Static Rust module manifest identity and interface validation.
