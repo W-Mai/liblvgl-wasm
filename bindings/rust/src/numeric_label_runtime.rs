@@ -10,7 +10,7 @@ use wasmtime::{
 };
 
 use crate::numeric_environment::{HostState, panic_message};
-use crate::numeric_label::NumericLabelOptions;
+use crate::numeric_label::{NumericFrame, NumericLabelOptions};
 
 static NEXT_LABEL_TOKEN: AtomicU64 = AtomicU64::new(1);
 
@@ -39,6 +39,8 @@ pub(crate) struct LabelState {
     label_set_text: TypedFunc<(i32, i32), ()>,
     alloc: TypedFunc<i32, i32>,
     free: TypedFunc<i32, ()>,
+    refresh: TypedFunc<i32, ()>,
+    frame_get: TypedFunc<(i32, i32), i32>,
 }
 
 fn reserve_token() -> Result<u32, String> {
@@ -103,6 +105,12 @@ pub(crate) fn bind_label(
     let free = core
         .get_typed_func::<i32, ()>(&mut *store, "lvw_free")
         .map_err(|error| error.to_string())?;
+    let refresh = core
+        .get_typed_func::<i32, ()>(&mut *store, "lv_refr_now")
+        .map_err(|error| error.to_string())?;
+    let frame_get = core
+        .get_typed_func::<(i32, i32), i32>(&mut *store, "lvw_frame_get")
+        .map_err(|error| error.to_string())?;
     let create_display = core
         .get_typed_func::<(i32, i32, i32), i32>(&mut *store, "lvw_display_create")
         .map_err(|error| error.to_string())?;
@@ -128,7 +136,104 @@ pub(crate) fn bind_label(
         label_set_text,
         alloc,
         free,
+        refresh,
+        frame_get,
     }))
+}
+
+/// Refresh and copy the selected display without exposing guest memory.
+pub(crate) fn read_frame(store: &mut Store<HostState>) -> Result<NumericFrame, String> {
+    let (memory, display, width, height, refresh, frame_get, alloc, free) = {
+        let label = store
+            .data_mut()
+            .label
+            .as_mut()
+            .ok_or_else(|| "LVGL label adapter is unavailable".to_owned())?;
+        if label.active {
+            return Err("LVGL label adapter is reentrant".into());
+        }
+        label.active = true;
+        (
+            label.core_memory,
+            label.display,
+            label.options.width,
+            label.options.height,
+            label.refresh.clone(),
+            label.frame_get.clone(),
+            label.alloc.clone(),
+            label.free.clone(),
+        )
+    };
+    let result = (|| {
+        guest_call(store, &refresh, display)?;
+        let scratch = guest_call(store, &alloc, 48)? as u32;
+        if scratch == 0 || !scratch.is_multiple_of(4) {
+            return Err("invalid LVGL frame allocation".into());
+        }
+        let offset = scratch as usize;
+        let mut metadata = [0u8; 48];
+        metadata[..4].copy_from_slice(&48u32.to_le_bytes());
+        metadata[4..8].copy_from_slice(&1u32.to_le_bytes());
+        memory
+            .write(&mut *store, offset, &metadata)
+            .map_err(|_| "LVGL frame allocation is out of bounds".to_owned())?;
+        if guest_call(store, &frame_get, (display, scratch as i32))? != 0 {
+            return Err("LVGL frame is unavailable".into());
+        }
+        memory
+            .read(&*store, offset, &mut metadata)
+            .map_err(|_| "LVGL frame metadata is out of bounds".to_owned())?;
+        let field = |index: usize| {
+            u32::from_le_bytes(metadata[index..index + 4].try_into().expect("frame field"))
+        };
+        let pointer = field(8);
+        let length = field(12);
+        let stride = width
+            .checked_mul(4)
+            .ok_or_else(|| "invalid LVGL frame metadata".to_owned())?;
+        let expected = stride
+            .checked_mul(height)
+            .filter(|length| *length <= 16 * 1024 * 1024)
+            .ok_or_else(|| "invalid LVGL frame metadata".to_owned())?;
+        if field(0) != 48
+            || field(4) != 1
+            || pointer == 0
+            || length != expected
+            || field(16) != width
+            || field(20) != height
+            || field(24) != stride
+            || field(28) != 1
+            || field(32) != 0
+        {
+            return Err("invalid LVGL frame metadata".into());
+        }
+        let start = pointer as usize;
+        let end = start
+            .checked_add(length as usize)
+            .ok_or_else(|| "invalid LVGL frame metadata".to_owned())?;
+        let source = memory
+            .data(&*store)
+            .get(start..end)
+            .ok_or_else(|| "invalid LVGL frame metadata".to_owned())?;
+        let mut rgba = Vec::new();
+        rgba.try_reserve_exact(length as usize)
+            .map_err(|_| "LVGL frame allocation failed".to_owned())?;
+        for pixel in source.chunks_exact(4) {
+            rgba.extend_from_slice(&[pixel[2], pixel[1], pixel[0], 255]);
+        }
+        let frame = NumericFrame {
+            width,
+            height,
+            frame_id: field(44),
+            rgba,
+        };
+        guest_call(store, &free, scratch as i32)?;
+        Ok(frame)
+    })();
+    if let Some(label) = store.data_mut().label.as_mut() {
+        label.active = false;
+    }
+    result
 }
 
 fn screen(caller: &mut Caller<'_, HostState>) -> Result<i32, String> {

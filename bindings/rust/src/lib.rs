@@ -64,7 +64,7 @@ pub use numeric_environment::{
 mod numeric_lvgl;
 pub use numeric_lvgl::NumericLvglCoreOptions;
 mod numeric_label;
-pub use numeric_label::NumericLabelOptions;
+pub use numeric_label::{NumericFrame, NumericLabelOptions};
 mod numeric_label_runtime;
 mod numeric_wasi;
 pub use numeric_wasi::{

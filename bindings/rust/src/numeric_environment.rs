@@ -6,8 +6,8 @@ use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::sync::Arc;
 
 use crate::module_manifest::ModuleManifestInput;
-use crate::numeric_label::NumericLabelOptions;
-use crate::numeric_label_runtime::{LabelState, bind_label, label_function};
+use crate::numeric_label::{NumericFrame, NumericLabelOptions};
+use crate::numeric_label_runtime::{LabelState, bind_label, label_function, read_frame};
 use crate::numeric_lvgl::NumericLvglCoreOptions;
 use crate::numeric_profile::{NumericProfile, prepare_numeric_graph_with_label};
 use crate::numeric_wasi::{NumericWasiOptions, NumericWasiOutput, NumericWasiService, WasiState};
@@ -336,6 +336,31 @@ impl NumericEnvironment {
         match outcome {
             Ok(Ok(result)) => Ok(result),
             Ok(Err(error)) => Err(self.poison(format!("guest call failed: {error:#}"))),
+            Err(panic) => Err(self.poison(panic_message(panic))),
+        }
+    }
+    /// Refresh the selected LVGL display and return an independent RGBA frame.
+    pub fn read_frame(&mut self) -> Result<NumericFrame, NumericEnvironmentError> {
+        if self.state == NumericEnvironmentState::Poisoned {
+            return Err(self.failure());
+        }
+        if self.state != NumericEnvironmentState::Ready {
+            return Err(numeric_error("numeric environment is not ready"));
+        }
+        let store = self.store.as_mut().expect("ready store");
+        if store.data().label.is_none() {
+            return Err(numeric_error("LVGL label adapter is unavailable"));
+        }
+        let outcome = catch_unwind(AssertUnwindSafe(|| read_frame(&mut *store)));
+        if let Some(message) = store.data().failure.clone() {
+            if let Err(panic) = outcome {
+                return Err(self.poison(format!("{message}; subsequent {}", panic_message(panic))));
+            }
+            return Err(self.poison(message));
+        }
+        match outcome {
+            Ok(Ok(frame)) => Ok(frame),
+            Ok(Err(message)) => Err(self.poison(message)),
             Err(panic) => Err(self.poison(panic_message(panic))),
         }
     }

@@ -357,6 +357,64 @@ fn core_text(environment: &mut NumericEnvironment) -> Vec<u8> {
     tail[..end].to_vec()
 }
 
+// Read the same core's XRGB buffer independently of the frame adapter.
+fn core_frame_reference(environment: &mut NumericEnvironment) -> (u32, u32, u32, Vec<u8>) {
+    let instance = environment
+        .initialized
+        .iter()
+        .find(|module| module.id == "lvcore")
+        .unwrap()
+        .core_instance
+        .unwrap();
+    let store = environment.store.as_mut().unwrap();
+    let display = instance
+        .get_typed_func::<(), i32>(&mut *store, "lv_display_get_default")
+        .unwrap()
+        .call(&mut *store, ())
+        .unwrap();
+    assert_ne!(display, 0);
+    let scratch = instance
+        .get_typed_func::<i32, i32>(&mut *store, "lvw_alloc")
+        .unwrap()
+        .call(&mut *store, 48)
+        .unwrap();
+    assert_ne!(scratch, 0);
+    let memory = instance.get_memory(&mut *store, "memory").unwrap();
+    let mut descriptor = [0u8; 48];
+    descriptor[0..4].copy_from_slice(&48u32.to_le_bytes());
+    descriptor[4..8].copy_from_slice(&1u32.to_le_bytes());
+    memory
+        .write(&mut *store, scratch as u32 as usize, &descriptor)
+        .unwrap();
+    let status = instance
+        .get_typed_func::<(i32, i32), i32>(&mut *store, "lvw_frame_get")
+        .unwrap()
+        .call(&mut *store, (display, scratch))
+        .unwrap();
+    assert_eq!(status, 0);
+    memory
+        .read(&*store, scratch as u32 as usize, &mut descriptor)
+        .unwrap();
+    let field =
+        |offset: usize| u32::from_le_bytes(descriptor[offset..offset + 4].try_into().unwrap());
+    assert_eq!((field(0), field(4), field(28), field(32)), (48, 1, 1, 0));
+    let (width, height, length, stride) = (field(16), field(20), field(12), field(24));
+    assert_eq!(stride, width * 4);
+    assert_eq!(length, stride * height);
+    let mut xrgb = vec![0; length as usize];
+    memory.read(&*store, field(8) as usize, &mut xrgb).unwrap();
+    let mut rgba = Vec::with_capacity(xrgb.len());
+    for pixel in xrgb.chunks_exact(4) {
+        rgba.extend_from_slice(&[pixel[2], pixel[1], pixel[0], 255]);
+    }
+    instance
+        .get_typed_func::<i32, ()>(&mut *store, "lvw_free")
+        .unwrap()
+        .call(&mut *store, scratch)
+        .unwrap();
+    (width, height, field(44), rgba)
+}
+
 #[test]
 #[ignore = "requires generated label graph and fixed-table LVGL core"]
 fn real_label_copy_isolation_and_close() {
@@ -391,6 +449,22 @@ fn real_label_copy_isolation_and_close() {
     .unwrap();
     assert_eq!(core_text(&mut a), b"ALPHA");
     assert_eq!(core_text(&mut b), b"ALPHA");
+    let mut first = a.read_frame().unwrap();
+    let other = b.read_frame().unwrap();
+    let reference = core_frame_reference(&mut a);
+    assert_eq!(
+        (first.width, first.height, first.frame_id),
+        (reference.0, reference.1, reference.2)
+    );
+    assert_eq!(first.rgba, reference.3);
+    assert_eq!(
+        (first.width, first.height, first.rgba.len()),
+        (120, 48, 120 * 48 * 4)
+    );
+    assert!(first.rgba.chunks_exact(4).all(|pixel| pixel[3] == 255));
+    let original = first.rgba.clone();
+    first.rgba[0] ^= 0xff;
+    assert_eq!(a.read_frame().unwrap().rgba, original);
     let a_token = a.run(0).unwrap();
     let b_token = b.run(0).unwrap();
     assert_ne!(a_token, 0);
@@ -398,6 +472,9 @@ fn real_label_copy_isolation_and_close() {
     a.run(-1).unwrap();
     assert_eq!(core_text(&mut a), b"BETA");
     assert_eq!(core_text(&mut b), b"ALPHA");
+    let changed = a.read_frame().unwrap();
+    assert_ne!(changed.rgba, original);
+    assert_eq!(b.read_frame().unwrap().rgba, other.rgba);
     a.run(-3).unwrap();
     assert_eq!(core_text(&mut a), [b'X', 0xc3, b'(']);
     a.run(-4).unwrap();
@@ -408,6 +485,7 @@ fn real_label_copy_isolation_and_close() {
     assert_eq!(core_text(&mut a), vec![b'A'; 4096]);
     a.close().unwrap();
     assert_eq!(a.state(), NumericEnvironmentState::Closed);
+    assert_eq!(b.read_frame().unwrap().rgba, other.rgba);
     assert_eq!(core_text(&mut b), b"ALPHA");
     let error = b.run(a_token).unwrap_err();
     assert!(
@@ -705,4 +783,285 @@ fn synthetic_label_display_failure_rollback_and_callback_poison() {
     );
     assert!(trace.iter().any(|item| item == "host:lvcore"));
     assert!(trace.iter().any(|item| item == "host:app"));
+}
+
+#[test]
+#[ignore = "requires generated synthetic label fixtures"]
+fn synthetic_frame_pixels_are_copied_and_growth_is_observed() {
+    for core in [
+        "core-valid-frame",
+        "core-frame-alloc-grow",
+        "core-frame-get-grow",
+    ] {
+        let (result, trace) = synthetic(core, "app");
+        let mut environment = result.unwrap();
+        let mut frame = environment.read_frame().unwrap();
+        assert_eq!(
+            (frame.width, frame.height, frame.frame_id, frame.rgba.len()),
+            (8, 8, 123, 256),
+            "{core}"
+        );
+        assert_eq!(&frame.rgba[..8], &[1, 2, 3, 255, 4, 5, 6, 255], "{core}");
+        assert!(
+            frame.rgba[8..]
+                .chunks_exact(4)
+                .all(|pixel| pixel == [0, 0, 0, 255]),
+            "{core}"
+        );
+        frame.rgba[0] = 99;
+        assert_eq!(environment.read_frame().unwrap().rgba[0], 1, "{core}");
+        let trace = events(&trace);
+        let sequence: Vec<_> = trace
+            .iter()
+            .filter(|event| ["52", "50", "53", "51"].contains(&event.as_str()))
+            .map(String::as_str)
+            .collect();
+        assert_eq!(
+            sequence,
+            ["52", "50", "53", "51", "52", "50", "53", "51"],
+            "{core}"
+        );
+        environment.close().unwrap();
+    }
+}
+
+#[test]
+#[ignore = "requires generated synthetic label fixtures"]
+fn synthetic_frame_rejects_bad_metadata_and_poison_sticks() {
+    for core in [
+        "core",
+        "core-null-frame",
+        "core-oob-frame",
+        "core-frame-size",
+        "core-frame-version",
+        "core-frame-length",
+        "core-frame-width",
+        "core-frame-height",
+        "core-frame-stride",
+        "core-frame-format",
+        "core-frame-alpha",
+        "core-frame-overflow-length",
+    ] {
+        let (result, trace) = synthetic(core, "app");
+        let mut environment = result.unwrap();
+        let error = environment.read_frame().unwrap_err();
+        assert!(error.message().contains("frame"), "{core}: {error}");
+        assert_eq!(
+            environment.state(),
+            NumericEnvironmentState::Poisoned,
+            "{core}"
+        );
+        let before = events(&trace);
+        assert!(before.iter().any(|item| item == "53"), "{core}: {before:?}");
+        assert!(
+            !before.iter().any(|item| item == "51" || item == "19"),
+            "{core}: {before:?}"
+        );
+        assert_eq!(
+            environment.read_frame().unwrap_err().message(),
+            error.message()
+        );
+        assert_eq!(environment.run(0).unwrap_err().message(), error.message());
+        assert_eq!(environment.close().unwrap_err().message(), error.message());
+        assert_eq!(
+            events(&trace),
+            before,
+            "{core}: guest reentered after failure"
+        );
+    }
+}
+
+#[test]
+#[ignore = "requires generated synthetic label fixtures"]
+fn synthetic_frame_failures_stop_before_guest_cleanup() {
+    for (core, last, expected) in [
+        ("core-frame-refresh-trap", "52", "guest"),
+        ("core-alloc-zero", "50", "allocation"),
+        ("core-alloc-trap", "50", "guest"),
+        ("core-frame-scratch-oob", "50", "bounds"),
+        (
+            "core-frame-scratch-unaligned",
+            "50",
+            "invalid LVGL frame allocation",
+        ),
+        ("core-frame-get-trap", "53", "guest"),
+        ("core-frame-get-error", "53", "frame"),
+        ("core-frame-free-trap", "51", "guest"),
+    ] {
+        let (result, trace) = synthetic(core, "app");
+        let mut environment = result.unwrap();
+        let error = environment.read_frame().unwrap_err();
+        assert!(error.message().contains(expected), "{core}: {error}");
+        assert_eq!(
+            environment.state(),
+            NumericEnvironmentState::Poisoned,
+            "{core}"
+        );
+        let before = events(&trace);
+        let pos = before.iter().rposition(|item| item == last).unwrap();
+        assert!(
+            !before[pos + 1..]
+                .iter()
+                .any(|item| ["50", "51", "52", "53", "19"].contains(&item.as_str())),
+            "{core}: {before:?}"
+        );
+        assert!(
+            !before.iter().any(|item| item == "19"),
+            "{core}: {before:?}"
+        );
+        assert_eq!(
+            environment.read_frame().unwrap_err().message(),
+            error.message()
+        );
+        assert_eq!(environment.close().unwrap_err().message(), error.message());
+        assert_eq!(
+            events(&trace),
+            before,
+            "{core}: guest reentered after failure"
+        );
+    }
+}
+
+struct FailFrameFactory(Trace, i32);
+struct FailFrameHost(Trace, i32, String);
+impl NumericHostFactory for FailFrameFactory {
+    fn create(
+        &mut self,
+        consumer: &str,
+        _: NumericEnvironmentId,
+    ) -> Result<Box<dyn NumericHostInstance>, String> {
+        Ok(Box::new(FailFrameHost(
+            self.0.clone(),
+            self.1,
+            consumer.into(),
+        )))
+    }
+}
+impl NumericHostInstance for FailFrameHost {
+    fn call(&mut self, name: &str, args: &[i32]) -> Result<Option<i32>, String> {
+        assert_eq!(name, "event");
+        assert_eq!(args.len(), 1);
+        self.0.events.lock().unwrap().push(args[0].to_string());
+        if args[0] == self.1 {
+            Err("frame callback failed".into())
+        } else {
+            Ok(None)
+        }
+    }
+    fn close(&mut self) -> Result<(), String> {
+        self.0
+            .events
+            .lock()
+            .unwrap()
+            .push(format!("host:{}", self.2));
+        Ok(())
+    }
+}
+
+#[test]
+#[ignore = "requires generated synthetic label fixtures"]
+fn synthetic_frame_callback_failure_is_sticky() {
+    let bytes = graph_bytes();
+    for event in [52, 53] {
+        let mut graph = graph(&bytes, "synthetic");
+        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../target/validator/lvgl-label-negative");
+        graph.replace(
+            "lvcore",
+            std::fs::read(root.join("core-valid-frame.wasm")).unwrap(),
+        );
+        let trace = Trace::default();
+        let mut factory = FailFrameFactory(trace.clone(), event);
+        let mut bindings = [NumericHostBinding {
+            id: "host.trace".into(),
+            factory: &mut factory,
+        }];
+        let mut environment = load_lvgl_label_environment(
+            &graph.input(),
+            &graph.profile,
+            &[],
+            &mut bindings,
+            &lvgl_options(),
+            &options(&bytes, "synthetic"),
+            None,
+        )
+        .unwrap();
+        let error = environment.read_frame().unwrap_err();
+        assert!(
+            error.message().contains("frame callback failed"),
+            "event {event}: {error}"
+        );
+        assert_eq!(environment.state(), NumericEnvironmentState::Poisoned);
+        let before = events(&trace);
+        assert!(before.iter().any(|item| item == &event.to_string()));
+        assert!(
+            !before.iter().any(|item| item == "51" || item == "19"),
+            "{before:?}"
+        );
+        assert_eq!(
+            environment.read_frame().unwrap_err().message(),
+            error.message()
+        );
+        assert_eq!(environment.close().unwrap_err().message(), error.message());
+        assert_eq!(events(&trace), before);
+    }
+}
+
+#[test]
+#[ignore = "requires generated synthetic label fixtures"]
+fn numeric_environment_frame_unavailable_preserves_ready_state() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../target/validator/lvgl-label-negative");
+    let bytes = std::fs::read(root.join("app-numeric.wasm")).unwrap();
+    let facts = inspect_wasm_facts(&bytes).unwrap();
+    let app = manifest("app", ModuleRole::App, &facts, &[], vec![]);
+    let input = ModuleManifestInput {
+        modules: vec![ModuleArtifactInput {
+            manifest: app.clone(),
+            bytes: &bytes,
+        }],
+        hosts: vec![],
+    };
+    let profile = NumericProfile {
+        modules: vec![NumericModuleContract {
+            id: "app".into(),
+            sha256: facts.sha256,
+            interface: app.interface,
+            exports: vec![],
+        }],
+        hosts: vec![],
+        limits: NumericLimits {
+            max_memory_pages: 0,
+            max_total_memory_pages: 0,
+            max_table_elements: 0,
+            max_total_table_elements: 0,
+        },
+    };
+    let mut environment = super::load_numeric_environment(&input, &profile, &[], &mut []).unwrap();
+    let error = environment.read_frame().unwrap_err();
+    assert!(
+        error.message().contains("label adapter is unavailable"),
+        "{error}"
+    );
+    assert_eq!(environment.state(), NumericEnvironmentState::Ready);
+    assert_eq!(environment.run(7).unwrap(), 7);
+    environment.close().unwrap();
+    let closed = environment.read_frame().unwrap_err();
+    assert!(closed.message().contains("not ready"), "{closed}");
+    assert_eq!(
+        environment.read_frame().unwrap_err().message(),
+        closed.message()
+    );
+
+    let mut poisoned = super::load_numeric_environment(&input, &profile, &[], &mut []).unwrap();
+    let failure = poisoned.run(-1).unwrap_err();
+    assert_eq!(poisoned.state(), NumericEnvironmentState::Poisoned);
+    assert_eq!(
+        poisoned.read_frame().unwrap_err().message(),
+        failure.message()
+    );
+    assert_eq!(
+        poisoned.read_frame().unwrap_err().message(),
+        failure.message()
+    );
 }

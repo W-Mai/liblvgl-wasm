@@ -11,6 +11,9 @@ import sys
 import tempfile
 
 ROOT = Path(__file__).resolve().parents[3]
+sys.path.insert(0, str(ROOT / "validator"))
+from lvgl_label_template import render_core
+
 MARKER = ".lvw-numeric-label-fixtures"
 MARKER_CONTENT = "liblvgl-wasm numeric label fixtures\n"
 NAMES = {"core-missing-create.wasm", "core-bad-display.wasm", "core-imported-alloc.wasm",
@@ -57,12 +60,7 @@ def publish_output(output, staged, backup):
 
 
 def inputs():
-    core = (ROOT / "validator/lvgl-label-negative-core.wat").read_text()
-    common = {"LVW_IMPORT": "", "EXTRA_IMPORT": "", "MEMORY": '(memory (export "memory") 1 2)',
-              "SETTER": "", "ALLOC": "i32.const 128", "FREE": "", "DISPLAY": "i32.const 100", "CREATE": "i32.const 300",
-              "DEFAULT_SCREEN": "i32.const 200", "PARENT_CHECK": "", "FRAME": ""}
-    for key, value in common.items():
-        core = core.replace(f"@{key}@", value)
+    core = render_core((ROOT / "validator/lvgl-label-negative-core.wat").read_text())
     fixtures = {
         "core-missing-create": replace_once(core, '(export "lv_label_create")', '(export "hidden_create")'),
         "core-bad-display": replace_once(core, '(export "lvw_display_create") (param i32 i32 i32)',

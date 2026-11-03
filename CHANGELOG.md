@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+- Copied RGBA frames for Rust isolated LVGL label environments.
 - Isolated LVGL screen and label calls with copied text in Rust numeric environments.
 - Static validation for isolated LVGL label adapter contracts.
 - Trusted standalone LVGL core lifecycle for Rust numeric environments.

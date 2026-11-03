@@ -49,6 +49,20 @@ class PublicationTest(unittest.TestCase):
         if command[1] == "parse":
             Path(command[command.index("-o") + 1]).write_bytes(b"new fixture")
 
+    def test_shared_core_template_resolves_every_marker(self):
+        sources = builder.inputs()
+        self.assertEqual({name + ".wasm" for name in sources}, builder.NAMES)
+        for name, source in sources.items():
+            self.assertNotRegex(source, r"@[A-Z_]+@", name)
+        core = sources["core-missing-create"]
+        self.assertIn('i32.const 52 call $trace )', core)
+        self.assertIn('i32.const 53 call $trace  i32.const 0)', core)
+        template = (ROOT / "validator/lvgl-label-negative-core.wat").read_text()
+        with self.assertRaisesRegex(ValueError, "marker inventory"):
+            builder.render_core(template + " @NEW_MARKER@")
+        with self.assertRaisesRegex(ValueError, "marker inventory"):
+            builder.render_core(template, {"NEW_MARKER": ""})
+
     def test_unowned_directory_and_same_named_user_file_are_preserved(self):
         self.output.mkdir()
         path = self.output / "core-bad-display.wasm"

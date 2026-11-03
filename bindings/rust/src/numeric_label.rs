@@ -3,6 +3,15 @@
 use crate::module_manifest::{ModuleExternalType, ModuleInterface};
 use crate::wasm_facts::WasmValueType;
 
+/// An owned RGBA copy of an LVGL display frame.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct NumericFrame {
+    pub width: u32,
+    pub height: u32,
+    pub frame_id: u32,
+    pub rgba: Vec<u8>,
+}
+
 /// Identify the app-facing label adapter and its resource limits.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct NumericLabelOptions {

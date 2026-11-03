@@ -72,11 +72,35 @@ pub fn run_runtime(json: &[u8]) {
     let first_handle = first.run(0).unwrap();
     let second_handle = second.run(0).unwrap();
     assert_ne!(first_handle, second_handle);
+    let initial = first.read_frame().unwrap();
+    let second_initial = second.read_frame().unwrap();
+    assert_eq!((initial.width, initial.height), (label.width, label.height));
+    assert_eq!(
+        (second_initial.width, second_initial.height),
+        (label.width, label.height)
+    );
+    assert_eq!(
+        initial.rgba.len(),
+        (label.width * label.height * 4) as usize
+    );
+    assert!(initial.rgba.chunks_exact(4).all(|pixel| pixel[3] == 255));
+    assert_eq!(initial.rgba, second_initial.rgba);
+    let initial_copy = initial.rgba.clone();
     assert_eq!(first.run(-1).unwrap(), 0);
+    let updated = first.read_frame().unwrap();
+    assert_ne!(updated.rgba, initial.rgba);
+    assert!(updated.rgba.chunks_exact(4).all(|pixel| pixel[3] == 255));
+    assert_eq!(second.read_frame().unwrap().rgba, second_initial.rgba);
+    let updated_copy = updated.rgba.clone();
     assert_eq!(second.run(-6).unwrap(), 0);
+    assert_ne!(second.read_frame().unwrap().rgba, second_initial.rgba);
+    assert_eq!(first.read_frame().unwrap().rgba, updated.rgba);
     first.close().unwrap();
+    assert_eq!(initial.rgba, initial_copy);
+    assert_eq!(updated.rgba, updated_copy);
     assert_eq!(second.run(-4).unwrap(), 0);
     second.close().unwrap();
+    assert_eq!(second_initial.rgba, initial_copy);
 }
 
 pub fn run_preflight(json: &[u8]) {
