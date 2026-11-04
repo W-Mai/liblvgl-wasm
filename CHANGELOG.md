@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+- Isolated LVGL label environments with an explicitly selected library consumer.
 - Trusted label consumer preflight for isolated LVGL module graphs in TypeScript and Rust.
 - Synchronous clicked-event callbacks for Rust isolated LVGL applications.
 - Static validation for isolated LVGL clicked event adapter contracts in Rust.

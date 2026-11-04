@@ -69,6 +69,7 @@ bun test validator/lvgl-core-profile.test.ts validator/lvgl-lifecycle.test.ts
 bun test validator/lvgl-label-profile.test.ts validator/lvgl-label-negative.test.ts
 bun test validator/numeric-label-preflight.test.ts
 bun test validator/numeric-label-lib-preflight.test.ts
+bun test validator/lvgl-label-lib-runtime.test.ts
 bun test validator/lvgl-event-profile.test.ts validator/lvgl-event-negative.test.ts
 bun test validator/numeric-event-preflight.test.ts
 bun test validator/lvgl-chain.test.ts

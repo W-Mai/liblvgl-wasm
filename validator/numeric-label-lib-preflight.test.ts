@@ -3,7 +3,7 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { prepareModuleManifests } from "../bindings/typescript/src/module-manifest.ts";
 import { inspectWasmFacts } from "../bindings/typescript/src/wasm-facts.ts";
-import { loadNumericEnvironment, preflightLvglLabelGraphForConsumer } from "../target/validator/feature-validator.js";
+import { preflightLvglLabelGraphForConsumer } from "../target/validator/feature-validator.js";
 
 const graphPath = Bun.env.LVW_TEST_LABEL_LIB_GRAPH;
 if (!graphPath) throw new Error("LVW_TEST_LABEL_LIB_GRAPH is required");
@@ -91,11 +91,10 @@ test("real label library preflight snapshots the full graph and does not authori
   expect(f.calls()).toBe(0);
 }, 300_000);
 
-test("consumer identity, graph and runtime mode fail before host creation", async () => {
+test("consumer identity and graph mismatches fail before host creation", async () => {
   for (const [kind, message] of [["core", "invalid LVGL label consumer"], ["missing", "invalid LVGL label consumer"],
     ["app", "label app must depend on its LVGL core"], ["implicit-app", "label app must depend on its LVGL core"],
-    ["sha", "numeric module is not authorized"], ["interface", "interface mismatch"],
-    ["loader", "LVGL label library consumer is not supported by the loader"]] as const) {
+    ["sha", "numeric module is not authorized"], ["interface", "interface mismatch"]] as const) {
     const f = fixture();
     if (kind === "core") f.options.label.consumer = "lvcore";
     if (kind === "missing") f.options.label.consumer = "missing";
@@ -103,7 +102,7 @@ test("consumer identity, graph and runtime mode fail before host creation", asyn
     if (kind === "implicit-app") delete f.options.label.consumer;
     if (kind === "sha") f.options.modules.find((item: any) => item.id === "middle").sha256 = "0".repeat(64);
     if (kind === "interface") f.input.modules.find((item: any) => item.manifest.id === "app").manifest.requires.find((item: any) => item.provider === "middle").version++;
-    const operation = kind === "loader" ? loadNumericEnvironment(f.input, f.options) : preflightLvglLabelGraphForConsumer(f.input, f.options);
+    const operation = preflightLvglLabelGraphForConsumer(f.input, f.options);
     await expect(operation, kind).rejects.toThrow(message);
     expect(f.calls(), kind).toBe(0);
   }

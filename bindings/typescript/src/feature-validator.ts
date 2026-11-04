@@ -199,7 +199,6 @@ export async function loadNumericEnvironment(input: ModuleManifestInput, options
   try {
     const prepared = prepareModuleManifests(input);
     const profile = prepareNumericProfile(prepared, options);
-    if (profile.label && profile.labelConsumer !== profile.app) throw new Error("LVGL label library consumer is not supported by the loader");
     const checks = prepareFeatureChecks(prepared, profile.featureOptions);
     await verifyFeatureChecks(checks);
     const compiled = compileNumericModules(prepared);

@@ -57,7 +57,9 @@ def check_result(result, core_sha, identity):
             or result["standalone"] != {"values": [5, 9, 7], "states": ["closed", "closed"]}
             or result["chain"] != {"values": [115, 117, 225, 227], "traces": [[10, 20, 21, 11], [10, 20, 21, 11]], "states": ["closed", "closed"]}
             or result["labelConsumer"] != {"consumer": "middle", "order": ["lvcore", "middle", "app"], "modules": 3,
-                                           "runtime": ["not-run", "not-run", "not-run"], "loaderRejected": True, "hostCalls": 0}
+                                           "runtime": ["not-run", "not-run", "not-run"], "framesDiffer": True,
+                                           "otherUnchanged": True, "survivesClose": True, "traces": [[10, 20, 21, 11], [10, 20, 21, 11]],
+                                           "states": ["closed", "closed"], "hostCalls": 0}
             or result["label"] != {"width": 120, "height": 48, "framesDiffer": True, "otherUnchanged": True,
                                     "survivesClose": True, "states": ["closed", "closed"]}
             or result["event"] != {"width": 120, "height": 48, "framesDiffer": True, "otherUnchanged": True,

@@ -3,7 +3,7 @@ import { loadNumericEnvironment, preflightLvglLabelGraphForConsumer,
 import { chainFixture } from "./chain.js";
 
 export async function exerciseLabelConsumer(data: ArrayBuffer) {
-  const { input, options: base } = chainFixture(new Uint8Array(data));
+  const { input, options: base, traces } = chainFixture(new Uint8Array(data));
   const cases = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(data)) as { name: string; label: NumericEnvironmentOptions["label"] }[];
   const label = cases.find((item) => item.name === "real")?.label;
   if (!label || label.consumer !== "middle") throw new Error("invalid label consumer fixture");
@@ -26,12 +26,45 @@ export async function exerciseLabelConsumer(data: ArrayBuffer) {
         || checks.environmentIsolation !== "not-run" || checks.hostImplementation !== "not-run" || checks.lifecycle !== "not-run"
         || checks.runtime !== "not-run") throw new Error("label consumer checks differ");
   }
-  let rejection = "";
-  try { await loadNumericEnvironment(input, options); throw new Error("label library load unexpectedly succeeded"); }
-  catch (error) { rejection = String(error); }
-  if (!rejection.includes("LVGL label library consumer is not supported by the loader") || calls !== 0) {
-    throw new Error(`unexpected label consumer load result: ${rejection}, calls=${calls}`);
+  if (calls !== 0) throw new Error("label preflight invoked a host");
+  const runtimeOptions: NumericEnvironmentOptions = { ...base, profile: "lvgl-label-v1", label };
+  const first = await loadNumericEnvironment(input, runtimeOptions);
+  let second: Awaited<ReturnType<typeof loadNumericEnvironment>> | undefined;
+  try {
+    second = await loadNumericEnvironment(input, runtimeOptions);
+    if (!first.readFrame || !second.readFrame) throw new Error("missing label frame operation");
+    const readFrame = (environment: typeof first) => {
+      const value = environment.readFrame!();
+      if (value.width !== 120 || value.height !== 48 || value.rgba.length !== 120 * 48 * 4
+          || !value.rgba.every((byte, index) => index % 4 !== 3 || byte === 255)) throw new Error("invalid label frame");
+      return value;
+    };
+    const initial = readFrame(first), other = readFrame(second);
+    if (!initial.rgba.every((value, index) => value === other.rgba[index])) throw new Error("unexpected initial label frames");
+    if (first.run(1) !== 1) throw new Error("middle label update failed");
+    const changed = readFrame(first), otherAfter = readFrame(second);
+    const framesDiffer = initial.rgba.some((value, index) => value !== changed.rgba[index]);
+    const otherUnchanged = other.rgba.every((value, index) => value === otherAfter.rgba[index]);
+    if (second.run(1) !== 1 || !readFrame(second).rgba.every((value, index) => value === changed.rgba[index])) {
+      throw new Error("second middle label update differs");
+    }
+    const retained = changed.rgba.slice();
+    first.close();
+    const survivesClose = changed.rgba.every((value, index) => value === retained[index]);
+    if (second.run(2) !== 2 || !readFrame(second).rgba.every((value, index) => value === initial.rgba[index])) {
+      throw new Error("second label environment did not survive close");
+    }
+    second.close();
+    const events = [...traces.values()];
+    if (!framesDiffer || !otherUnchanged || !survivesClose || events.length !== 2
+        || events.some((trace) => JSON.stringify(trace) !== "[10,20,21,11]")) {
+      throw new Error(`unexpected label library behavior: ${JSON.stringify({ framesDiffer, otherUnchanged, events })}`);
+    }
+    return { consumer: report.consumer, order: report.graph.order, modules: report.graph.modules.length,
+      runtime: report.graph.modules.map(({ checks }) => checks.runtime), framesDiffer, otherUnchanged, survivesClose,
+      traces: events, states: [first.state, second.state], hostCalls: calls };
+  } finally {
+    if (first.state === "ready") first.close();
+    if (second?.state === "ready") second.close();
   }
-  return { consumer: report.consumer, order: report.graph.order, modules: report.graph.modules.length,
-    runtime: report.graph.modules.map(({ checks }) => checks.runtime), loaderRejected: true, hostCalls: calls };
 }

@@ -414,15 +414,16 @@ export interface NumericEnvironment {
 
 class LabelAdapter {
   #core?: WebAssembly.Instance;
-  #appMemory?: WebAssembly.Memory;
+  #consumerMemory?: WebAssembly.Memory;
   #handles = new Map<number, { readonly kind: "screen" | "label"; readonly pointer: number }>();
   #screen = 0;
   #labels = 0;
 
-  constructor(core: WebAssembly.Instance, appMemory: WebAssembly.Memory, readonly display: number,
-    readonly options: NonNullable<NumericProfile["label"]>, private readonly rethrow: () => void) {
+  constructor(core: WebAssembly.Instance, consumerMemory: WebAssembly.Memory, readonly display: number,
+    readonly options: NonNullable<NumericProfile["label"]>, private readonly rethrow: () => void,
+    private readonly appConsumer: boolean) {
     this.#core = core;
-    this.#appMemory = appMemory;
+    this.#consumerMemory = consumerMemory;
   }
 
   #call(name: string, ...args: number[]): number | void {
@@ -475,8 +476,8 @@ class LabelAdapter {
     const pointer = this.#handle(token, "label");
     const offset = address >>> 0;
     if (offset === 0) { this.#call("lv_label_set_text", pointer, 0); return; }
-    const buffer = this.#appMemory?.buffer;
-    if (!(buffer instanceof ArrayBuffer)) return fail("LVGL app memory is unavailable");
+    const buffer = this.#consumerMemory?.buffer;
+    if (!(buffer instanceof ArrayBuffer)) return fail(this.appConsumer ? "LVGL app memory is unavailable" : "LVGL consumer memory is unavailable");
     const bytes = new Uint8Array(buffer);
     if (offset >= bytes.length) return fail("LVGL text pointer is out of bounds");
     const end = Math.min(bytes.length, offset + this.options.maxTextBytes + 1);
@@ -524,7 +525,7 @@ class LabelAdapter {
     return { width, height, frameId, rgba };
   }
 
-  close(): void { this.#handles.clear(); this.#appMemory = undefined; this.#core = undefined; }
+  close(): void { this.#handles.clear(); this.#consumerMemory = undefined; this.#core = undefined; }
 }
 
 class NumericRuntime {
@@ -539,8 +540,11 @@ class NumericRuntime {
   #event?: EventAdapter;
   #app: string;
   #lvgl?: string;
+  #labelConsumer?: string;
 
-  constructor(app: string, lvgl?: string) { this.#app = app; this.#lvgl = lvgl; }
+  constructor(app: string, lvgl?: string, labelConsumer?: string) {
+    this.#app = app; this.#lvgl = lvgl; this.#labelConsumer = labelConsumer;
+  }
   get state(): "loading" | "ready" | "closing" | "closed" | "poisoned" { return this.#state; }
 
   #poison(error: unknown): never {
@@ -600,7 +604,7 @@ class NumericRuntime {
       const close = module.instance!.exports[closeName] as () => number;
       const status = this.#enter(close);
       if (status !== 0) this.#poison(new Error(`${JSON.stringify(module.record.manifest.id)}: ${closeName} returned ${status}`));
-      if (module.record.manifest.id === this.#app) {
+      if (module.record.manifest.id === this.#labelConsumer) {
         if (this.#event) this.#enter(() => this.#event!.close());
         this.#event = undefined;
         this.#label?.close(); this.#label = undefined;
@@ -646,7 +650,7 @@ class NumericRuntime {
 
   /** @internal Instantiate only after the complete graph has passed preflight and compilation. */
   static load(prepared: PreparedModuleGraph, profile: NumericProfile, compiled: ReadonlyMap<string, WebAssembly.Module>, beforeGuest: () => void): NumericRuntime {
-    const environment = new NumericRuntime(profile.app, profile.lvgl?.module);
+    const environment = new NumericRuntime(profile.app, profile.lvgl?.module, profile.labelConsumer);
     const environmentId = Symbol("numeric environment");
     const wasiBudget = createNumericWasiBudget();
     const hostBindings = new Map<string, Map<string, LiveHost>>();
@@ -751,7 +755,7 @@ class NumericRuntime {
           wasi.bind(memory);
         }
         const rollback = (failure: Error): never => {
-          if (id === profile.app) {
+          if (id === profile.labelConsumer) {
             try { if (environment.#event) environment.#enter(() => environment.#event!.close()); }
             catch (error) { throw new AggregateError([failure, error], "numeric initialization rollback failed"); }
             environment.#event = undefined;
@@ -764,14 +768,14 @@ class NumericRuntime {
           catch (error) { throw new AggregateError([failure, error], "numeric initialization rollback failed"); }
           throw failure;
         };
-        if (profile.label && id === profile.app) {
+        if (profile.label && id === profile.labelConsumer) {
           const provider = environment.#modules.get(profile.lvgl!.module)!;
           if (!provider.initialized || !provider.instance) fail("LVGL core is not initialized");
           const memory = live.instance.exports.memory;
-          if (!(memory instanceof WebAssembly.Memory)) fail("LVGL app memory is unavailable");
+          if (!(memory instanceof WebAssembly.Memory)) fail(id === profile.app ? "LVGL app memory is unavailable" : "LVGL consumer memory is unavailable");
           const display = environment.#enter(() => (provider.instance!.exports.lvw_display_create as (width: number, height: number, format: number) => number)(profile.label!.width, profile.label!.height, 1)) >>> 0;
           if (!display) rollback(new Error("LVGL display creation failed"));
-          environment.#label = new LabelAdapter(provider.instance, memory, display, profile.label, () => environment.#rethrow());
+          environment.#label = new LabelAdapter(provider.instance, memory, display, profile.label, () => environment.#rethrow(), id === profile.app);
           if (profile.event) {
             const clicked = environment.#enter(() => (provider.instance!.exports.lvw_event_clicked as () => number)()) >>> 0;
             if (!clicked) rollback(new Error("LVGL clicked event code is unavailable"));
