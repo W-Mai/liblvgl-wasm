@@ -18,6 +18,9 @@ use crate::numeric_wasi::{NumericWasiOptions, NumericWasiOutput, NumericWasiServ
 use wasmtime::{Caller, Extern, ExternType, Func, Instance, Store, TypedFunc, Val};
 
 #[cfg(test)]
+#[path = "numeric_chain_test.rs"]
+mod numeric_chain_test;
+#[cfg(test)]
 #[path = "numeric_event_test.rs"]
 mod numeric_event_test;
 #[cfg(test)]

@@ -578,6 +578,8 @@ liblvgl-wasm-host = { path = "/path/to/liblvgl-wasm/bindings/rust" }
 
 `preflight_lvgl_core_graph` and `load_lvgl_core_environment` accept a trusted standalone LVGL core with a fixed-size table. The environment initializes and shuts down the core in dependency order and exposes only explicitly authorized `lv_is_initialized` and `lv_tick_get` scalar functions to other modules. Unsupported LVGL bridge callbacks poison the environment when invoked. Cross-instance pointers, LVGL callbacks and rendering are not provided by this profile.
 
+The C fixtures in `validator/lvgl-chain-lib.c` and `validator/lvgl-chain-app.c` exercise an independent LVGL core, library and app using authorized i32 interfaces. The library calls `lv_is_initialized` and keeps its own state; no cross-instance pointers or callbacks are passed.
+
 `preflight_lvgl_label_graph` checks the isolated label adapter contract against the app, core and bounded resources, then compiles the same snapshots. Its report does not authorize loading or run the adapter.
 
 `preflight_lvgl_event_graph` checks the clicked event adapter contract, app-owned dispatcher, provider identities and event limits against the same snapshots before compilation. The report does not authorize loading or execute callbacks.

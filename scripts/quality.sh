@@ -52,6 +52,13 @@ python3 -B validator/lvgl-event-negative-fixtures.py
 LVW_TEST_EVENT_GRAPH="$label_tmp/event-graph.json"
 export LVW_TEST_EVENT_GRAPH
 bun tests/fixtures/numeric-label/generate.ts --event --output "$LVW_TEST_EVENT_GRAPH"
+cmake --build "$root/target/wasm" --target lvw_ndk -j 4
+cmake --install "$root/target/wasm" --prefix "$label_tmp/chain-ndk" --component ndk
+python3 -B validator/lvgl-chain-fixture-test.py
+python3 -B validator/lvgl-chain-fixture.py --ndk "$label_tmp/chain-ndk" --output "$label_tmp/chain"
+LVW_TEST_CHAIN_GRAPH="$label_tmp/chain-graph.json"
+export LVW_TEST_CHAIN_GRAPH
+bun tests/fixtures/numeric-chain/generate.ts --fixtures "$label_tmp/chain" --output "$LVW_TEST_CHAIN_GRAPH"
 bun test validator/feature-validator.test.ts
 bun test validator/feature-worker.test.ts validator/feature-worker-live.test.ts validator/feature-graph.test.ts validator/numeric-environment.test.ts validator/wasi-numeric-loader.test.ts
 bun test validator/lvgl-core-profile.test.ts validator/lvgl-lifecycle.test.ts
@@ -59,6 +66,7 @@ bun test validator/lvgl-label-profile.test.ts validator/lvgl-label-negative.test
 bun test validator/numeric-label-preflight.test.ts
 bun test validator/lvgl-event-profile.test.ts validator/lvgl-event-negative.test.ts
 bun test validator/numeric-event-preflight.test.ts
+bun test validator/lvgl-chain.test.ts
 bun test validator/feature-sdk.test.ts
 bun test validator/bounded-core.test.ts
 python3 -B validator/bounded-core.test.py
@@ -90,6 +98,12 @@ LVW_TEST_LVGL_CORE="$root/target/wasm/liblvgl-bounded.wasm" \
     CARGO_TARGET_DIR="$root/target/rust" \
     cargo test --manifest-path bindings/rust/Cargo.toml --locked --lib \
         real_lvgl_failed_app_rolls_back_same_core -- --ignored
+LVW_TEST_LVGL_CORE="$root/target/wasm/liblvgl-bounded.wasm" \
+    LVW_TEST_LVGL_API="$root/target/wasm/api.json" \
+    LVW_TEST_LVGL_PROOF="$root/target/wasm/api-verification-bounded.json" \
+    CARGO_TARGET_DIR="$root/target/rust" \
+    cargo test --manifest-path bindings/rust/Cargo.toml --locked --lib \
+        numeric_chain_test -- --ignored
 LVW_TEST_LVGL_CORE="$root/target/wasm/liblvgl-bounded.wasm" \
     LVW_TEST_LVGL_API="$root/target/wasm/api.json" \
     LVW_TEST_LVGL_PROOF="$root/target/wasm/api-verification-bounded.json" \

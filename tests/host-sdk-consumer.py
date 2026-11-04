@@ -11,7 +11,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "toolchains"))
 from host_sdk import build_host_sdk, verify_rust_validator
 from lvw import file_inventory, publish_package
-from numeric_sdk_fixture import install as install_numeric_fixture, prepare as prepare_numeric_fixture, prepare_event, prepare_label, prepare_lvgl, prepare_wasi, run_event_consumer
+from numeric_sdk_fixture import install as install_numeric_fixture, prepare as prepare_numeric_fixture, prepare_chain, prepare_event, prepare_label, prepare_lvgl, prepare_wasi, run_chain_consumer, run_event_consumer
 
 
 def run(*command, **kwargs):
@@ -177,5 +177,21 @@ def check(output, build=None):
     (output / "report.json").write_text(json.dumps(packages, indent=2) + "\n")
 
 
+def check_chain(output):
+    graph = prepare_chain(output / "numeric-chain-fixture", output / "ndk")
+    environment = {**os.environ, "CARGO_TARGET_DIR": str(ROOT / "target/rust")}
+    environment.pop("LVW_RUST_BINDINGS", None)
+    for name in ("baseline", "native"):
+        package = output / f"moved {name}"
+        readonly(package, True)
+        try:
+            run_chain_consumer(package, output / f"consumer {name}", graph, environment)
+        finally:
+            readonly(package, False)
+
+
 if __name__ == "__main__":
-    check(Path(sys.argv[1]).resolve(), Path(sys.argv[2]).resolve() if len(sys.argv) > 2 else None)
+    if sys.argv[1] == "--chain-only":
+        check_chain(Path(sys.argv[2]).resolve())
+    else:
+        check(Path(sys.argv[1]).resolve(), Path(sys.argv[2]).resolve() if len(sys.argv) > 2 else None)

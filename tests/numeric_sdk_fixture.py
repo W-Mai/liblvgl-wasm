@@ -11,6 +11,15 @@ import tempfile
 ROOT = Path(__file__).resolve().parent.parent
 
 
+def scratch_target():
+    base = (ROOT / "target/validator").resolve()
+    target = Path(os.environ.get("LVW_TEST_SDK_SCRATCH", base)).resolve()
+    if not target.is_relative_to(base):
+        raise ValueError("SDK fixture scratch must be under target/validator")
+    target.mkdir(parents=True, exist_ok=True)
+    return target
+
+
 def prepare(directory):
     directory = Path(directory).resolve()
     directory.mkdir(parents=True, exist_ok=True)
@@ -51,8 +60,7 @@ def prepare_lvgl(directory):
     directory = Path(directory).resolve()
     directory.mkdir(parents=True, exist_ok=True)
     output = directory / "graph.json"
-    target = ROOT / "target/validator"
-    target.mkdir(parents=True, exist_ok=True)
+    target = scratch_target()
     with tempfile.TemporaryDirectory(prefix="lvw-sdk-core-fixture-", dir=target) as temporary:
         subprocess.run([sys.executable, "-B", str(ROOT / "validator/lvgl-core-fixture.py"),
                         "--output", temporary], cwd=ROOT, check=True)
@@ -74,7 +82,7 @@ def reject_ndk_links(root):
 def prepare_label(directory, ndk, *, event=False):
     directory = Path(directory).resolve()
     ndk = Path(ndk).resolve(strict=True)
-    target = (ROOT / "target/validator").resolve()
+    target = scratch_target()
     if (directory == ndk or directory.is_relative_to(ndk) or ndk.is_relative_to(directory)
             or target == ndk or target.is_relative_to(ndk)):
         raise ValueError("label fixture output and NDK must not overlap")
@@ -111,12 +119,70 @@ def prepare_event(directory, ndk):
     return prepare_label(directory, ndk, event=True)
 
 
+def prepare_chain(directory, ndk):
+    directory = Path(directory).resolve()
+    ndk = Path(ndk).resolve(strict=True)
+    target = scratch_target()
+    if (directory == ndk or directory.is_relative_to(ndk) or ndk.is_relative_to(directory)
+            or target == ndk or target.is_relative_to(ndk)):
+        raise ValueError("chain fixture output and NDK must not overlap")
+    reject_ndk_links(ndk)
+    directory.mkdir(parents=True, exist_ok=True)
+    target.mkdir(parents=True, exist_ok=True)
+    output = directory / "graph.json"
+    if output.exists() or output.is_symlink():
+        raise FileExistsError(f"chain graph output already exists: {output}")
+    with tempfile.TemporaryDirectory(prefix="lvw-sdk-chain-fixture-", dir=target) as temporary:
+        work = Path(temporary)
+        copied_ndk = work / "readonly-ndk"
+        shutil.copytree(ndk, copied_ndk, symlinks=True)
+        reject_ndk_links(copied_ndk)
+        paths = [copied_ndk, *copied_ndk.rglob("*")]
+        for path in paths:
+            path.chmod(0o555 if path.is_dir() else 0o444 | (path.stat().st_mode & 0o111))
+        try:
+            subprocess.run([sys.executable, "-B", str(ROOT / "validator/lvgl-chain-fixture.py"),
+                            "--ndk", str(copied_ndk), "--output", str(work / "fixtures")], cwd=ROOT, check=True)
+            graph = work / "graph.json"
+            subprocess.run(["bun", str(ROOT / "tests/fixtures/numeric-chain/generate.ts"), "--real-only",
+                            "--fixtures", str(work / "fixtures"),
+                            "--core", str(ROOT / "target/wasm/liblvgl-bounded.wasm"),
+                            "--api", str(ROOT / "target/wasm/api.json"),
+                            "--proof", str(ROOT / "target/wasm/api-verification-bounded.json"),
+                            "--output", str(graph)], cwd=ROOT, check=True)
+            with tempfile.TemporaryDirectory(prefix=".lvw-chain-graph-", dir=directory) as staged:
+                copied = Path(staged) / "graph.json"
+                shutil.copyfile(graph, copied)
+                os.link(copied, output)
+        finally:
+            for path in paths:
+                path.chmod(0o755 if path.is_dir() else 0o644 | (path.stat().st_mode & 0o111))
+    return output
+
+
 def run_event_consumer(package, project, graph, environment):
     consumer = Path(project) / "rust-event"
     (consumer / "src").mkdir(parents=True)
     shutil.copyfile(ROOT / "tests/fixtures/host-sdk/event-graph.rs", consumer / "src/main.rs")
     install(consumer / "src")
     (consumer / "Cargo.toml").write_text('[package]\nname="lvw-event-consumer"\n'
+        'version="0.1.0"\nedition="2024"\n[dependencies]\nliblvgl-wasm-host={path='
+        + json.dumps(str(Path(package) / "rust")) + '}\nserde_json="=1.0.151"\nsha2="=0.10.9"\n')
+    shutil.copyfile(Path(package) / "rust/Cargo.lock", consumer / "Cargo.lock")
+    manifest = consumer / "Cargo.toml"
+    subprocess.run(["cargo", "metadata", "--offline", "--format-version", "1", "--manifest-path", str(manifest)],
+                   env=environment, stdout=subprocess.DEVNULL, check=True)
+    subprocess.run(["cargo", "run", "--locked", "--offline", "--manifest-path", str(manifest), "--", str(graph)],
+                   env=environment, check=True)
+
+
+def run_chain_consumer(package, project, graph, environment):
+    consumer = Path(project) / "rust-chain"
+    (consumer / "src/fixtures/host-sdk").mkdir(parents=True)
+    shutil.copyfile(ROOT / "tests/fixtures/host-sdk/chain-graph.rs", consumer / "src/fixtures/host-sdk/chain-graph.rs")
+    (consumer / "src/main.rs").write_text('#[path = "fixtures/host-sdk/chain-graph.rs"]\n#[allow(dead_code)]\nmod chain;\nfn main() { chain::main(); }\n')
+    install(consumer / "src")
+    (consumer / "Cargo.toml").write_text('[package]\nname="lvw-chain-consumer"\n'
         'version="0.1.0"\nedition="2024"\n[dependencies]\nliblvgl-wasm-host={path='
         + json.dumps(str(Path(package) / "rust")) + '}\nserde_json="=1.0.151"\nsha2="=0.10.9"\n')
     shutil.copyfile(Path(package) / "rust/Cargo.lock", consumer / "Cargo.lock")
