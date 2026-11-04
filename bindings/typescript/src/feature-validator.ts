@@ -62,6 +62,11 @@ export interface FeatureModuleGraphReport {
   }[];
 }
 
+export interface NumericLabelConsumerPreflightReport {
+  readonly consumer: string;
+  readonly graph: FeatureModuleGraphReport;
+}
+
 export class FeatureModuleGraphError extends Error {
   constructor(readonly moduleId: string, readonly stage: "feature" | "wasi" | "resource", cause: unknown) {
     super(`${JSON.stringify(moduleId)}: ${stage} inspection failed: ${String(cause)}`, { cause });
@@ -144,6 +149,17 @@ async function verifyFeatureChecks(checks: ReturnType<typeof prepareFeatureCheck
   if (signal && signalAborted.call(signal)) throw new FeatureValidationError("aborted", "feature validation aborted");
 }
 
+function featureGraphReport(prepared: PreparedModuleGraph, checks: ReturnType<typeof prepareFeatureChecks>): FeatureModuleGraphReport {
+  return { order: prepared.order, helperSha256: HELPER_SHA256, policyVersion: POLICY_VERSION,
+    modules: checks.records.map(({ record, isolated, wasi }) => ({ id: record.manifest.id, sha256: record.facts.sha256,
+      declaredFeatures: record.manifest.target.features, wasi, isolated, checks: {
+        declaration: "passed", identity: "passed", interface: "passed", feature: "passed",
+        wasiAbi: wasi.evidence === "present" ? "passed" : "not-observed", resourceTopology: "passed", engine: "passed",
+        targetProvenance: "not-run", pointerContracts: "not-run", handleIsolation: "not-run", environmentIsolation: "not-run",
+        hostImplementation: "not-run", lifecycle: "not-run", runtime: "not-run",
+      } })) };
+}
+
 /** Inspect a module graph without instantiating it. The report is not an authorization to load the graph. */
 export async function inspectFeatureModuleGraph(input: ModuleManifestInput, options: FeatureModuleGraphOptions): Promise<FeatureModuleGraphReport> {
   if (activeGraphs >= MAX_WORKERS) throw new FeatureValidationError("busy", "module graph inspection concurrency limit reached");
@@ -153,15 +169,24 @@ export async function inspectFeatureModuleGraph(input: ModuleManifestInput, opti
     const checks = prepareFeatureChecks(prepared, options);
     await verifyFeatureChecks(checks);
     compilePreparedModules(prepared);
-    const { records } = checks;
-    return { order: prepared.order, helperSha256: HELPER_SHA256, policyVersion: POLICY_VERSION,
-      modules: records.map(({ record, isolated, wasi }) => ({ id: record.manifest.id, sha256: record.facts.sha256,
-        declaredFeatures: record.manifest.target.features, wasi, isolated, checks: {
-          declaration: "passed", identity: "passed", interface: "passed", feature: "passed",
-          wasiAbi: wasi.evidence === "present" ? "passed" : "not-observed", resourceTopology: "passed", engine: "passed",
-          targetProvenance: "not-run", pointerContracts: "not-run", handleIsolation: "not-run", environmentIsolation: "not-run",
-          hostImplementation: "not-run", lifecycle: "not-run", runtime: "not-run",
-        } })) };
+    return featureGraphReport(prepared, checks);
+  } finally {
+    activeGraphs--;
+  }
+}
+
+/** Validate a trusted label consumer without creating an environment. The report does not authorize loading. */
+export async function preflightLvglLabelGraphForConsumer(input: ModuleManifestInput, options: NumericEnvironmentOptions): Promise<NumericLabelConsumerPreflightReport> {
+  if (activeGraphs >= MAX_WORKERS) throw new FeatureValidationError("busy", "module graph inspection concurrency limit reached");
+  activeGraphs++;
+  try {
+    const prepared = prepareModuleManifests(input);
+    const profile = prepareNumericProfile(prepared, options);
+    if (!profile.label || profile.event || profile.labelConsumer === undefined) throw new Error("label consumer preflight requires lvgl-label-v1");
+    const checks = prepareFeatureChecks(prepared, profile.featureOptions);
+    await verifyFeatureChecks(checks);
+    compileNumericModules(prepared);
+    return { consumer: profile.labelConsumer, graph: featureGraphReport(prepared, checks) };
   } finally {
     activeGraphs--;
   }
@@ -174,6 +199,7 @@ export async function loadNumericEnvironment(input: ModuleManifestInput, options
   try {
     const prepared = prepareModuleManifests(input);
     const profile = prepareNumericProfile(prepared, options);
+    if (profile.label && profile.labelConsumer !== profile.app) throw new Error("LVGL label library consumer is not supported by the loader");
     const checks = prepareFeatureChecks(prepared, profile.featureOptions);
     await verifyFeatureChecks(checks);
     const compiled = compileNumericModules(prepared);

@@ -59,11 +59,16 @@ python3 -B validator/lvgl-chain-fixture.py --ndk "$label_tmp/chain-ndk" --output
 LVW_TEST_CHAIN_GRAPH="$label_tmp/chain-graph.json"
 export LVW_TEST_CHAIN_GRAPH
 bun tests/fixtures/numeric-chain/generate.ts --fixtures "$label_tmp/chain" --output "$LVW_TEST_CHAIN_GRAPH"
+python3 -B validator/lvgl-label-lib-fixture.py --ndk "$label_tmp/chain-ndk" --output "$label_tmp/label-lib"
+LVW_TEST_LABEL_LIB_GRAPH="$label_tmp/label-lib-graph.json"
+export LVW_TEST_LABEL_LIB_GRAPH
+bun tests/fixtures/numeric-label-lib/generate.ts --fixtures "$label_tmp/label-lib" --output "$LVW_TEST_LABEL_LIB_GRAPH"
 bun test validator/feature-validator.test.ts
 bun test validator/feature-worker.test.ts validator/feature-worker-live.test.ts validator/feature-graph.test.ts validator/numeric-environment.test.ts validator/wasi-numeric-loader.test.ts
 bun test validator/lvgl-core-profile.test.ts validator/lvgl-lifecycle.test.ts
 bun test validator/lvgl-label-profile.test.ts validator/lvgl-label-negative.test.ts
 bun test validator/numeric-label-preflight.test.ts
+bun test validator/numeric-label-lib-preflight.test.ts
 bun test validator/lvgl-event-profile.test.ts validator/lvgl-event-negative.test.ts
 bun test validator/numeric-event-preflight.test.ts
 bun test validator/lvgl-chain.test.ts

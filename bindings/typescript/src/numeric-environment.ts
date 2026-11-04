@@ -48,7 +48,7 @@ export interface NumericEnvironmentOptions {
   readonly profile: "numeric-v1" | "lvgl-core-v1" | "lvgl-label-v1" | "lvgl-event-v1";
   readonly lvgl?: { readonly module: string; readonly id: string; readonly interface: ModuleInterface; readonly abiVersion: 1 };
   readonly label?: { readonly id: string; readonly interface: ModuleInterface; readonly width: number; readonly height: number;
-    readonly maxLabels: number; readonly maxTextBytes: number };
+    readonly maxLabels: number; readonly maxTextBytes: number; readonly consumer?: string };
   readonly event?: { readonly maxRegistrations: number; readonly maxDepth: number };
   readonly modules: readonly NumericModuleContract[];
   readonly hosts: readonly NumericHostContract[];
@@ -72,6 +72,7 @@ interface NumericProfile {
   readonly label?: NonNullable<NumericEnvironmentOptions["label"]>;
   readonly event?: NonNullable<NumericEnvironmentOptions["event"]>;
   readonly app: string;
+  readonly labelConsumer?: string;
   readonly featureOptions: Pick<NumericEnvironmentOptions, "allowedFeatures" | "startupTimeoutMs" | "executionTimeoutMs" | "signal">;
 }
 
@@ -186,8 +187,10 @@ export function prepareNumericProfile(prepared: PreparedModuleGraph, options: Nu
     lvgl = { module: name(value.module), id: name(value.id), interface: interfaceContract(value.interface), abiVersion: 1 };
   }
   let label: NumericProfile["label"];
+  let selectedConsumer: string | undefined;
   if (root.profile === "lvgl-label-v1" || root.profile === "lvgl-event-v1") {
-    const value = fields(root.label, ["id", "interface", "width", "height", "maxLabels", "maxTextBytes"]);
+    const value = fields(root.label, ["id", "interface", "width", "height", "maxLabels", "maxTextBytes"], ["consumer"]);
+    selectedConsumer = Object.hasOwn(value, "consumer") ? name(value.consumer) : undefined;
     const width = limit(value.width, 4096), height = limit(value.height, 4096);
     const maxLabels = limit(value.maxLabels, 4096), maxTextBytes = limit(value.maxTextBytes, 1024 * 1024);
     if (!width || !height || width * height * 4 > 16 * 1024 * 1024 || !maxLabels || !maxTextBytes) fail("invalid LVGL label limits");
@@ -223,6 +226,7 @@ export function prepareNumericProfile(prepared: PreparedModuleGraph, options: Nu
   const maxMemoryPages = limit(root.maxMemoryPages, 65536), maxTotalMemoryPages = limit(root.maxTotalMemoryPages, 65536 * 256);
   const maxTableElements = limit(root.maxTableElements, 0xffff_ffff), maxTotalTableElements = limit(root.maxTotalTableElements, 0xffff_ffff * 256);
   if (modules.size !== prepared.modules.length || hosts.size + Number(wasi !== undefined) + Number(lvgl !== undefined) + Number(label !== undefined) !== prepared.hosts.length) return fail("numeric profile provider inventory differs");
+  if (selectedConsumer !== undefined && (!modules.has(selectedConsumer) || selectedConsumer === lvgl?.module)) return fail("invalid LVGL label consumer");
   let totalMemory = 0, totalTables = 0;
   let app: string | undefined, foundLvgl = false;
   for (const record of prepared.modules) {
@@ -265,14 +269,26 @@ export function prepareNumericProfile(prepared: PreparedModuleGraph, options: Nu
     }
     if (current.role === "app") {
       ownEntrypoint(record, "app_run", ["i32"], ["i32"], true);
-      if (label) {
-        ownMemory(record);
-        if (!current.requires.some((requirement) => requirement.provider === lvgl!.module)) fail("label app must depend on its LVGL core");
-      }
       if (event) {
         ownEntrypoint(record, eventDispatch, ["i32", "i32"], [], true);
         if (record.facts.tables.length !== 1 || record.facts.tables[0]!.imported) fail("LVGL event app requires its own table");
         if (contract.exports.some((fn) => fn.name === eventDispatch)) fail("LVGL event dispatcher cannot be a business export");
+      }
+    }
+    if (label && (selectedConsumer === current.id || selectedConsumer === undefined && current.role === "app")) {
+      ownMemory(record);
+      if (!current.requires.some((requirement) => requirement.provider === lvgl!.module)) {
+        fail(current.role === "app" ? "label app must depend on its LVGL core" : "label consumer must depend on its LVGL core");
+      }
+      if (selectedConsumer !== undefined && !current.requires.some((requirement) => requirement.provider === label!.id)) {
+        fail("label consumer must depend on its label provider");
+      }
+      if (selectedConsumer !== undefined) {
+        const imported = new Set(record.facts.imports.filter((item) => item.kind === "function" && item.module === "lvgl")
+          .map((item) => item.index));
+        if (record.facts.exports.some((item) => item.kind === "function" && imported.has(item.index))) {
+          fail(`${JSON.stringify(current.id)}: LVGL label imports cannot be re-exported`);
+        }
       }
     }
     for (const memory of record.facts.memories) {
@@ -292,6 +308,8 @@ export function prepareNumericProfile(prepared: PreparedModuleGraph, options: Nu
   }
   if (lvgl && !foundLvgl) return fail("LVGL core module is missing");
   if (app === undefined) return fail("numeric profile requires exactly one app");
+  const labelConsumer = selectedConsumer ?? app;
+  if (event && labelConsumer !== app) return fail("LVGL event consumer must be its app");
   if (totalMemory > maxTotalMemoryPages || totalTables > maxTotalTableElements) return fail("numeric environment resource limit exceeded");
   for (const host of prepared.hosts) {
     if (label && host.id === label.id) {
@@ -321,10 +339,12 @@ export function prepareNumericProfile(prepared: PreparedModuleGraph, options: Nu
   const labelUsed = new Set<string>();
   for (const record of prepared.modules) for (const requirement of record.manifest.requires) {
     if (lvgl && requirement.provider === lvgl.id && record.manifest.id !== lvgl.module) fail("LVGL host is reserved for its core");
-    if (label && requirement.provider === label.id && record.manifest.id !== app) fail("LVGL label host is reserved for its app");
+    if (label && requirement.provider === label.id && record.manifest.id !== labelConsumer) {
+      fail(selectedConsumer === undefined ? "LVGL label host is reserved for its app" : "LVGL label host is reserved for its consumer");
+    }
     for (const item of requirement.imports) {
       if (label && (item.module === "lvgl" || requirement.provider === label.id)) {
-        if (record.manifest.id !== app || requirement.provider !== label.id || item.module !== "lvgl"
+        if (record.manifest.id !== labelConsumer || requirement.provider !== label.id || item.module !== "lvgl"
             || item.provider_export !== item.name || !labelSignature(item, !!event)) fail(`${JSON.stringify(record.manifest.id)}: LVGL label import is not authorized`);
         labelUsed.add(item.name);
         continue;
@@ -356,9 +376,11 @@ export function prepareNumericProfile(prepared: PreparedModuleGraph, options: Nu
   }
   if (label) {
     const host = prepared.hosts.find((item) => item.id === label!.id)!;
-    if (host.exports.length !== labelUsed.size || host.exports.some((item) => !labelUsed.has(item.name))) fail("LVGL label host inventory differs from app imports");
+    if (host.exports.length !== labelUsed.size || host.exports.some((item) => !labelUsed.has(item.name))) {
+      fail(labelConsumer === app ? "LVGL label host inventory differs from app imports" : "LVGL label host inventory differs from consumer imports");
+    }
   }
-  return { modules, hosts, wasi, lvgl, label, event, app, featureOptions };
+  return { modules, hosts, wasi, lvgl, label, event, app, labelConsumer: label ? labelConsumer : undefined, featureOptions };
 }
 
 /** @internal Compile all private snapshots before creating any guest instance. */

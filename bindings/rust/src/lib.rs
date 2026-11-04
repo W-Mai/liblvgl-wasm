@@ -53,7 +53,8 @@ pub use numeric_profile::{
     NumericFunctionContract, NumericHostContract, NumericLimits, NumericModuleContract,
     NumericPreflightError, NumericPreflightReport, NumericProfile, NumericResult,
     preflight_lvgl_core_graph, preflight_lvgl_event_graph, preflight_lvgl_label_graph,
-    preflight_numeric_graph, preflight_numeric_graph_with_wasi,
+    preflight_lvgl_label_graph_for_consumer, preflight_numeric_graph,
+    preflight_numeric_graph_with_wasi,
 };
 mod numeric_environment;
 pub use numeric_environment::{

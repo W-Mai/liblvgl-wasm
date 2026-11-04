@@ -20,7 +20,7 @@ from lvw import file_inventory
 from host_sdk import verify_feature_validator, verify_rust_validator
 from feature_sdk_browser import run_browser
 from bounded_core import MAX_API_BYTES, MAX_CORE_BYTES, check_proof, read
-from numeric_sdk_fixture import install as install_numeric_fixture, prepare as prepare_numeric_fixture, prepare_chain, prepare_event, prepare_label, prepare_lvgl, prepare_wasi, run_chain_consumer, run_event_consumer
+from numeric_sdk_fixture import install as install_numeric_fixture, prepare as prepare_numeric_fixture, prepare_chain, prepare_event, prepare_label, prepare_label_lib, prepare_lvgl, prepare_wasi, run_chain_consumer, run_event_consumer, run_label_consumer
 
 
 def run(*command, cwd=None, env=None):
@@ -56,6 +56,8 @@ def check_result(result, core_sha, identity):
             or result["wasiOutput"] != ["c:2:ci", "c:1:C!", "c:2:ce"] or not result["wasiIdentity"] or not result["wasiExit"]
             or result["standalone"] != {"values": [5, 9, 7], "states": ["closed", "closed"]}
             or result["chain"] != {"values": [115, 117, 225, 227], "traces": [[10, 20, 21, 11], [10, 20, 21, 11]], "states": ["closed", "closed"]}
+            or result["labelConsumer"] != {"consumer": "middle", "order": ["lvcore", "middle", "app"], "modules": 3,
+                                           "runtime": ["not-run", "not-run", "not-run"], "loaderRejected": True, "hostCalls": 0}
             or result["label"] != {"width": 120, "height": 48, "framesDiffer": True, "otherUnchanged": True,
                                     "survivesClose": True, "states": ["closed", "closed"]}
             or result["event"] != {"width": 120, "height": 48, "framesDiffer": True, "otherUnchanged": True,
@@ -302,6 +304,7 @@ def check(sdk, ndk, chromium=None):
         label_graph = prepare_label(work / "numeric-label-fixture", ndk)
         event_graph = prepare_event(work / "numeric-event-fixture", ndk)
         chain_graph = prepare_chain(work / "numeric-chain-fixture", ndk)
+        label_lib_graph = prepare_label_lib(work / "numeric-label-lib-fixture", ndk)
         bounded = read(ROOT / "target/wasm/liblvgl-bounded.wasm", MAX_CORE_BYTES)
         api = read(ROOT / "target/wasm/api.json", MAX_API_BYTES)
         proof = read(ROOT / "target/wasm/api-verification-bounded.json", 1024 * 1024)
@@ -374,10 +377,11 @@ def check(sdk, ndk, chromium=None):
                 moved / "runtime/liblvgl.wasm", manifest["identity"]["wasm_sha256"], numeric_graph, wasi_graph, lvgl_graph, label_graph, env=rust_env)
             run_event_consumer(moved, project, event_graph, rust_env)
             run_chain_consumer(moved, project, chain_graph, rust_env)
+            run_label_consumer(moved, project, label_lib_graph, rust_env)
             (project / "package.json").write_text('{"type":"module"}\n')
             (project / "node_modules").mkdir()
             (project / "node_modules/liblvgl-wasm").symlink_to(typescript, target_is_directory=True)
-            for name in ("consumer.ts", "browser-worker.ts", "lvgl-module.ts", "standalone-core.ts", "chain.ts"):
+            for name in ("consumer.ts", "browser-worker.ts", "lvgl-module.ts", "standalone-core.ts", "chain.ts", "label-consumer.ts"):
                 shutil.copyfile(ROOT / "tests/fixtures/feature-sdk" / name, project / name)
             for mode in ("Bundler", "NodeNext"):
                 config = {"compilerOptions": {"target": "ES2022", "strict": True, "noEmit": True,
@@ -387,12 +391,12 @@ def check(sdk, ndk, chromium=None):
                 run("bun", ROOT / "node_modules/typescript/bin/tsc", "--project", project / "tsconfig.json")
             (project / "runner.ts").write_text('''globalThis.fetch = (() => { throw new Error("network is unavailable"); }) as typeof fetch;
 const { exercise } = await import("./consumer.ts");
-const result = await exercise(await Bun.file(Bun.argv[2]!).arrayBuffer(), await Bun.file(Bun.argv[3]!).arrayBuffer(), await Bun.file(Bun.argv[4]!).arrayBuffer(), await Bun.file(Bun.argv[5]!).arrayBuffer(), await Bun.file(Bun.argv[6]!).arrayBuffer(), await Bun.file(Bun.argv[7]!).arrayBuffer(), await Bun.file(Bun.argv[8]!).arrayBuffer(), await Bun.file(Bun.argv[9]!).arrayBuffer(), await Bun.file(Bun.argv[10]!).arrayBuffer());
+const result = await exercise(await Bun.file(Bun.argv[2]!).arrayBuffer(), await Bun.file(Bun.argv[3]!).arrayBuffer(), await Bun.file(Bun.argv[4]!).arrayBuffer(), await Bun.file(Bun.argv[5]!).arrayBuffer(), await Bun.file(Bun.argv[6]!).arrayBuffer(), await Bun.file(Bun.argv[7]!).arrayBuffer(), await Bun.file(Bun.argv[8]!).arrayBuffer(), await Bun.file(Bun.argv[9]!).arrayBuffer(), await Bun.file(Bun.argv[10]!).arrayBuffer(), await Bun.file(Bun.argv[11]!).arrayBuffer());
 console.log(JSON.stringify(result));
 ''')
             core = moved / "runtime/liblvgl.wasm"
             core_sha = hashlib.sha256(core.read_bytes()).hexdigest()
-            result = subprocess.run(["bun", "runner.ts", core, wasi, lv_provider, lv_app, standalone_core, standalone_app, label_app, event_app, chain_graph], cwd=project, check=True, capture_output=True, text=True)
+            result = subprocess.run(["bun", "runner.ts", core, wasi, lv_provider, lv_app, standalone_core, standalone_app, label_app, event_app, chain_graph, label_lib_graph], cwd=project, check=True, capture_output=True, text=True)
             check_result(json.loads(result.stdout), core_sha, identity)
 
             packable = work / "packable typescript"
@@ -429,7 +433,7 @@ console.log(JSON.stringify(result));
                 noble = archive.extractfile("package/LICENSE-noble-hashes.txt").read()
                 if hashlib.sha256(noble).hexdigest() != notice_manifest["noble"]["license_sha256"]:
                     raise ValueError("packed noble license identity differs")
-            browser = run_browser(project, moved, work, chromium, wasi, lv_provider, lv_app, standalone_core, standalone_app, label_app, event_app, chain_graph) if chromium else None
+            browser = run_browser(project, moved, work, chromium, wasi, lv_provider, lv_app, standalone_core, standalone_app, label_app, event_app, chain_graph, label_lib_graph) if chromium else None
             if browser is not None:
                 if browser.get("hasSubtle") is not False:
                     raise ValueError("browser worker did not use an opaque origin")

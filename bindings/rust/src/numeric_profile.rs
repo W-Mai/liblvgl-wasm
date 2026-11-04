@@ -217,6 +217,7 @@ fn check_profile<'a>(
     lvgl: Option<&NumericLvglCoreOptions>,
     label: Option<&NumericLabelOptions>,
     event: Option<&NumericEventOptions>,
+    label_consumer: Option<&str>,
 ) -> Result<&'a str> {
     if profile.modules.len() > 256 || profile.hosts.len() > 256 {
         return Err(fail("numeric provider limit exceeded"));
@@ -294,6 +295,9 @@ fn check_profile<'a>(
     if event.is_some_and(|event| !event.valid() || label.is_none() || lvgl.is_none()) {
         return Err(fail("invalid LVGL event options"));
     }
+    if label_consumer.is_some_and(|id| !valid_name(id) || label.is_none() || event.is_some()) {
+        return Err(fail("invalid LVGL label consumer"));
+    }
     if modules.len() != prepared.modules.len()
         || hosts.len()
             + usize::from(wasi.is_some())
@@ -338,7 +342,7 @@ fn check_profile<'a>(
                 &[WasmValueType::I32],
                 true,
             )?;
-            if label.is_some() {
+            if label.is_some() && label_consumer.is_none() {
                 owned_memory(module)?;
                 if !module
                     .manifest
@@ -523,6 +527,46 @@ fn check_profile<'a>(
     if lvgl.is_some() && !found_lvgl {
         return Err(fail("LVGL core module is missing"));
     }
+    let consumer = label_consumer.unwrap_or(app);
+    if let Some(consumer_id) = label_consumer {
+        let module = prepared
+            .modules
+            .iter()
+            .find(|module| module.manifest.id == consumer_id)
+            .ok_or_else(|| fail("LVGL label consumer is missing"))?;
+        if lvgl.is_some_and(|lvgl| lvgl.module == consumer_id) {
+            return Err(fail("LVGL core cannot be the label consumer"));
+        }
+        owned_memory(module)?;
+        if !module
+            .manifest
+            .requires
+            .iter()
+            .any(|requirement| lvgl.is_some_and(|lvgl| requirement.provider == lvgl.module))
+        {
+            return Err(fail("label consumer must depend on its LVGL core"));
+        }
+        if !module
+            .manifest
+            .requires
+            .iter()
+            .any(|requirement| label.is_some_and(|label| requirement.provider == label.id))
+        {
+            return Err(fail("label consumer must depend on its label host"));
+        }
+        let imports: HashSet<u32> = module
+            .facts
+            .imports
+            .iter()
+            .filter_map(|item| match item.external {
+                WasmExternal::Function { index, .. } if item.module == "lvgl" => Some(index),
+                _ => None,
+            })
+            .collect();
+        if module.facts.exports.iter().any(|item| matches!(item.external, WasmExternal::Function { index, .. } if imports.contains(&index))) {
+            return Err(fail("LVGL label imports cannot be re-exported"));
+        }
+    }
     if memory_total > limits.max_total_memory_pages || table_total > limits.max_total_table_elements
     {
         return Err(fail("numeric environment resource limit exceeded"));
@@ -593,10 +637,14 @@ fn check_profile<'a>(
     let mut label_imports = HashSet::new();
     for module in &prepared.modules {
         for requirement in &module.manifest.requires {
-            if label
-                .is_some_and(|label| requirement.provider == label.id && module.manifest.id != app)
-            {
-                return Err(fail("LVGL label host is reserved for its app"));
+            if label.is_some_and(|label| {
+                requirement.provider == label.id && module.manifest.id != consumer
+            }) {
+                return Err(fail(if consumer == app {
+                    "LVGL label host is reserved for its app"
+                } else {
+                    "LVGL label host is reserved for its consumer"
+                }));
             }
             if lvgl.is_some_and(|lvgl| {
                 requirement.provider == lvgl.id && module.manifest.id != lvgl.module
@@ -608,7 +656,7 @@ fn check_profile<'a>(
                     .is_some_and(|label| item.module == "lvgl" || requirement.provider == label.id)
                 {
                     if !label.is_some_and(|label| {
-                        module.manifest.id == app
+                        module.manifest.id == consumer
                             && requirement.provider == label.id
                             && item.module == "lvgl"
                             && item.provider_export == item.name
@@ -806,6 +854,29 @@ pub fn preflight_lvgl_label_graph(
     )
 }
 
+/// Validate and compile a label graph for the explicitly authorized consumer without instantiation.
+pub fn preflight_lvgl_label_graph_for_consumer(
+    input: &ModuleManifestInput<'_>,
+    profile: &NumericProfile,
+    allowed: &[&str],
+    lvgl: &NumericLvglCoreOptions,
+    wasi: Option<&NumericWasiOptions>,
+    label: &NumericLabelOptions,
+    consumer_id: &str,
+) -> Result<NumericPreflightReport> {
+    Ok(prepare_numeric_graph_with_consumer(
+        input,
+        profile,
+        allowed,
+        wasi,
+        Some(lvgl),
+        Some(label),
+        None,
+        Some(consumer_id),
+    )?
+    .report)
+}
+
 pub(crate) fn prepare_numeric_graph_with_label<'a>(
     input: &'a ModuleManifestInput<'a>,
     profile: &'a NumericProfile,
@@ -848,8 +919,25 @@ pub(crate) fn prepare_numeric_graph_with_event<'a>(
     label: Option<&NumericLabelOptions>,
     event: Option<&NumericEventOptions>,
 ) -> Result<PreparedNumericGraph<'a>> {
+    prepare_numeric_graph_with_consumer(input, profile, allowed, wasi, lvgl, label, event, None)
+}
+
+#[expect(
+    clippy::too_many_arguments,
+    reason = "The trusted consumer and providers are configured explicitly."
+)]
+fn prepare_numeric_graph_with_consumer<'a>(
+    input: &'a ModuleManifestInput<'a>,
+    profile: &'a NumericProfile,
+    allowed: &[&str],
+    wasi: Option<&NumericWasiOptions>,
+    lvgl: Option<&NumericLvglCoreOptions>,
+    label: Option<&NumericLabelOptions>,
+    event: Option<&NumericEventOptions>,
+    consumer: Option<&str>,
+) -> Result<PreparedNumericGraph<'a>> {
     let prepared = prepare_module_manifests(input).map_err(NumericPreflightError::Manifest)?;
-    let app_id = check_profile(&prepared, profile, wasi, lvgl, label, event)?.to_owned();
+    let app_id = check_profile(&prepared, profile, wasi, lvgl, label, event, consumer)?.to_owned();
     let checked =
         check_prepared_feature_graph(prepared, allowed).map_err(NumericPreflightError::Feature)?;
     let (prepared, engine, modules, graph) =
