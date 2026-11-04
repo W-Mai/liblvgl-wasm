@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+- Stop Rust numeric graph guest cleanup after WebAssembly instantiation traps.
 - Isolated LVGL label environments with an explicitly selected library consumer.
 - Trusted label consumer preflight for isolated LVGL module graphs in TypeScript and Rust.
 - Synchronous clicked-event callbacks for Rust isolated LVGL applications.

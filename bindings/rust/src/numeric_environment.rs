@@ -24,6 +24,9 @@ mod numeric_chain_test;
 #[path = "numeric_event_test.rs"]
 mod numeric_event_test;
 #[cfg(test)]
+#[path = "numeric_instantiation_test.rs"]
+mod numeric_instantiation_test;
+#[cfg(test)]
 #[path = "numeric_label_test.rs"]
 mod numeric_label_test;
 #[cfg(test)]
@@ -136,6 +139,41 @@ impl HostState {
         }
         self.failure.as_ref().expect("latched failure").clone()
     }
+}
+
+fn instantiation_error(
+    state: &mut HostState,
+    id: &str,
+    failure: &wasmtime::Error,
+    rollback_permitted: &mut bool,
+) -> NumericEnvironmentError {
+    if let Some(message) = &state.failure {
+        *rollback_permitted = false;
+        let mut error = numeric_error(message.clone());
+        error.exit_code = state.exit_code;
+        return error;
+    }
+    let message = format!("{id:?}: instantiation failed: {failure:#}");
+    if failure.downcast_ref::<wasmtime::Trap>().is_some() {
+        *rollback_permitted = false;
+        return numeric_error(state.poison(message));
+    }
+    numeric_error(message)
+}
+
+fn instantiation_panic(
+    state: &mut HostState,
+    payload: Box<dyn std::any::Any + Send>,
+    rollback_permitted: &mut bool,
+) -> NumericEnvironmentError {
+    *rollback_permitted = false;
+    let panic = panic_message(payload);
+    let mut failure = numeric_error(match &state.failure {
+        Some(message) => format!("{message}; subsequent {panic}"),
+        None => panic,
+    });
+    failure.exit_code = state.exit_code;
+    failure
 }
 
 fn release_hosts(store: &mut Store<HostState>) -> Vec<String> {
@@ -912,17 +950,27 @@ fn load_numeric_environment_internal(
                     return Err(numeric_error("compiled import inventory differs"));
                 }
                 let instance = match catch_unwind(AssertUnwindSafe(|| {
+                    #[cfg(test)]
+                    if let Some(error) = numeric_instantiation_test::take_injected_error(id) {
+                        return Err(error);
+                    }
                     Instance::new(&mut store, module, &imports)
                 })) {
                     Ok(Ok(instance)) => instance,
                     Ok(Err(failure)) => {
-                        return Err(numeric_error(format!(
-                            "{id:?}: instantiation failed: {failure:#}"
-                        )));
+                        return Err(instantiation_error(
+                            store.data_mut(),
+                            id,
+                            &failure,
+                            &mut rollback_permitted,
+                        ));
                     }
                     Err(panic) => {
-                        rollback_permitted = false;
-                        return Err(numeric_error(panic_message(panic)));
+                        return Err(instantiation_panic(
+                            store.data_mut(),
+                            panic,
+                            &mut rollback_permitted,
+                        ));
                     }
                 };
                 let wasi_slot = wasi_slots.get(id.as_str()).copied();

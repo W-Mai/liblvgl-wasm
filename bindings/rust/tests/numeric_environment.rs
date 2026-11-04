@@ -4,7 +4,7 @@ mod fixture;
 use fixture::{Fixture, Trace, TraceFactory};
 use liblvgl_wasm_host::{
     NumericEnvironmentId, NumericEnvironmentState, NumericHostBinding, NumericHostFactory,
-    NumericHostInstance, load_numeric_environment,
+    NumericHostInstance, load_numeric_environment, preflight_numeric_graph,
 };
 use std::{fs, path::PathBuf};
 
@@ -221,35 +221,73 @@ fn distinct_consumer_bindings_and_duplicate_imports_are_preserved() {
 }
 
 #[test]
-fn failed_instantiation_rolls_back_initialized_providers() {
-    let mut graph = Fixture::from_json(&json());
-    graph.replace("app", extra("app-instantiate-fail"));
-    let input = graph.input();
-    let trace = Trace::default();
-    let mut factory = TraceFactory(trace.clone());
-    let mut bindings = [NumericHostBinding {
-        id: "host.trace".into(),
-        factory: &mut factory,
-    }];
-    assert!(load_numeric_environment(&input, &graph.profile, &[], &mut bindings).is_err());
-    assert_eq!(
-        *trace.events.lock().unwrap(),
-        strings(&[
-            "12",
-            "10",
-            "22",
-            "20",
-            "32",
-            "30",
-            "31",
-            "21",
-            "11",
-            "host:app",
-            "host:a",
-            "host:b",
-            "host:core"
-        ])
-    );
+fn trapping_instantiation_stops_guest_and_preserves_host_cleanup_errors() {
+    for (variant, reason, table) in [
+        ("app-instantiate-fail", "out of bounds memory access", false),
+        (
+            "app-instantiate-table-fail",
+            "out of bounds table access",
+            true,
+        ),
+    ] {
+        for fail_close in [false, true] {
+            let mut graph = Fixture::from_json(&json());
+            graph.replace("app", extra(variant));
+            if table {
+                graph.profile.limits.max_table_elements = 1;
+                graph.profile.limits.max_total_table_elements = 1;
+            }
+            let input = graph.input();
+            let trace = Trace::default();
+            let mut factory = FaultFactory {
+                trace: trace.clone(),
+                faults: Faults {
+                    fail_close: fail_close.then(|| "b".into()),
+                    ..Faults::default()
+                },
+            };
+            let mut bindings = [NumericHostBinding {
+                id: "host.trace".into(),
+                factory: &mut factory,
+            }];
+            let report = preflight_numeric_graph(&input, &graph.profile, &[]).unwrap();
+            assert_eq!(report.app_id(), "app");
+            assert!(trace.events.lock().unwrap().is_empty());
+            let error = load_numeric_environment(&input, &graph.profile, &[], &mut bindings)
+                .expect_err("active segment must trap during instantiation");
+            assert!(
+                error.message().contains("\"app\": instantiation failed"),
+                "{variant}: {}",
+                error.message()
+            );
+            assert!(
+                error.message().contains(reason),
+                "{variant}: {}",
+                error.message()
+            );
+            if fail_close {
+                assert_eq!(error.cleanup_errors(), &["host cleanup failed"]);
+            } else {
+                assert!(error.cleanup_errors().is_empty());
+            }
+            assert_eq!(
+                *trace.events.lock().unwrap(),
+                strings(&[
+                    "12",
+                    "10",
+                    "22",
+                    "20",
+                    "32",
+                    "30",
+                    "host:app",
+                    "host:a",
+                    "host:b",
+                    "host:core"
+                ]),
+                "{variant}, host failure={fail_close}"
+            );
+        }
+    }
 }
 
 #[derive(Clone, Default)]

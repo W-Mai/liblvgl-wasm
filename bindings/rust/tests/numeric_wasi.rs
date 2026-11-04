@@ -191,33 +191,109 @@ fn permissions_and_static_abi_fail_before_factory_or_output() {
 
 #[test]
 fn close_and_rollback_use_the_correct_consumer_memory() {
-    for (name, events) in [
+    struct TrackedOutput {
+        writes: Writes,
+        trace: fixture::numeric::Trace,
+    }
+    impl NumericWasiOutput for TrackedOutput {
+        fn write(
+            &mut self,
+            id: &str,
+            fd: u32,
+            bytes: &[u8],
+            environment: NumericEnvironmentId,
+        ) -> Result<(), String> {
+            self.trace.events.lock().unwrap().push(format!(
+                "write:{id}:{fd}:{}",
+                std::str::from_utf8(bytes).unwrap()
+            ));
+            self.writes.write(id, fd, bytes, environment)
+        }
+    }
+    impl Drop for TrackedOutput {
+        fn drop(&mut self) {
+            self.trace.events.lock().unwrap().push("sink:drop".into());
+        }
+    }
+    for (name, reason, events, lifecycle) in [
         (
             "init-fail",
+            "\"app\": module_init returned 7",
             expected(&[("lib", 2, "init"), ("app", 2, "init"), ("lib", 2, "done")]),
+            vec![
+                "write:lib:2:init",
+                "write:app:2:init",
+                "write:lib:2:done",
+                "host:app",
+                "host:lib",
+                "sink:drop",
+            ],
         ),
         (
             "data-fail",
-            expected(&[("lib", 2, "init"), ("lib", 2, "done")]),
+            "out of bounds memory access",
+            expected(&[("lib", 2, "init")]),
+            vec!["write:lib:2:init", "host:app", "host:lib", "sink:drop"],
         ),
     ] {
-        let graph = graph(&json(), name);
+        let trace_graph = graph(&json(), "trace");
+        let mut graph = graph(&json(), name);
+        graph.hosts.push(
+            trace_graph
+                .hosts
+                .into_iter()
+                .find(|host| host.id == "host.trace")
+                .unwrap(),
+        );
+        graph.profile.hosts.push(
+            trace_graph
+                .profile
+                .hosts
+                .into_iter()
+                .find(|host| host.id == "host.trace")
+                .unwrap(),
+        );
+        for (manifest, _) in &mut graph.modules {
+            manifest
+                .requires
+                .push(liblvgl_wasm_host::ManifestRequirement {
+                    provider: "host.trace".into(),
+                    interface: "trace".into(),
+                    version: 1,
+                    imports: vec![],
+                });
+        }
         let input = graph.input();
         let writes = Writes::default();
-        let mut hosts: [NumericHostBinding<'_>; 0] = [];
-        assert!(
-            load_numeric_environment_with_wasi(
-                &input,
-                &graph.profile,
-                &[],
-                &mut hosts,
-                &options(),
-                Box::new(writes.clone())
-            )
-            .is_err(),
-            "{name}"
-        );
+        let trace = fixture::numeric::Trace::default();
+        let mut factory = fixture::numeric::TraceFactory(trace.clone());
+        let mut hosts = [NumericHostBinding {
+            id: "host.trace".into(),
+            factory: &mut factory,
+        }];
+        let error = load_numeric_environment_with_wasi(
+            &input,
+            &graph.profile,
+            &[],
+            &mut hosts,
+            &options(),
+            Box::new(TrackedOutput {
+                writes: writes.clone(),
+                trace: trace.clone(),
+            }),
+        )
+        .expect_err(name);
+        assert!(error.message().contains(reason), "{name}: {error}");
+        if name == "data-fail" {
+            assert!(
+                error.message().contains("\"app\": instantiation failed"),
+                "{name}: {error}"
+            );
+        }
+        assert!(error.cleanup_errors().is_empty(), "{name}: {error}");
         assert_eq!(writes.messages(), events, "{name}");
+        assert_eq!(*trace.events.lock().unwrap(), lifecycle, "{name}");
+        assert_eq!(trace.environments.lock().unwrap().len(), 2, "{name}");
     }
 }
 

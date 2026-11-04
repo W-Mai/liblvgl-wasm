@@ -268,6 +268,7 @@ fn main() {
     inspect_numeric_app();
     let numeric_graph = std::fs::read(args.next().expect("numeric graph path")).unwrap();
     numeric_fixture::run_positive(&numeric_graph);
+    numeric_fixture::run_instantiation_trap(&numeric_graph);
     let wasi_graph = std::fs::read(args.next().expect("numeric WASI graph path")).unwrap();
     numeric_wasi_fixture::run_positive(&wasi_graph);
     let path = args.next().expect("numeric LVGL graph path or skip marker");

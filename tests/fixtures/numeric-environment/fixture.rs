@@ -5,7 +5,8 @@ use liblvgl_wasm_host::{
     ModuleArtifactInput, ModuleHostProvider, ModuleManifest, ModuleManifestInput,
     NumericEnvironmentId, NumericEnvironmentState, NumericFunctionContract, NumericHostBinding,
     NumericHostContract, NumericHostFactory, NumericHostInstance, NumericLimits,
-    NumericModuleContract, NumericProfile, NumericResult, load_numeric_environment,
+    NumericModuleContract, NumericProfile, NumericResult, inspect_wasm_facts,
+    load_numeric_environment,
 };
 use serde_json::Value;
 use sha2::{Digest, Sha256};
@@ -202,6 +203,62 @@ pub fn run_positive(json: &[u8]) {
             "31",
             "21",
             "11",
+            "host:app",
+            "host:a",
+            "host:b",
+            "host:core"
+        ]
+    );
+}
+
+#[allow(dead_code)]
+pub fn run_instantiation_trap(json: &[u8]) {
+    let mut fixture = Fixture::from_json(json);
+    let mut bytes = fixture
+        .modules
+        .iter()
+        .find(|(manifest, _)| manifest.id == "app")
+        .expect("numeric app fixture")
+        .1
+        .clone();
+    let facts = inspect_wasm_facts(&bytes).unwrap();
+    assert_eq!(facts.memories.len(), 1);
+    assert!(!facts.memories[0].imported);
+    assert_eq!(facts.memories[0].ty.minimum_pages, 1);
+    // One active data segment writes a byte immediately beyond the initial memory.
+    bytes.extend_from_slice(&[
+        0x0b, 0x09, 0x01, 0x00, 0x41, 0x80, 0x80, 0x04, 0x0b, 0x01, 0x58,
+    ]);
+    fixture.replace("app", bytes);
+    let input = fixture.input();
+    let trace = Trace::default();
+    let mut factory = TraceFactory(trace.clone());
+    let mut bindings = [NumericHostBinding {
+        id: "host.trace".into(),
+        factory: &mut factory,
+    }];
+    let error = load_numeric_environment(&input, &fixture.profile, &[], &mut bindings)
+        .expect_err("active data segment must trap during instantiation");
+    assert!(
+        error.message().contains("\"app\": instantiation failed"),
+        "{}",
+        error.message()
+    );
+    assert!(
+        error.message().contains("out of bounds memory access"),
+        "{}",
+        error.message()
+    );
+    assert!(error.cleanup_errors().is_empty());
+    assert_eq!(
+        *trace.events.lock().unwrap(),
+        [
+            "12",
+            "10",
+            "22",
+            "20",
+            "32",
+            "30",
             "host:app",
             "host:a",
             "host:b",

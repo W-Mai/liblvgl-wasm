@@ -35,6 +35,8 @@ def main():
     build("app-duplicate", app_duplicate)
     build("app-instantiate-fail", replace_once(app, "  (memory 1 2)",
                                                 '  (memory 1 2)\n  (data (i32.const 65536) "X")'))
+    build("app-instantiate-table-fail", replace_once(app, "  (memory 1 2)",
+        '  (memory 1 2)\n  (table 1 1 funcref)\n  (elem (i32.const 1) $a)'))
 
 
 if __name__ == "__main__":
