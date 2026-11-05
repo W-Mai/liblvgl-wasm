@@ -63,6 +63,16 @@ python3 -B validator/lvgl-label-lib-fixture.py --ndk "$label_tmp/chain-ndk" --ou
 LVW_TEST_LABEL_LIB_GRAPH="$label_tmp/label-lib-graph.json"
 export LVW_TEST_LABEL_LIB_GRAPH
 bun tests/fixtures/numeric-label-lib/generate.ts --fixtures "$label_tmp/label-lib" --output "$LVW_TEST_LABEL_LIB_GRAPH"
+LVW_TEST_LABEL_LIB_FAULT="$label_tmp/label-lib-faults/label-lib-fault.wasm"
+LVW_TEST_LABEL_LIB_APP_DATA="$label_tmp/label-lib-faults/label-lib-app-data.wasm"
+LVW_TEST_LABEL_LIB_CLOSE_FAIL="$label_tmp/label-lib-faults/label-lib-close-fail.wasm"
+LVW_TEST_LABEL_LIB_CLOSE_TRAP="$label_tmp/label-lib-faults/label-lib-close-trap.wasm"
+LVW_TEST_LABEL_LIB_REACTOR="$label_tmp/label-lib-faults/label-lib-reactor.wasm"
+LVW_TEST_LABEL_LIB_REACTOR_TRAP="$label_tmp/label-lib-faults/label-lib-reactor-trap.wasm"
+export LVW_TEST_LABEL_LIB_FAULT LVW_TEST_LABEL_LIB_APP_DATA LVW_TEST_LABEL_LIB_CLOSE_FAIL LVW_TEST_LABEL_LIB_CLOSE_TRAP
+export LVW_TEST_LABEL_LIB_REACTOR LVW_TEST_LABEL_LIB_REACTOR_TRAP
+python3 -B validator/lvgl-label-lib-fault-fixtures-test.py
+python3 -B validator/lvgl-label-lib-fault-fixtures.py "$label_tmp/label-lib-faults"
 bun test validator/feature-validator.test.ts
 bun test validator/feature-worker.test.ts validator/feature-worker-live.test.ts validator/feature-graph.test.ts validator/numeric-environment.test.ts validator/wasi-numeric-loader.test.ts
 bun test validator/lvgl-core-profile.test.ts validator/lvgl-lifecycle.test.ts
@@ -116,6 +126,12 @@ LVW_TEST_LVGL_CORE="$root/target/wasm/liblvgl-bounded.wasm" \
     CARGO_TARGET_DIR="$root/target/rust" \
     cargo test --manifest-path bindings/rust/Cargo.toml --locked --lib \
         numeric_label_test -- --ignored
+LVW_TEST_LVGL_CORE="$root/target/wasm/liblvgl-bounded.wasm" \
+    LVW_TEST_LVGL_API="$root/target/wasm/api.json" \
+    LVW_TEST_LVGL_PROOF="$root/target/wasm/api-verification-bounded.json" \
+    CARGO_TARGET_DIR="$root/target/rust" \
+    cargo test --manifest-path bindings/rust/Cargo.toml --locked --lib \
+        numeric_label_lib_test -- --ignored
 LVW_TEST_LVGL_CORE="$root/target/wasm/liblvgl-bounded.wasm" \
     LVW_TEST_LVGL_API="$root/target/wasm/api.json" \
     LVW_TEST_LVGL_PROOF="$root/target/wasm/api-verification-bounded.json" \

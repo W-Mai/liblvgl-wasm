@@ -60,7 +60,8 @@ mod numeric_environment;
 pub use numeric_environment::{
     NumericEnvironment, NumericEnvironmentError, NumericEnvironmentId, NumericEnvironmentState,
     NumericHostBinding, NumericHostFactory, NumericHostInstance, load_lvgl_core_environment,
-    load_lvgl_event_environment, load_lvgl_label_environment, load_numeric_environment,
+    load_lvgl_event_environment, load_lvgl_label_environment,
+    load_lvgl_label_environment_for_consumer, load_numeric_environment,
     load_numeric_environment_with_wasi,
 };
 mod numeric_lvgl;

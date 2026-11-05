@@ -766,6 +766,7 @@ pub(crate) struct PreparedNumericGraph<'a> {
     _engine: wasmtime::Engine,
     _modules: Vec<wasmtime::Module>,
     _profile: &'a NumericProfile,
+    _label_consumer: Option<String>,
     report: NumericPreflightReport,
 }
 impl<'a> PreparedNumericGraph<'a> {
@@ -776,8 +777,15 @@ impl<'a> PreparedNumericGraph<'a> {
         wasmtime::Engine,
         Vec<wasmtime::Module>,
         &'a NumericProfile,
+        Option<String>,
     ) {
-        (self._prepared, self._engine, self._modules, self._profile)
+        (
+            self._prepared,
+            self._engine,
+            self._modules,
+            self._profile,
+            self._label_consumer,
+        )
     }
 }
 
@@ -926,7 +934,7 @@ pub(crate) fn prepare_numeric_graph_with_event<'a>(
     clippy::too_many_arguments,
     reason = "The trusted consumer and providers are configured explicitly."
 )]
-fn prepare_numeric_graph_with_consumer<'a>(
+pub(crate) fn prepare_numeric_graph_with_consumer<'a>(
     input: &'a ModuleManifestInput<'a>,
     profile: &'a NumericProfile,
     allowed: &[&str],
@@ -938,6 +946,7 @@ fn prepare_numeric_graph_with_consumer<'a>(
 ) -> Result<PreparedNumericGraph<'a>> {
     let prepared = prepare_module_manifests(input).map_err(NumericPreflightError::Manifest)?;
     let app_id = check_profile(&prepared, profile, wasi, lvgl, label, event, consumer)?.to_owned();
+    let label_consumer = label.map(|_| consumer.unwrap_or(&app_id).to_owned());
     let checked =
         check_prepared_feature_graph(prepared, allowed).map_err(NumericPreflightError::Feature)?;
     let (prepared, engine, modules, graph) =
@@ -947,6 +956,7 @@ fn prepare_numeric_graph_with_consumer<'a>(
         _engine: engine,
         _modules: modules,
         _profile: profile,
+        _label_consumer: label_consumer,
         report: NumericPreflightReport { app_id, graph },
     })
 }

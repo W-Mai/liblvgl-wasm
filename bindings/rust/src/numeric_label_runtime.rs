@@ -1,4 +1,4 @@
-//! Private label adapter for an isolated LVGL core and application.
+//! Private label adapter for an isolated LVGL core and consumer.
 
 use std::collections::HashMap;
 use std::panic::{AssertUnwindSafe, catch_unwind};
@@ -26,7 +26,7 @@ struct Handle {
 }
 
 pub(crate) struct LabelState {
-    app_memory: Memory,
+    consumer_memory: Memory,
     core_memory: Memory,
     display: i32,
     screen: Option<u32>,
@@ -99,11 +99,11 @@ pub(crate) fn event_target(caller: &Caller<'_, HostState>, token: i32) -> Result
         .ok_or_else(|| "invalid LVGL event target".to_owned())
 }
 
-/// Bind the app's memory and create a display in its already initialized core. A null display is a recoverable status failure.
+/// Bind the consumer's memory and create a display in its already initialized core. A null display is a recoverable status failure.
 pub(crate) fn bind_label(
     store: &mut Store<HostState>,
     core: Instance,
-    app_memory: Memory,
+    consumer_memory: Memory,
     options: &NumericLabelOptions,
 ) -> Result<Option<LabelState>, String> {
     let core_memory = core
@@ -142,7 +142,7 @@ pub(crate) fn bind_label(
         return Ok(None);
     }
     Ok(Some(LabelState {
-        app_memory,
+        consumer_memory,
         core_memory,
         display,
         screen: None,
@@ -342,7 +342,7 @@ fn create(caller: &mut Caller<'_, HostState>, parent: i32) -> Result<i32, String
 }
 
 fn set_text(caller: &mut Caller<'_, HostState>, token: i32, address: i32) -> Result<(), String> {
-    let (app_memory, core_memory, pointer, max_text_bytes, alloc, set_text, free) = {
+    let (consumer_memory, core_memory, pointer, max_text_bytes, alloc, set_text, free) = {
         let label = caller
             .data()
             .label
@@ -355,7 +355,7 @@ fn set_text(caller: &mut Caller<'_, HostState>, token: i32, address: i32) -> Res
             .ok_or_else(|| "invalid LVGL label handle".to_owned())?
             .pointer;
         (
-            label.app_memory,
+            label.consumer_memory,
             label.core_memory,
             pointer,
             label.options.max_text_bytes as usize,
@@ -369,7 +369,7 @@ fn set_text(caller: &mut Caller<'_, HostState>, token: i32, address: i32) -> Res
         return guest_call(caller, &set_text, (pointer, 0));
     }
     let snapshot = {
-        let data = app_memory.data(&*caller);
+        let data = consumer_memory.data(&*caller);
         let remainder = data
             .get(offset..)
             .filter(|slice| !slice.is_empty())

@@ -13,7 +13,7 @@ use crate::numeric_event_runtime::{
 use crate::numeric_label::{NumericFrame, NumericLabelOptions};
 use crate::numeric_label_runtime::{LabelState, bind_label, label_function, read_frame};
 use crate::numeric_lvgl::NumericLvglCoreOptions;
-use crate::numeric_profile::{NumericProfile, prepare_numeric_graph_with_event};
+use crate::numeric_profile::{NumericProfile, prepare_numeric_graph_with_consumer};
 use crate::numeric_wasi::{NumericWasiOptions, NumericWasiOutput, NumericWasiService, WasiState};
 use wasmtime::{Caller, Extern, ExternType, Func, Instance, Store, TypedFunc, Val};
 
@@ -26,6 +26,9 @@ mod numeric_event_test;
 #[cfg(test)]
 #[path = "numeric_instantiation_test.rs"]
 mod numeric_instantiation_test;
+#[cfg(test)]
+#[path = "numeric_label_lib_test.rs"]
+mod numeric_label_lib_test;
 #[cfg(test)]
 #[path = "numeric_label_test.rs"]
 mod numeric_label_test;
@@ -247,6 +250,7 @@ struct LiveModule {
     close_name: &'static str,
     wasi_slot: Option<usize>,
     is_app: bool,
+    is_label_consumer: bool,
     #[cfg(test)]
     core_instance: Option<Instance>,
 }
@@ -345,6 +349,9 @@ fn rollback(
                 #[cfg(test)]
                 if previous.close_name == "lvw_shutdown" {
                     observe_event("core_shutdown");
+                }
+                if previous.is_label_consumer {
+                    store.data_mut().label = None;
                 }
                 close_wasi_slot(store, previous.wasi_slot);
                 initialized.pop();
@@ -483,6 +490,9 @@ impl NumericEnvironment {
                             return Err(self.poison(message));
                         }
                         store.data_mut().event = None;
+                    }
+                    if module.is_label_consumer {
+                        let store = self.store.as_mut().expect("closing store");
                         store.data_mut().label = None;
                     }
                     close_wasi_slot(
@@ -642,6 +652,7 @@ pub fn load_lvgl_core_environment(
             core: Some(lvgl),
             label: None,
             event: None,
+            consumer: None,
         },
     )
 }
@@ -671,6 +682,42 @@ pub fn load_lvgl_label_environment(
             core: Some(lvgl),
             label: Some(label),
             event: None,
+            consumer: None,
+        },
+    )
+}
+
+/// Load a trusted LVGL core with the screen and label adapter bound to one consumer.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "The trusted consumer and providers are configured explicitly."
+)]
+pub fn load_lvgl_label_environment_for_consumer(
+    input: &ModuleManifestInput<'_>,
+    profile: &NumericProfile,
+    allowed: &[&str],
+    factories: &mut [NumericHostBinding<'_>],
+    lvgl: &NumericLvglCoreOptions,
+    label: &NumericLabelOptions,
+    consumer_id: &str,
+    wasi: Option<(&NumericWasiOptions, Box<dyn NumericWasiOutput>)>,
+) -> Result<NumericEnvironment, NumericEnvironmentError> {
+    let (wasi, output) = match wasi {
+        Some((wasi, output)) => (Some(wasi), Some(output)),
+        None => (None, None),
+    };
+    load_with_output(
+        input,
+        profile,
+        allowed,
+        factories,
+        wasi,
+        output,
+        LvglAdapters {
+            core: Some(lvgl),
+            label: Some(label),
+            event: None,
+            consumer: Some(consumer_id),
         },
     )
 }
@@ -705,6 +752,7 @@ pub fn load_lvgl_event_environment(
             core: Some(lvgl),
             label: Some(label),
             event: Some(event),
+            consumer: None,
         },
     )
 }
@@ -714,6 +762,7 @@ struct LvglAdapters<'a> {
     core: Option<&'a NumericLvglCoreOptions>,
     label: Option<&'a NumericLabelOptions>,
     event: Option<&'a NumericEventOptions>,
+    consumer: Option<&'a str>,
 }
 
 fn load_with_output(
@@ -762,10 +811,18 @@ fn load_numeric_environment_internal(
     let lvgl = adapters.core;
     let label = adapters.label;
     let event = adapters.event;
-    let prepared =
-        prepare_numeric_graph_with_event(input, profile, allowed, wasi, lvgl, label, event)
-            .map_err(|error| numeric_error(error.to_string()))?;
-    let (prepared, engine, compiled, profile) = prepared.into_parts();
+    let prepared = prepare_numeric_graph_with_consumer(
+        input,
+        profile,
+        allowed,
+        wasi,
+        lvgl,
+        label,
+        event,
+        adapters.consumer,
+    )
+    .map_err(|error| numeric_error(error.to_string()))?;
+    let (prepared, engine, compiled, profile, label_consumer) = prepared.into_parts();
     let mut factory_indices = HashMap::new();
     for (index, binding) in factories.iter().enumerate() {
         if factory_indices.insert(binding.id.as_str(), index).is_some() {
@@ -1017,13 +1074,14 @@ fn load_numeric_environment_internal(
                 } else {
                     None
                 };
-                if let Some(label) = label.filter(|_| app_function.is_some()) {
+                let is_label_consumer = label_consumer.as_deref() == Some(id.as_str());
+                if let Some(label) = label.filter(|_| is_label_consumer) {
                     let core = *instances
                         .get(lvgl.expect("label core").module.as_str())
                         .ok_or_else(|| numeric_error("label core is not initialized"))?;
                     let memory = instance
                         .get_memory(&mut store, "memory")
-                        .ok_or_else(|| numeric_error("label app memory is unavailable"))?;
+                        .ok_or_else(|| numeric_error("label consumer memory is unavailable"))?;
                     let state =
                         bind_label(&mut store, core, memory, label).map_err(numeric_error)?;
                     store.data_mut().label =
@@ -1062,6 +1120,8 @@ fn load_numeric_environment_internal(
                             return Err(failure);
                         }
                         store.data_mut().event = None;
+                    }
+                    if is_label_consumer {
                         store.data_mut().label = None;
                     }
                     close_wasi_slot(&mut store, wasi_slot);
@@ -1074,6 +1134,7 @@ fn load_numeric_environment_internal(
                     close_name,
                     wasi_slot,
                     is_app: app_function.is_some(),
+                    is_label_consumer,
                     #[cfg(test)]
                     core_instance: is_lvgl.then_some(instance),
                 });
@@ -1104,7 +1165,9 @@ fn load_numeric_environment_internal(
         Err(mut failure) => {
             if rollback_permitted && store.data().failure.is_none() {
                 store.data_mut().event = None;
-                store.data_mut().label = None;
+                if !initialized.iter().any(|module| module.is_label_consumer) {
+                    store.data_mut().label = None;
+                }
                 close_wasi_slot(&mut store, pending_wasi_slot);
                 rollback(&mut store, &mut initialized, &mut failure);
             }

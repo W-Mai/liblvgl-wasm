@@ -17,6 +17,10 @@ pub(super) fn take_injected_error(id: &str) -> Option<Error> {
     })
 }
 
+pub(super) fn inject_error(id: &str) {
+    INJECTED_ERROR.with(|slot| *slot.borrow_mut() = Some(id.to_owned()));
+}
+
 #[test]
 fn instantiation_traps_stop_rollback_but_other_errors_allow_it() {
     for trap in [

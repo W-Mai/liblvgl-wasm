@@ -586,11 +586,13 @@ The C fixtures in `validator/lvgl-chain-lib.c` and `validator/lvgl-chain-app.c` 
 
 `preflight_lvgl_label_graph` checks the isolated label adapter contract against the app, core and bounded resources, then compiles the same snapshots. Its report does not authorize loading or run the adapter.
 
-`preflight_lvgl_label_graph_for_consumer` checks the same contract for an explicitly selected module. It compiles without instantiating the graph; the existing label loader binds the adapter to the app.
+`preflight_lvgl_label_graph_for_consumer` checks the same contract for an explicitly selected module. It compiles without instantiating the graph.
 
 `preflight_lvgl_event_graph` checks the clicked event adapter contract, app-owned dispatcher, provider identities and event limits against the same snapshots before compilation. The report does not authorize loading or execute callbacks.
 
 `load_lvgl_label_environment` loads the checked core and app with `lv_screen_active`, `lv_label_create` and `lv_label_set_text`. Object values are environment-local opaque tokens; text is copied from app memory into core memory. The adapter bounds display dimensions, label count and text length. Its tokens cannot be dereferenced by the app or transferred between environments. `read_frame()` refreshes the display and returns a `NumericFrame` containing width, height, frame ID and an owned RGBA byte vector; the copy remains valid after the environment closes. Other LVGL object APIs, callbacks and events are not provided by this Rust adapter. Guest execution has no CPU or execution deadline.
+
+`load_lvgl_label_environment_for_consumer` binds the label adapter to the explicitly selected app or library, using that module's isolated memory. The consumer must depend on the core and label provider. The adapter remains available through the consumer's close; event callbacks remain app-only.
 
 `load_lvgl_event_environment` adds synchronous clicked events for adapter-owned labels. The app registers callbacks using its own typed dispatcher and can send clicked events with a null parameter; callback depth and registrations are bounded by `NumericEventOptions`. Event and descriptor values are opaque tokens, and event tokens are valid only in their current innermost synchronous callback. The adapter removes remaining registrations before shutting down the core. Pointer input, bubbling, object deletion and other event codes are unsupported.
 
