@@ -13,6 +13,7 @@ interface EventRegistration {
   readonly target: number;
   readonly pointer: number;
   readonly user: number;
+  removing: boolean;
 }
 interface EventFrame { readonly token: number; readonly registration: EventRegistration; readonly code: number }
 
@@ -24,6 +25,8 @@ export class EventAdapter {
   #frames: EventFrame[] = [];
   #nextId = 1;
   #sends: number[] = [];
+  #pendingRegistrations = 0;
+  #checkingDispatch = false;
 
   constructor(core: WebAssembly.Instance, app: WebAssembly.Instance, private readonly label: { eventTarget(token: number): number },
     readonly clicked: number, readonly options: { readonly maxRegistrations: number; readonly maxDepth: number }, private readonly rethrow: () => void,
@@ -50,11 +53,14 @@ export class EventAdapter {
     const pointer = this.label.eventTarget(target);
     if ((code >>> 0) !== this.clicked) return fail("unsupported LVGL event code");
     if ((callback >>> 0) === 0) return 0;
-    if (this.#registrations.size >= this.options.maxRegistrations) return fail("LVGL event quota exceeded");
+    if (this.#registrations.size + this.#pendingRegistrations >= this.options.maxRegistrations) return fail("LVGL event quota exceeded");
     if (this.#nextId > 0xffff_ffff) return fail("LVGL callback IDs exhausted");
     const registration: EventRegistration = { descriptor: this.reserveToken(), id: this.#nextId++, callback: callback >>> 0,
-      target: target >>> 0, pointer, user: user >>> 0 };
-    const status = this.#call("lvw_event_add", pointer, this.clicked, registration.id);
+      target: target >>> 0, pointer, user: user >>> 0, removing: false };
+    this.#pendingRegistrations++;
+    let status: number | void;
+    try { status = this.#call("lvw_event_add", pointer, this.clicked, registration.id); }
+    finally { this.#pendingRegistrations--; }
     if (status === -3) return 0;
     if (status !== 0) return fail(`LVGL event registration failed (${status})`);
     this.#registrations.set(registration.descriptor, registration);
@@ -66,8 +72,13 @@ export class EventAdapter {
     const pointer = this.label.eventTarget(target);
     const registration = this.#registrations.get(descriptor >>> 0);
     if (!registration || registration.target !== (target >>> 0) || registration.pointer !== pointer) return fail("invalid LVGL event descriptor");
+    if (registration.removing) return fail("LVGL event removal is already in progress");
+    registration.removing = true;
     const status = this.#call("lvw_event_remove", pointer, registration.id);
     if (status !== 0) return fail(`LVGL event removal failed (${status})`);
+    if (this.#registrations.get(registration.descriptor) !== registration || this.#byId.get(registration.id) !== registration) {
+      return fail("LVGL event registration changed");
+    }
     this.#registrations.delete(registration.descriptor);
     this.#byId.delete(registration.id);
     return 1;
@@ -76,22 +87,32 @@ export class EventAdapter {
   send(target: number, code: number, parameter: number): number {
     const pointer = this.label.eventTarget(target);
     if ((code >>> 0) !== this.clicked || parameter !== 0) return fail("unsupported LVGL event dispatch");
+    if (this.#sends.length > this.options.maxDepth) return fail("LVGL event nesting limit exceeded");
     this.#sends.push(pointer);
     try { return this.#call("lv_obj_send_event", pointer, this.clicked, 0) as number; }
     finally { if (this.#sends.pop() !== pointer) fail("LVGL event send stack corrupted"); }
   }
 
   dispatch(id: number, current: number, code: number): void {
+    if (this.#checkingDispatch) return fail("LVGL event validation is reentrant");
     const registration = this.#byId.get(id >>> 0);
-    if (!registration || this.#sends[this.#sends.length - 1] !== registration.pointer
+    if (!registration || registration.removing || this.#sends[this.#sends.length - 1] !== registration.pointer
         || registration.pointer !== (current >>> 0) || (code >>> 0) !== this.clicked) {
       return fail("invalid LVGL event dispatch");
     }
     if (this.#frames.length >= this.options.maxDepth) return fail("LVGL event nesting limit exceeded");
-    const native = (this.#call("lvw_event_current") as number) >>> 0;
-    if (!native || ((this.#call("lv_event_get_target_obj", native) as number) >>> 0) !== registration.pointer) {
-      return fail("invalid LVGL event target");
+    this.#checkingDispatch = true;
+    try {
+      const native = (this.#call("lvw_event_current") as number) >>> 0;
+      if (!native || ((this.#call("lv_event_get_target_obj", native) as number) >>> 0) !== registration.pointer) {
+        return fail("invalid LVGL event target");
+      }
+    } finally { this.#checkingDispatch = false; }
+    if (this.#byId.get(registration.id) !== registration || this.#registrations.get(registration.descriptor) !== registration
+        || registration.removing || this.#sends[this.#sends.length - 1] !== registration.pointer || (code >>> 0) !== this.clicked) {
+      return fail("invalid LVGL event dispatch");
     }
+    if (this.#frames.length >= this.options.maxDepth) return fail("LVGL event nesting limit exceeded");
     const frame: EventFrame = { token: this.reserveToken(), registration, code: code >>> 0 };
     this.#frames.push(frame);
     try {
@@ -109,10 +130,15 @@ export class EventAdapter {
   target(token: number): number { return this.#frame(token).registration.target; }
 
   close(): void {
-    if (this.#frames.length || this.#sends.length) return fail("LVGL event adapter is active");
+    if (this.#frames.length || this.#sends.length || this.#pendingRegistrations || this.#checkingDispatch) return fail("LVGL event adapter is active");
     for (const registration of [...this.#registrations.values()].reverse()) {
+      if (registration.removing) return fail("LVGL event removal is already in progress");
+      registration.removing = true;
       const status = this.#call("lvw_event_remove", registration.pointer, registration.id);
       if (status !== 0) return fail(`LVGL event removal failed (${status})`);
+      if (this.#registrations.get(registration.descriptor) !== registration || this.#byId.get(registration.id) !== registration) {
+        return fail("LVGL event registration changed");
+      }
       this.#registrations.delete(registration.descriptor);
       this.#byId.delete(registration.id);
     }

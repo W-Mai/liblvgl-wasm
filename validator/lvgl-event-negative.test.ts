@@ -1,6 +1,7 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import { afterEach, expect, test as bunTest } from "bun:test";
 import { inspectWasmFacts } from "../bindings/typescript/src/wasm-facts.ts";
+import { EventAdapter } from "../bindings/typescript/src/numeric-events.ts";
 import { loadNumericEnvironment as loadEnvironment } from "../target/validator/feature-validator.js";
 
 type Environment = Awaited<ReturnType<typeof loadEnvironment>>;
@@ -177,6 +178,51 @@ test("a nested event exceeding its configured depth poisons without shutdown", a
   expect(guestTrace(events)).not.toContain(19);
 });
 
+test("send nesting is bounded even when the core does not dispatch a callback", () => {
+  let depth = 0, limit = 2;
+  const entered: number[] = [];
+  let adapter: EventAdapter;
+  const core = { exports: { lv_obj_send_event: () => {
+    depth++;
+    entered.push(depth);
+    try { return depth < limit ? adapter.send(1, 123, 0) : 0; }
+    finally { depth--; }
+  } } } as unknown as WebAssembly.Instance;
+  adapter = new EventAdapter(core, { exports: {} } as unknown as WebAssembly.Instance,
+    { eventTarget: () => 300 }, 123, { maxRegistrations: 1, maxDepth: 1 }, () => {}, () => 1);
+  expect(adapter.send(1, 123, 0)).toBe(0);
+  expect(entered).toEqual([1, 2]);
+  entered.length = 0;
+  limit = 3;
+  expect(() => adapter.send(1, 123, 0)).toThrow("LVGL event nesting limit exceeded");
+  expect(entered).toEqual([1, 2]);
+  expect(depth).toBe(0);
+  entered.length = 0;
+  limit = 2;
+  expect(adapter.send(1, 123, 0)).toBe(0);
+  expect(entered).toEqual([1, 2]);
+  adapter.close();
+});
+
+test("event registration is checked again after native target validation", () => {
+  let descriptor = 0, callbacks = 0;
+  let adapter: EventAdapter;
+  const core = { exports: {
+    lvw_event_add: () => 0,
+    lvw_event_remove: () => 0,
+    lvw_event_current: () => { adapter.remove(1, descriptor); return 500; },
+    lv_event_get_target_obj: () => 300,
+    lv_obj_send_event: () => { adapter.dispatch(1, 300, 123); return 0; },
+  } } as unknown as WebAssembly.Instance;
+  const app = { exports: { app_event_dispatch: () => { callbacks++; } } } as unknown as WebAssembly.Instance;
+  adapter = new EventAdapter(core, app, { eventTarget: () => 300 }, 123,
+    { maxRegistrations: 1, maxDepth: 1 }, () => {}, () => 1);
+  descriptor = adapter.add(1, 1, 123, 0);
+  expect(() => adapter.send(1, 123, 0)).toThrow("invalid LVGL event dispatch");
+  expect(callbacks).toBe(0);
+  adapter.close();
+});
+
 test("a swallowed reentrant call inside a callback still poisons the graph", async () => {
   const { input, options, events } = await fixture();
   let environment: Environment;
@@ -190,11 +236,82 @@ test("a swallowed reentrant call inside a callback still poisons the graph", asy
     return host;
   };
   environment = await load(input, options);
-  expect(() => environment.run(2)).toThrow("not reentrant");
+  let failure: unknown;
+  try { environment.run(2); } catch (error) { failure = error; }
+  expect(failure).toBeInstanceOf(Error);
+  expect((failure as Error).message).toContain("not reentrant");
   expect(environment.state).toBe("poisoned");
   expect(guestTrace(events)).not.toContain(51);
   expect(guestTrace(events)).not.toContain(19);
+  const before = [...events];
+  expect(before.filter((item) => typeof item === "string")).toEqual(["host:app", "host:lvcore"]);
+  try { environment.run(2); throw new Error("expected poisoned run to fail"); } catch (error) { expect(error).toBe(failure); }
+  try { environment.close(); throw new Error("expected poisoned close to fail"); } catch (error) { expect(error).toBe(failure); }
+  expect(events).toEqual(before);
 });
+
+test("a pending registration counts against the quota during a nested callback", async () => {
+  const { input, options, events } = await fixture("core-nested-add", "app-nested-add");
+  options.event.maxRegistrations = 2;
+  const environment = await load(input, options);
+  let failure: unknown;
+  try { environment.run(12); } catch (error) { failure = error; }
+  expect(failure).toBeInstanceOf(Error);
+  expect((failure as Error).message).toBe("LVGL event quota exceeded");
+  expect(environment.state).toBe("poisoned");
+  const before = [...events];
+  const trace = guestTrace(before);
+  expect(trace.filter((item) => item === 50)).toHaveLength(2);
+  expect(trace.filter((item) => item === 70)).toHaveLength(2);
+  expect(trace).not.toContain(51);
+  expect(trace).not.toContain(19);
+  expect(before.filter((item) => typeof item === "string")).toEqual(["host:app", "host:lvcore"]);
+  try { environment.run(12); throw new Error("expected poisoned run to fail"); } catch (error) { expect(error).toBe(failure); }
+  try { environment.close(); throw new Error("expected poisoned close to fail"); } catch (error) { expect(error).toBe(failure); }
+  expect(events).toEqual(before);
+});
+
+test("a nested removal cannot enter the native removal twice", async () => {
+  const { input, options, events } = await fixture("core-nested-remove");
+  options.event.maxRegistrations = 2;
+  const environment = await load(input, options);
+  expect(environment.run(7)).not.toBe(0);
+  let failure: unknown;
+  try { environment.run(4); } catch (error) { failure = error; }
+  expect(failure).toBeInstanceOf(Error);
+  expect((failure as Error).message).toBe("LVGL event removal is already in progress");
+  expect(environment.state).toBe("poisoned");
+  const before = [...events];
+  const trace = guestTrace(before);
+  expect(trace.filter((item) => item === 70)).toHaveLength(2);
+  expect(trace.filter((item) => item === 51)).toHaveLength(1);
+  expect(trace).not.toContain(19);
+  expect(before.filter((item) => typeof item === "string")).toEqual(["host:app", "host:lvcore"]);
+  try { environment.run(4); throw new Error("expected poisoned run to fail"); } catch (error) { expect(error).toBe(failure); }
+  try { environment.close(); throw new Error("expected poisoned close to fail"); } catch (error) { expect(error).toBe(failure); }
+  expect(events).toEqual(before);
+});
+
+for (const [core, targetCalls] of [["core-current-reenter", 0], ["core-target-reenter", 1]] as const) {
+  test(`${core} cannot recursively dispatch while validating an event`, async () => {
+    const { input, options, events } = await fixture(core, "app-remove-first");
+    const environment = await load(input, options);
+    let failure: unknown;
+    try { environment.run(4); } catch (error) { failure = error; }
+    expect(failure).toBeInstanceOf(Error);
+    expect((failure as Error).message).toBe("LVGL event validation is reentrant");
+    expect(environment.state).toBe("poisoned");
+    const before = [...events];
+    const trace = guestTrace(before);
+    expect(trace.filter((item) => item === 53)).toHaveLength(1);
+    expect(trace.filter((item) => item === 54)).toHaveLength(targetCalls);
+    for (const forbidden of [70, 71, 51, 19]) expect(trace).not.toContain(forbidden);
+    expect(before.filter((item) => typeof item === "string")).toEqual(["host:app", "host:lvcore"]);
+    try { environment.run(4); throw new Error("expected poisoned run to fail"); } catch (error) { expect(error).toBe(failure); }
+    try { environment.close(); throw new Error("expected poisoned close to fail"); } catch (error) { expect(error).toBe(failure); }
+    expect(events).toEqual(before);
+  });
+}
 
 test("native registration failure returns NULL and rolls back without unregistering", async () => {
   const { input, options, events } = await fixture("core-add-fail");
