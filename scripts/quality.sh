@@ -63,6 +63,10 @@ python3 -B validator/lvgl-label-lib-fixture.py --ndk "$label_tmp/chain-ndk" --ou
 LVW_TEST_LABEL_LIB_GRAPH="$label_tmp/label-lib-graph.json"
 export LVW_TEST_LABEL_LIB_GRAPH
 bun tests/fixtures/numeric-label-lib/generate.ts --fixtures "$label_tmp/label-lib" --output "$LVW_TEST_LABEL_LIB_GRAPH"
+python3 -B validator/lvgl-label-lib-fixture.py --event --ndk "$label_tmp/chain-ndk" --output "$label_tmp/event-lib"
+LVW_TEST_EVENT_LIB_GRAPH="$label_tmp/event-lib-graph.json"
+export LVW_TEST_EVENT_LIB_GRAPH
+bun tests/fixtures/numeric-label-lib/generate.ts --event --fixtures "$label_tmp/event-lib" --output "$LVW_TEST_EVENT_LIB_GRAPH"
 LVW_TEST_LABEL_LIB_FAULT="$label_tmp/label-lib-faults/label-lib-fault.wasm"
 LVW_TEST_LABEL_LIB_APP_DATA="$label_tmp/label-lib-faults/label-lib-app-data.wasm"
 LVW_TEST_LABEL_LIB_CLOSE_FAIL="$label_tmp/label-lib-faults/label-lib-close-fail.wasm"
@@ -82,6 +86,7 @@ bun test validator/numeric-label-lib-preflight.test.ts
 bun test validator/lvgl-label-lib-runtime.test.ts
 bun test validator/lvgl-event-profile.test.ts validator/lvgl-event-negative.test.ts
 bun test validator/numeric-event-preflight.test.ts
+bun test validator/numeric-event-lib-preflight.test.ts
 bun test validator/lvgl-chain.test.ts
 bun test validator/feature-sdk.test.ts
 bun test validator/bounded-core.test.ts

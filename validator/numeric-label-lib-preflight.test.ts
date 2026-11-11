@@ -108,17 +108,15 @@ test("consumer identity and graph mismatches fail before host creation", async (
   }
 }, 300_000);
 
-test("matched Wasm bytes reject missing memory and dependencies, host spoofing, and library event consumers", async () => {
+test("matched Wasm bytes reject missing memory and dependencies and host spoofing", async () => {
   const cases = [
     { name: "memory", module: "middle", substitutions: { MEMORY: "(memory 1 2)" }, message: "label profile requires owned exported memory" },
     { name: "dependency", module: "middle", substitutions: { CORE_IMPORT: "" }, message: "label consumer must depend on its LVGL core" },
     { name: "host-spoof", module: "app", substitutions: { EXTRA_IMPORT: '(import "lvgl" "lv_screen_active" (func (result i32)))' }, message: "LVGL label host is reserved for its consumer" },
-    { name: "event", module: "app", substitutions: { EXTRA: '(table 1 1 funcref) (func (export "app_event_dispatch") (param i32 i32))' }, message: "LVGL event consumer must be its app" },
   ] as const;
   for (const item of cases) {
     const f = fixture();
     replaceModule(f, item.module, await synthetic(item.module, item.substitutions));
-    if (item.name === "event") { f.options.profile = "lvgl-event-v1"; f.options.event = { maxRegistrations: 8, maxDepth: 8 }; }
     expect(() => prepareModuleManifests(f.input), item.name).not.toThrow();
     await expect(preflightLvglLabelGraphForConsumer(f.input, f.options), item.name).rejects.toThrow(item.message);
     expect(f.calls(), item.name).toBe(0);

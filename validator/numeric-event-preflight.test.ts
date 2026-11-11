@@ -35,7 +35,7 @@ test("shared event graphs validate without creating hosts or executing guests", 
     else {
       const expected: Record<string, string> = {
         "missing-dispatch": "missing app_event_dispatch", "bad-dispatch": "invalid app_event_dispatch signature",
-        "imported-dispatch": "app_event_dispatch must be an owned function", "dispatch-alias": "numeric export contract differs", "missing-table": "requires its own table", "imported-table": "requires its own table",
+        "imported-dispatch": "app_event_dispatch must be an owned function", "dispatch-alias": "LVGL event dispatcher cannot be a business export", "missing-table": "requires its own table", "imported-table": "requires its own table",
         "unbounded-table": "numeric table limit exceeded", "multiple-tables": "requires its own table",
         "no-event-import": "requires the core event import", "bad-event-import": "LVGL host contract differs", "bad-add-import": "LVGL label host contract differs",
         "imported-clicked": "lvw_event_clicked must be an owned function", alias: "LVGL label import is not authorized",

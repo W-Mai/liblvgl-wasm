@@ -1,9 +1,10 @@
-import { FeatureValidationError, NumericWasiExit, WASM_FEATURE_POLICY_NAMES, inspectFeatureModuleGraph, loadNumericEnvironment, validateWasmFeatures, type NumericEnvironmentOptions, type NumericWasiOptions } from "liblvgl-wasm/feature-validator";
+import { FeatureValidationError, NumericWasiExit, WASM_FEATURE_POLICY_NAMES, inspectFeatureModuleGraph, loadNumericEnvironment, preflightLvglEventGraphForConsumer, validateWasmFeatures, type NumericEnvironmentOptions, type NumericWasiOptions } from "liblvgl-wasm/feature-validator";
 import { inspectWasmFacts, type ModuleManifestInput } from "liblvgl-wasm";
 import { exerciseLvgl } from "./lvgl-module.js";
 import { exerciseLabelCore, exerciseStandaloneCore } from "./standalone-core.js";
 import { exerciseChain } from "./chain.js";
 import { exerciseLabelConsumer } from "./label-consumer.js";
+import { exerciseEventConsumer } from "./event-consumer.js";
 
 const coreFeatures = ["bulk-memory", "reference-types", "sign-extension", "saturating-float-to-int", "exceptions"];
 const simd = new Uint8Array([0, 97, 115, 109, 1, 0, 0, 0, 1, 5, 1, 96, 0, 1, 123, 3, 2, 1, 0, 10, 22, 1, 20, 0, 253, 12, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 11]);
@@ -42,7 +43,7 @@ async function rejected(promise: Promise<unknown>): Promise<string> {
   catch (error) { if (!(error instanceof FeatureValidationError)) throw error; return error.code; }
 }
 
-export async function exercise(core: ArrayBuffer, wasiApp: ArrayBuffer, lvProvider: ArrayBuffer, lvApp: ArrayBuffer, standaloneCore: ArrayBuffer, standaloneApp: ArrayBuffer, labelApp: ArrayBuffer, eventApp: ArrayBuffer, chainGraph: ArrayBuffer, labelLibGraph: ArrayBuffer) {
+export async function exercise(core: ArrayBuffer, wasiApp: ArrayBuffer, lvProvider: ArrayBuffer, lvApp: ArrayBuffer, standaloneCore: ArrayBuffer, standaloneApp: ArrayBuffer, labelApp: ArrayBuffer, eventApp: ArrayBuffer, chainGraph: ArrayBuffer, labelLibGraph: ArrayBuffer, eventLibGraph: ArrayBuffer) {
   const options = { startupTimeoutMs: 10_000, executionTimeoutMs: 10_000 };
   const input = new Uint8Array(core), original = input.slice();
   const pending = validateWasmFeatures(input, { ...options, declaredFeatures: coreFeatures, allowedFeatures: coreFeatures });
@@ -98,9 +99,10 @@ export async function exercise(core: ArrayBuffer, wasiApp: ArrayBuffer, lvProvid
   const event = await exerciseLabelCore(standaloneCore, eventApp, true);
   const chain = await exerciseChain(chainGraph, loadNumericEnvironment);
   const labelConsumer = await exerciseLabelConsumer(labelLibGraph);
+  const eventConsumer = await exerciseEventConsumer(eventLibGraph, { loadNumericEnvironment, preflightLvglEventGraphForConsumer });
   return { report, coreDenied, simdStatus: simdResult.status, simdDenied, policyDenied, aborted,
     numericResult, numericState: numeric.state,
-    wasiResult, wasiState: wasi.state, wasiOutput: output, wasiIdentity: environmentIds.length === 3 && new Set(environmentIds).size === 1, standalone, label, event, chain, labelConsumer,
+    wasiResult, wasiState: wasi.state, wasiOutput: output, wasiIdentity: environmentIds.length === 3 && new Set(environmentIds).size === 1, standalone, label, event, chain, labelConsumer, eventConsumer,
     wasiExit: new NumericWasiExit(42).code === 42, lvgl,
     graphOrder: graphReport.order, graphChecks: graphReport.modules.map((item) => item.checks),
     knownFeatures: WASM_FEATURE_POLICY_NAMES.includes("simd") && Object.isFrozen(WASM_FEATURE_POLICY_NAMES),

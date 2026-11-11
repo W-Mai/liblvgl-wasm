@@ -6,6 +6,7 @@ import { inspectWasmFacts, type WasmFacts } from "../../../bindings/typescript/s
 const { values } = parseArgs({ args: process.argv.slice(2), options: {
   fixtures: { type: "string" }, core: { type: "string" }, api: { type: "string" }, proof: { type: "string" }, output: { type: "string" },
   "real-only": { type: "boolean", default: false },
+  event: { type: "boolean", default: false },
 } });
 if (!values.fixtures || !values.output) throw new Error("--fixtures and --output are required");
 const root = resolve(import.meta.dir, "../../..");
@@ -38,7 +39,7 @@ const names = ["middle.wasm", "middle-fail-init.wasm", "app.wasm", "app-fail-ini
 const hash = (bytes: Uint8Array) => new Bun.CryptoHasher("sha256").update(bytes).digest("hex");
 const marker = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(await snapshot(join(fixtures, "manifest.json"), 65536)));
 if (!marker || Array.isArray(marker) || Object.keys(marker).sort().join() !== "files,kind,schema_version"
-    || marker.schema_version !== 1 || marker.kind !== "lvgl-label-lib-fixtures" || !marker.files
+    || marker.schema_version !== 1 || marker.kind !== (values.event ? "lvgl-event-lib-fixtures" : "lvgl-label-lib-fixtures") || !marker.files
     || Array.isArray(marker.files) || Object.keys(marker.files).sort().join() !== [...names].sort().join()) {
   throw new Error("invalid label library fixture manifest");
 }
@@ -80,13 +81,15 @@ try {
       interface: namespace, version: 1, imports: facts.imports.filter((item) => item.module === namespace)
         .map((item) => ({ name: item.name, ...descriptor(facts, item), module: item.module, provider_export: item.name })) }));
     const manifest = { schema_version: 1, kind: "wasm-module", id, role: id === "app" ? "app" : "lib",
-      artifact: { path: `${id}.wasm`, sha256: facts.sha256 }, target: { abi: "wasip1", features: [] },
+      artifact: { path: `${id}.wasm`, sha256: facts.sha256 }, target: { abi: "wasip1", features: values.event && id === "middle" ? ["reference-types"] : [] },
       interface: iface(id), memory_model: "isolated", requires,
       exports: facts.exports.map((item) => ({ name: item.name, ...descriptor(facts, item) })), runtime_verification: "not-run" };
     return { bytes, facts, manifest };
   };
   const functions = ["middle_active", "middle_update"];
   const labelFunctions = ["lv_screen_active", "lv_label_create", "lv_label_set_text"];
+  if (values.event) labelFunctions.push("lv_obj_add_event_cb", "lv_obj_remove_event_dsc", "lv_obj_send_event",
+    "lv_event_get_code", "lv_event_get_user_data", "lv_event_get_target_obj");
   const cases = [{ name: "real", middle: "middle.wasm", app: "app.wasm" }];
   if (!values["real-only"]) cases.push(
     { name: "middle-fail-init", middle: "middle-fail-init.wasm", app: "app.wasm" },
@@ -118,6 +121,7 @@ try {
     limits: { maxMemoryPages: Math.max(...memory), maxTotalMemoryPages: memory.reduce((sum, value) => sum + value, 0),
       maxTableElements: Math.max(0, ...table), maxTotalTableElements: table.reduce((sum, value) => sum + value, 0) } },
     label: { id: "host.label", interface: iface("lvgl"), consumer: "middle", width: 120, height: 48, maxLabels: 8, maxTextBytes: 4096 },
+    ...(values.event ? { event: { maxRegistrations: 4, maxDepth: 4 } } : {}),
     allowedFeatures: checked.allowedFeatures, wasi: true };
   });
   const graph = new TextEncoder().encode(JSON.stringify(graphs));

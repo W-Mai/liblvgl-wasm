@@ -127,8 +127,12 @@ def prepare_label_lib(directory, ndk):
     return prepare_library_graph(directory, ndk, "label-lib")
 
 
+def prepare_event_lib(directory, ndk):
+    return prepare_library_graph(directory, ndk, "event-lib")
+
+
 def prepare_library_graph(directory, ndk, kind):
-    if kind not in {"chain", "label-lib"}:
+    if kind not in {"chain", "label-lib", "event-lib"}:
         raise ValueError("unknown SDK library graph")
     directory = Path(directory).resolve()
     ndk = Path(ndk).resolve(strict=True)
@@ -151,10 +155,12 @@ def prepare_library_graph(directory, ndk, kind):
         for path in paths:
             path.chmod(0o555 if path.is_dir() else 0o444 | (path.stat().st_mode & 0o111))
         try:
-            subprocess.run([sys.executable, "-B", str(ROOT / f"validator/lvgl-{kind}-fixture.py"),
+            source_kind = "label-lib" if kind == "event-lib" else kind
+            event_args = ["--event"] if kind == "event-lib" else []
+            subprocess.run([sys.executable, "-B", str(ROOT / f"validator/lvgl-{source_kind}-fixture.py"), *event_args,
                             "--ndk", str(copied_ndk), "--output", str(work / "fixtures")], cwd=ROOT, check=True)
             graph = work / "graph.json"
-            subprocess.run(["bun", str(ROOT / f"tests/fixtures/numeric-{kind}/generate.ts"), "--real-only",
+            subprocess.run(["bun", str(ROOT / f"tests/fixtures/numeric-{source_kind}/generate.ts"), "--real-only", *event_args,
                             "--fixtures", str(work / "fixtures"),
                             "--core", str(ROOT / "target/wasm/liblvgl-bounded.wasm"),
                             "--api", str(ROOT / "target/wasm/api.json"),

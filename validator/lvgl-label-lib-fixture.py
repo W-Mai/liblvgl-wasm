@@ -19,7 +19,7 @@ FILES = {
 MARKER = "manifest.json"
 
 
-def build(ndk: Path, output: Path) -> None:
+def build(ndk: Path, output: Path, event: bool = False) -> None:
     ndk = ndk.resolve(strict=True)
     if output.is_symlink():
         raise ValueError("label library output must not be a symlink")
@@ -42,26 +42,29 @@ def build(ndk: Path, output: Path) -> None:
     includes = [ndk / "include", ndk / "include/lvgl/config"]
     if not (includes[0] / "lvgl/lvgl.h").is_file() or not includes[1].is_dir():
         raise ValueError("label library NDK headers are missing")
-    sources = {name: (ROOT / "validator" / name).read_bytes() for name in {item[0] for item in FILES.values()}}
+    files_to_build = {name: ("lvgl-event-lib.c" if event and source == "lvgl-label-lib.c" else source, fail)
+                      for name, (source, fail) in FILES.items()}
+    sources = {name: (ROOT / "validator" / name).read_bytes() for name in {item[0] for item in files_to_build.values()}}
     with tempfile.TemporaryDirectory(prefix=".lvgl-label-lib-", dir=output.parent) as directory:
         stage = Path(directory)
         for name, source in sources.items():
             (stage / name).write_bytes(source)
         files = {}
-        for name, (source, fail_init) in FILES.items():
+        for name, (source, fail_init) in files_to_build.items():
             path = stage / name
             subprocess.run([str(sdk / "bin/clang"), "--target=wasm32-wasip1", "-std=c11", "-O2", "-nostdlib",
                             "-Wall", "-Wextra", "-Werror", "-DLV_CONF_INCLUDE_SIMPLE=1", "-DLV_KCONFIG_IGNORE=1",
                             "-DLV_LVGL_H_INCLUDE_SIMPLE=1", *(f"-I{include}" for include in includes),
                             "-Wl,--no-entry", "-Wl,--export-memory", "-Wl,--max-memory=2097152",
+                            *(["-Wl,--export-table"] if event and source == "lvgl-event-lib.c" else []),
                             *(["-DLVW_LABEL_LIB_FAIL_INIT=1"] if fail_init else []), str(stage / source), "-o", str(path)],
                            check=True)
-            subprocess.run(["wasm-tools", "validate", "--features=wasm1", str(path)], check=True)
+            subprocess.run(["wasm-tools", "validate", "--features=wasm1,reference-types" if event else "--features=wasm1", str(path)], check=True)
             data = path.read_bytes()
             if len(data) > 64 * 1024 * 1024:
                 raise ValueError("label library fixture Wasm exceeds limit")
             files[name] = hashlib.sha256(data).hexdigest()
-        (stage / MARKER).write_text(json.dumps({"schema_version": 1, "kind": "lvgl-label-lib-fixtures", "files": files}) + "\n")
+        (stage / MARKER).write_text(json.dumps({"schema_version": 1, "kind": "lvgl-event-lib-fixtures" if event else "lvgl-label-lib-fixtures", "files": files}) + "\n")
         output.mkdir(mode=0o700)
         descriptor = os.open(output, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
         try:
@@ -84,9 +87,10 @@ def build(ndk: Path, output: Path) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--ndk", type=Path, required=True, help="read LVGL headers from this NDK")
+    parser.add_argument("--event", action="store_true", help="build the library-owned event dispatcher")
     parser.add_argument("--output", type=Path, default=TARGET / "validator/lvgl-label-lib", help="new output directory inside target")
     args = parser.parse_args()
-    build(args.ndk, args.output)
+    build(args.ndk, args.output, args.event)
     print(args.output.resolve())
 
 

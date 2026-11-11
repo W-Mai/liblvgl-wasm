@@ -54,7 +54,7 @@ class BrowserTempPaths(unittest.TestCase):
                     patch.object(feature_sdk_browser.threading, "Event", return_value=SimpleNamespace(wait=Mock(return_value=True))), \
                     patch.object(feature_sdk_browser.threading, "Thread"):
                 package_browser.run_browser(package, work, root, identity, "chromium")
-                feature_sdk_browser.run_browser(root, package, work, "chromium", *([core] * 9))
+                feature_sdk_browser.run_browser(root, package, work, "chromium", *([core] * 10))
             self.assertEqual(len(seen), 2)
             self.assertTrue(all(not path.exists() for path in seen))
 

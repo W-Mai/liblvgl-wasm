@@ -173,7 +173,7 @@ function ownEntrypoint(record: NumericRecord, entry: string, params: readonly st
 }
 
 /** @internal Snapshot the trusted numeric profile and match it to the prepared graph. */
-export function prepareNumericProfile(prepared: PreparedModuleGraph, options: NumericEnvironmentOptions): NumericProfile {
+export function prepareNumericProfile(prepared: PreparedModuleGraph, options: NumericEnvironmentOptions, eventConsumerPreflight = false): NumericProfile {
   const root = fields(options, ["profile", "modules", "hosts", "allowedFeatures", "startupTimeoutMs", "executionTimeoutMs",
     "maxMemoryPages", "maxTotalMemoryPages", "maxTableElements", "maxTotalTableElements"], ["signal", "wasi", "lvgl", "label", "event"]);
   if (root.profile !== "numeric-v1" && root.profile !== "lvgl-core-v1" && root.profile !== "lvgl-label-v1" && root.profile !== "lvgl-event-v1") return fail("unsupported numeric profile");
@@ -227,7 +227,12 @@ export function prepareNumericProfile(prepared: PreparedModuleGraph, options: Nu
   const maxTableElements = limit(root.maxTableElements, 0xffff_ffff), maxTotalTableElements = limit(root.maxTotalTableElements, 0xffff_ffff * 256);
   if (modules.size !== prepared.modules.length || hosts.size + Number(wasi !== undefined) + Number(lvgl !== undefined) + Number(label !== undefined) !== prepared.hosts.length) return fail("numeric profile provider inventory differs");
   if (selectedConsumer !== undefined && (!modules.has(selectedConsumer) || selectedConsumer === lvgl?.module)) return fail("invalid LVGL label consumer");
+  if (event && selectedConsumer !== undefined && !eventConsumerPreflight
+      && prepared.modules.find((record) => record.manifest.id === selectedConsumer)?.manifest.role !== "app") {
+    return fail("LVGL event consumer must be its app");
+  }
   let totalMemory = 0, totalTables = 0;
+  let eventDispatcherExports: ReadonlySet<string> | undefined;
   let app: string | undefined, foundLvgl = false;
   for (const record of prepared.modules) {
     const current = record.manifest, contract = modules.get(current.id);
@@ -269,11 +274,20 @@ export function prepareNumericProfile(prepared: PreparedModuleGraph, options: Nu
     }
     if (current.role === "app") {
       ownEntrypoint(record, "app_run", ["i32"], ["i32"], true);
-      if (event) {
-        ownEntrypoint(record, eventDispatch, ["i32", "i32"], [], true);
-        if (record.facts.tables.length !== 1 || record.facts.tables[0]!.imported) fail("LVGL event app requires its own table");
-        if (contract.exports.some((fn) => fn.name === eventDispatch)) fail("LVGL event dispatcher cannot be a business export");
+    }
+    if (event && (selectedConsumer === undefined ? current.role === "app" : current.id === selectedConsumer)) {
+      ownEntrypoint(record, eventDispatch, ["i32", "i32"], [], true);
+      const dispatcher = record.facts.exports.find((item) => item.name === eventDispatch);
+      if (!dispatcher || dispatcher.kind !== "function") return fail("LVGL event dispatcher is unavailable");
+      eventDispatcherExports = new Set(record.facts.exports.filter((item) => item.kind === "function" && item.index === dispatcher.index)
+        .map((item) => item.name));
+      if (record.facts.tables.length !== 1 || record.facts.tables[0]!.imported) {
+        fail(current.role === "app" ? "LVGL event app requires its own table" : "LVGL event consumer requires its own table");
       }
+      if (eventConsumerPreflight && record.facts.tables[0]!.type.element !== "funcref") {
+        fail("LVGL event consumer requires a function table");
+      }
+      if (contract.exports.some((fn) => eventDispatcherExports!.has(fn.name))) fail("LVGL event dispatcher cannot be a business export");
     }
     if (label && (selectedConsumer === current.id || selectedConsumer === undefined && current.role === "app")) {
       ownMemory(record);
@@ -309,7 +323,8 @@ export function prepareNumericProfile(prepared: PreparedModuleGraph, options: Nu
   if (lvgl && !foundLvgl) return fail("LVGL core module is missing");
   if (app === undefined) return fail("numeric profile requires exactly one app");
   const labelConsumer = selectedConsumer ?? app;
-  if (event && labelConsumer !== app) return fail("LVGL event consumer must be its app");
+  if (event && labelConsumer !== app && !eventConsumerPreflight) return fail("LVGL event consumer must be its app");
+  if (event && eventDispatcherExports === undefined) return fail("LVGL event dispatcher is unavailable");
   if (totalMemory > maxTotalMemoryPages || totalTables > maxTotalTableElements) return fail("numeric environment resource limit exceeded");
   for (const host of prepared.hosts) {
     if (label && host.id === label.id) {
@@ -343,6 +358,9 @@ export function prepareNumericProfile(prepared: PreparedModuleGraph, options: Nu
       fail(selectedConsumer === undefined ? "LVGL label host is reserved for its app" : "LVGL label host is reserved for its consumer");
     }
     for (const item of requirement.imports) {
+      if (event && requirement.provider === labelConsumer && eventDispatcherExports!.has(item.provider_export)) {
+        fail(`${JSON.stringify(record.manifest.id)}: unsupported numeric import`);
+      }
       if (label && (item.module === "lvgl" || requirement.provider === label.id)) {
         if (record.manifest.id !== labelConsumer || requirement.provider !== label.id || item.module !== "lvgl"
             || item.provider_export !== item.name || !labelSignature(item, !!event)) fail(`${JSON.stringify(record.manifest.id)}: LVGL label import is not authorized`);
@@ -362,8 +380,7 @@ export function prepareNumericProfile(prepared: PreparedModuleGraph, options: Nu
         continue;
       }
       if (item.kind !== "function" || reserved.has(item.provider_export)
-          || lvgl && requirement.provider === lvgl.module && lvglLifecycle.has(item.provider_export)
-          || event && requirement.provider === app && item.provider_export === eventDispatch) fail(`${JSON.stringify(record.manifest.id)}: unsupported numeric import`);
+          || lvgl && requirement.provider === lvgl.module && lvglLifecycle.has(item.provider_export)) fail(`${JSON.stringify(record.manifest.id)}: unsupported numeric import`);
       const provider = modules.get(requirement.provider) ?? hosts.get(requirement.provider);
       const contract = provider?.exports.find((fn) => fn.name === item.provider_export);
       if (!contract || !sameFunction(contract, { ...item, name: item.name })) fail(`${JSON.stringify(record.manifest.id)}: numeric import is not authorized`);
@@ -810,6 +827,7 @@ class NumericRuntime {
 
 /** @internal Create a numeric environment from already compiled private snapshots. */
 export function instantiateNumericEnvironment(prepared: PreparedModuleGraph, profile: NumericProfile, compiled: ReadonlyMap<string, WebAssembly.Module>, beforeGuest: () => void): NumericEnvironment {
+  if (profile.event && profile.labelConsumer !== profile.app) return fail("LVGL event consumer must be its app");
   const runtime = NumericRuntime.load(prepared, profile, compiled, beforeGuest);
   const base = { get state() { return runtime.state; }, run: (value: number) => runtime.run(value), close: () => runtime.close() };
   return Object.freeze(profile.label ? { ...base, get state() { return runtime.state; }, readFrame: () => runtime.readFrame() } : base);

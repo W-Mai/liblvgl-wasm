@@ -67,6 +67,11 @@ export interface NumericLabelConsumerPreflightReport {
   readonly graph: FeatureModuleGraphReport;
 }
 
+export interface NumericEventConsumerPreflightReport {
+  readonly consumer: string;
+  readonly graph: FeatureModuleGraphReport;
+}
+
 export class FeatureModuleGraphError extends Error {
   constructor(readonly moduleId: string, readonly stage: "feature" | "wasi" | "resource", cause: unknown) {
     super(`${JSON.stringify(moduleId)}: ${stage} inspection failed: ${String(cause)}`, { cause });
@@ -183,6 +188,23 @@ export async function preflightLvglLabelGraphForConsumer(input: ModuleManifestIn
     const prepared = prepareModuleManifests(input);
     const profile = prepareNumericProfile(prepared, options);
     if (!profile.label || profile.event || profile.labelConsumer === undefined) throw new Error("label consumer preflight requires lvgl-label-v1");
+    const checks = prepareFeatureChecks(prepared, profile.featureOptions);
+    await verifyFeatureChecks(checks);
+    compileNumericModules(prepared);
+    return { consumer: profile.labelConsumer, graph: featureGraphReport(prepared, checks) };
+  } finally {
+    activeGraphs--;
+  }
+}
+
+/** Validate a trusted event consumer without creating an environment. The report does not authorize loading. */
+export async function preflightLvglEventGraphForConsumer(input: ModuleManifestInput, options: NumericEnvironmentOptions): Promise<NumericEventConsumerPreflightReport> {
+  if (activeGraphs >= MAX_WORKERS) throw new FeatureValidationError("busy", "module graph inspection concurrency limit reached");
+  activeGraphs++;
+  try {
+    const prepared = prepareModuleManifests(input);
+    const profile = prepareNumericProfile(prepared, options, true);
+    if (!profile.label || !profile.event || profile.labelConsumer === undefined) throw new Error("event consumer preflight requires lvgl-event-v1");
     const checks = prepareFeatureChecks(prepared, profile.featureOptions);
     await verifyFeatureChecks(checks);
     compileNumericModules(prepared);
