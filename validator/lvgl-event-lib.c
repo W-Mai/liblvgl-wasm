@@ -14,14 +14,31 @@ __attribute__((import_module("lvgl"), import_name("lv_event_get_code"))) extern 
 __attribute__((import_module("lvgl"), import_name("lv_event_get_user_data"))) extern void *lv_event_get_user_data(lv_event_t *event);
 __attribute__((import_module("lvgl"), import_name("lv_event_get_target_obj"))) extern lv_obj_t *lv_event_get_target_obj(lv_event_t *event);
 
-static struct { lv_obj_t *label; int32_t count; bool live; } state;
+static struct { lv_obj_t *label; int32_t count; bool live; bool nested_ok; } state;
 static lv_event_dsc_t *descriptor;
+static bool remove_on_inner;
+static bool fire_on_close;
+static bool leave_registered;
+static int32_t order[4];
+static uint32_t order_count;
 
 static void clicked(lv_event_t *event) {
     if (lv_event_get_user_data(event) != &state || lv_event_get_code(event) != LV_EVENT_CLICKED
         || lv_event_get_target_obj(event) != state.label) __builtin_trap();
-    ++state.count;
+    int32_t count = ++state.count;
+    if (order_count < 4) order[order_count++] = 10 + count;
+    if (count == 2 && remove_on_inner) {
+        if (!lv_obj_remove_event_dsc(state.label, descriptor)) __builtin_trap();
+        descriptor = NULL;
+    }
+    if (count == 1) {
+        if (lv_obj_send_event(state.label, LV_EVENT_CLICKED, NULL) != LV_RESULT_OK) __builtin_trap();
+        state.nested_ok = true;
+    }
+    if (lv_event_get_user_data(event) != &state || lv_event_get_code(event) != LV_EVENT_CLICKED
+        || lv_event_get_target_obj(event) != state.label) __builtin_trap();
     lv_label_set_text(state.label, "CLICKED");
+    if (order_count < 4) order[order_count++] = 20 + count;
 }
 
 __attribute__((export_name("app_event_dispatch")))
@@ -52,12 +69,35 @@ __attribute__((export_name("middle_active"))) int32_t middle_active(void) {
 __attribute__((export_name("middle_update"))) int32_t middle_update(int32_t action) {
     if (!middle_active()) return -1;
     if (action == 0) return state.count;
-    if (action != 1 || state.count >= 1000000) return -1;
-    return lv_obj_send_event(state.label, LV_EVENT_CLICKED, NULL) == LV_RESULT_OK ? state.count : -1;
+    if (action == 1 || action == 9) {
+        if (state.count >= 1000000) return -1;
+        if (action == 9) remove_on_inner = true;
+        return lv_obj_send_event(state.label, LV_EVENT_CLICKED, NULL) == LV_RESULT_OK ? state.count : -1;
+    }
+    if (action == 2) {
+        bool result = descriptor && lv_obj_remove_event_dsc(state.label, descriptor);
+        descriptor = NULL;
+        return result;
+    }
+    if (action == 3) {
+        if (descriptor) return 0;
+        descriptor = lv_obj_add_event_cb(state.label, clicked, LV_EVENT_CLICKED, &state);
+        return descriptor != NULL;
+    }
+    if (action == 4) return state.nested_ok;
+    if (action >= 5 && action <= 8) return order[action - 5];
+    if (action == 10) { fire_on_close = true; return 0; }
+    if (action == 11) { leave_registered = true; return 0; }
+    return -1;
 }
 
 __attribute__((export_name("module_close"))) int32_t module_close(void) {
-    if (!middle_active() || !lv_obj_remove_event_dsc(state.label, descriptor)) return 1;
+    if (!middle_active()) return 1;
+    if (fire_on_close) {
+        int32_t before = state.count;
+        if (lv_obj_send_event(state.label, LV_EVENT_CLICKED, NULL) != LV_RESULT_OK || state.count <= before) return 2;
+    }
+    if (!leave_registered && descriptor && !lv_obj_remove_event_dsc(state.label, descriptor)) return 1;
     state.live = false;
     trace_lifecycle(11);
     return 0;

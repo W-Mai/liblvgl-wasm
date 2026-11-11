@@ -87,6 +87,7 @@ bun test validator/lvgl-label-lib-runtime.test.ts
 bun test validator/lvgl-event-profile.test.ts validator/lvgl-event-negative.test.ts
 bun test validator/numeric-event-preflight.test.ts
 bun test validator/numeric-event-lib-preflight.test.ts
+bun test validator/lvgl-event-lib-runtime.test.ts
 bun test validator/lvgl-chain.test.ts
 bun test validator/feature-sdk.test.ts
 bun test validator/bounded-core.test.ts

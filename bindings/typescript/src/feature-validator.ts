@@ -203,7 +203,7 @@ export async function preflightLvglEventGraphForConsumer(input: ModuleManifestIn
   activeGraphs++;
   try {
     const prepared = prepareModuleManifests(input);
-    const profile = prepareNumericProfile(prepared, options, true);
+    const profile = prepareNumericProfile(prepared, options);
     if (!profile.label || !profile.event || profile.labelConsumer === undefined) throw new Error("event consumer preflight requires lvgl-event-v1");
     const checks = prepareFeatureChecks(prepared, profile.featureOptions);
     await verifyFeatureChecks(checks);

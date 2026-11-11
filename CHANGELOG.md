@@ -2,7 +2,7 @@
 
 ## [Unreleased]
 
-- Validate trusted library event consumers without instantiating the graph.
+- Run synchronous clicked events in a trusted library consumer with its own callback table and lifecycle.
 - Bound TypeScript event registration and reject reentrant event validation and removal.
 - Stop Rust numeric graph guest cleanup after WebAssembly instantiation traps.
 - Load isolated LVGL label environments with an explicitly selected Rust library consumer.

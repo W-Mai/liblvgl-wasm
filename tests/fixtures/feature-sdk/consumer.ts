@@ -4,7 +4,7 @@ import { exerciseLvgl } from "./lvgl-module.js";
 import { exerciseLabelCore, exerciseStandaloneCore } from "./standalone-core.js";
 import { exerciseChain } from "./chain.js";
 import { exerciseLabelConsumer } from "./label-consumer.js";
-import { exerciseEventConsumer } from "./event-consumer.js";
+import { exerciseEventConsumer, exerciseEventLibrary } from "./event-consumer.js";
 
 const coreFeatures = ["bulk-memory", "reference-types", "sign-extension", "saturating-float-to-int", "exceptions"];
 const simd = new Uint8Array([0, 97, 115, 109, 1, 0, 0, 0, 1, 5, 1, 96, 0, 1, 123, 3, 2, 1, 0, 10, 22, 1, 20, 0, 253, 12, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 11]);
@@ -99,10 +99,11 @@ export async function exercise(core: ArrayBuffer, wasiApp: ArrayBuffer, lvProvid
   const event = await exerciseLabelCore(standaloneCore, eventApp, true);
   const chain = await exerciseChain(chainGraph, loadNumericEnvironment);
   const labelConsumer = await exerciseLabelConsumer(labelLibGraph);
+  const eventLibrary = await exerciseEventLibrary(eventLibGraph, loadNumericEnvironment);
   const eventConsumer = await exerciseEventConsumer(eventLibGraph, { loadNumericEnvironment, preflightLvglEventGraphForConsumer });
   return { report, coreDenied, simdStatus: simdResult.status, simdDenied, policyDenied, aborted,
     numericResult, numericState: numeric.state,
-    wasiResult, wasiState: wasi.state, wasiOutput: output, wasiIdentity: environmentIds.length === 3 && new Set(environmentIds).size === 1, standalone, label, event, chain, labelConsumer, eventConsumer,
+    wasiResult, wasiState: wasi.state, wasiOutput: output, wasiIdentity: environmentIds.length === 3 && new Set(environmentIds).size === 1, standalone, label, event, chain, labelConsumer, eventConsumer, eventLibrary,
     wasiExit: new NumericWasiExit(42).code === 42, lvgl,
     graphOrder: graphReport.order, graphChecks: graphReport.modules.map((item) => item.checks),
     knownFeatures: WASM_FEATURE_POLICY_NAMES.includes("simd") && Object.isFrozen(WASM_FEATURE_POLICY_NAMES),

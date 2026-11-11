@@ -65,7 +65,9 @@ def check_result(result, core_sha, identity):
             or result["event"] != {"width": 120, "height": 48, "framesDiffer": True, "otherUnchanged": True,
                                     "survivesClose": True, "states": ["closed", "closed"]}
             or result["eventConsumer"] != {"consumer": "middle", "order": ["lvcore", "middle", "app"], "modules": 3,
-                                           "runtime": ["not-run", "not-run", "not-run"], "hostCalls": 0, "loaderRejected": True}
+                                           "runtime": ["not-run", "not-run", "not-run"], "hostCalls": 0}
+            or result["eventLibrary"] != {"framesDiffer": True, "otherUnchanged": True, "survivesClose": True,
+                                           "traces": [[10, 20, 21, 11], [10, 20, 21, 11]], "states": ["closed", "closed"]}
             or result["lvgl"] != {"values": [37, 81, 37, 81, 0x336699, 0x336699, -1], "green": [16, 48],
                                    "environments": 2, "lifecycle": [10, 20, 10, 20, 21, 11, 21, 11], "callbacks": 0, "outputBytes": 0,
                                    "survivesClose": 81, "closedRejected": True}):

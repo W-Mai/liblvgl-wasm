@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { prepareModuleManifests } from "../bindings/typescript/src/module-manifest.ts";
-import { compileNumericModules, instantiateNumericEnvironment, prepareNumericProfile } from "../bindings/typescript/src/numeric-environment.ts";
+import { compileNumericModules, prepareNumericProfile } from "../bindings/typescript/src/numeric-environment.ts";
 import { inspectWasmFacts } from "../bindings/typescript/src/wasm-facts.ts";
 import { exerciseEventConsumer } from "../tests/fixtures/feature-sdk/event-consumer.ts";
 const featureValidator: typeof import("../target/validator/feature-validator.js") =
@@ -26,7 +26,7 @@ test("official C library owns its table and dispatcher in the real three-module 
     expect(inspectWasmFacts(Buffer.from(app.hex, "hex")).imports.every((value) => value.module !== "lvgl")).toBe(true);
     const result = await exerciseEventConsumer(new TextEncoder().encode(JSON.stringify([{ ...item, name: "real" }])).buffer, featureValidator);
     expect(result).toEqual({ consumer: "middle", order: ["lvcore", "middle", "app"], modules: 3,
-      runtime: ["not-run", "not-run", "not-run"], hostCalls: 0, loaderRejected: true });
+      runtime: ["not-run", "not-run", "not-run"], hostCalls: 0 });
   }
 }, 300_000);
 
@@ -116,7 +116,7 @@ async function middleWith(extra: string, memory = '(memory (export "memory") 1 2
 
 function check(fixture: Awaited<ReturnType<typeof fixture>>) {
   const prepared = prepareModuleManifests(fixture.input);
-  const profile = prepareNumericProfile(prepared, fixture.options, true);
+  const profile = prepareNumericProfile(prepared, fixture.options);
   compileNumericModules(prepared);
   return { prepared, profile };
 }
@@ -142,18 +142,6 @@ test("an owned externref table cannot hold the consumer's callbacks", async () =
   expect(() => prepareModuleManifests(f.input)).not.toThrow();
   expect(() => check(f)).toThrow("LVGL event consumer requires a function table");
   expect(f.factories()).toBe(0);
-});
-
-test("a preflight-only profile cannot instantiate a library event consumer", async () => {
-  const f = await fixture();
-  const prepared = prepareModuleManifests(f.input);
-  const profile = prepareNumericProfile(prepared, f.options, true);
-  const compiled = compileNumericModules(prepared);
-  let beforeGuest = 0;
-  expect(() => instantiateNumericEnvironment(prepared, profile, compiled, () => { beforeGuest++; }))
-    .toThrow("LVGL event consumer must be its app");
-  expect(f.factories()).toBe(0);
-  expect(beforeGuest).toBe(0);
 });
 
 test("the existing app event consumer remains the default", async () => {
@@ -304,11 +292,7 @@ test("public event preflight snapshots a trusted consumer and does not authorize
   expect(f.factories()).toBe(0);
 }, 300_000);
 
-test("event preflight does not broaden the label preflight or runtime loader", async () => {
-  const f = await fixture();
-  await expect(featureValidator.loadNumericEnvironment(f.input, f.options))
-    .rejects.toThrow("LVGL event consumer must be its app");
-  expect(f.factories()).toBe(0);
+test("event preflight leaves label profile requirements unchanged", async () => {
   const legacy = await legacyFixture();
   expect(() => check(legacy)).not.toThrow();
   await expect(featureValidator.preflightLvglLabelGraphForConsumer(legacy.input, legacy.options))

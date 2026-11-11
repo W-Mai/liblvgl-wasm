@@ -19,7 +19,7 @@ interface EventFrame { readonly token: number; readonly registration: EventRegis
 
 export class EventAdapter {
   #core?: WebAssembly.Instance;
-  #app?: WebAssembly.Instance;
+  #consumer?: WebAssembly.Instance;
   #registrations = new Map<number, EventRegistration>();
   #byId = new Map<number, EventRegistration>();
   #frames: EventFrame[] = [];
@@ -28,11 +28,11 @@ export class EventAdapter {
   #pendingRegistrations = 0;
   #checkingDispatch = false;
 
-  constructor(core: WebAssembly.Instance, app: WebAssembly.Instance, private readonly label: { eventTarget(token: number): number },
+  constructor(core: WebAssembly.Instance, consumer: WebAssembly.Instance, private readonly label: { eventTarget(token: number): number },
     readonly clicked: number, readonly options: { readonly maxRegistrations: number; readonly maxDepth: number }, private readonly rethrow: () => void,
     private readonly reserveToken: () => number) {
     this.#core = core;
-    this.#app = app;
+    this.#consumer = consumer;
   }
 
   #call(name: string, ...args: number[]): number | void {
@@ -116,8 +116,8 @@ export class EventAdapter {
     const frame: EventFrame = { token: this.reserveToken(), registration, code: code >>> 0 };
     this.#frames.push(frame);
     try {
-      const callback = this.#app?.exports[eventDispatch];
-      if (typeof callback !== "function") return fail("LVGL app event dispatcher is unavailable");
+      const callback = this.#consumer?.exports[eventDispatch];
+      if (typeof callback !== "function") return fail("LVGL consumer event dispatcher is unavailable");
       callback(registration.callback, frame.token);
       this.rethrow();
     } finally {
@@ -147,6 +147,6 @@ export class EventAdapter {
 
   discard(): void {
     this.#registrations.clear(); this.#byId.clear(); this.#frames.length = 0; this.#sends.length = 0;
-    this.#app = undefined; this.#core = undefined;
+    this.#consumer = undefined; this.#core = undefined;
   }
 }
