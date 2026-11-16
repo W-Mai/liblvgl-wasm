@@ -18,10 +18,11 @@ def main() -> None:
         marker.write_bytes(b"preserve")
         link = parent / "link"
         link.symlink_to(existing, target_is_directory=True)
-        for output in (existing, marker, link):
-            result = subprocess.run([sys.executable, "-B", str(GENERATOR), str(output)], capture_output=True)
-            if result.returncode == 0 or marker.read_bytes() != b"preserve":
-                raise AssertionError(f"existing output was accepted: {output}")
+        for flags in ([], ["--event"]):
+            for output in (existing, marker, link):
+                result = subprocess.run([sys.executable, "-B", str(GENERATOR), *flags, str(output)], capture_output=True)
+                if result.returncode == 0 or marker.read_bytes() != b"preserve":
+                    raise AssertionError(f"existing output was accepted: {output}")
         if sorted(item.name for item in existing.iterdir()) != ["marker"]:
             raise AssertionError("existing directory was modified")
 

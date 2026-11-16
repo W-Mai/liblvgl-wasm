@@ -77,6 +77,9 @@ export LVW_TEST_LABEL_LIB_FAULT LVW_TEST_LABEL_LIB_APP_DATA LVW_TEST_LABEL_LIB_C
 export LVW_TEST_LABEL_LIB_REACTOR LVW_TEST_LABEL_LIB_REACTOR_TRAP
 python3 -B validator/lvgl-label-lib-fault-fixtures-test.py
 python3 -B validator/lvgl-label-lib-fault-fixtures.py "$label_tmp/label-lib-faults"
+LVW_TEST_EVENT_LIB_FAULTS="$label_tmp/event-lib-faults"
+export LVW_TEST_EVENT_LIB_FAULTS
+python3 -B validator/lvgl-label-lib-fault-fixtures.py --event "$LVW_TEST_EVENT_LIB_FAULTS"
 bun test validator/feature-validator.test.ts
 bun test validator/feature-worker.test.ts validator/feature-worker-live.test.ts validator/feature-graph.test.ts validator/numeric-environment.test.ts validator/wasi-numeric-loader.test.ts
 bun test validator/lvgl-core-profile.test.ts validator/lvgl-lifecycle.test.ts
@@ -138,6 +141,12 @@ LVW_TEST_LVGL_CORE="$root/target/wasm/liblvgl-bounded.wasm" \
     CARGO_TARGET_DIR="$root/target/rust" \
     cargo test --manifest-path bindings/rust/Cargo.toml --locked --lib \
         numeric_label_lib_test -- --ignored
+LVW_TEST_LVGL_CORE="$root/target/wasm/liblvgl-bounded.wasm" \
+    LVW_TEST_LVGL_API="$root/target/wasm/api.json" \
+    LVW_TEST_LVGL_PROOF="$root/target/wasm/api-verification-bounded.json" \
+    CARGO_TARGET_DIR="$root/target/rust" \
+    cargo test --manifest-path bindings/rust/Cargo.toml --locked --lib \
+        numeric_event_lib_test -- --ignored
 LVW_TEST_LVGL_CORE="$root/target/wasm/liblvgl-bounded.wasm" \
     LVW_TEST_LVGL_API="$root/target/wasm/api.json" \
     LVW_TEST_LVGL_PROOF="$root/target/wasm/api-verification-bounded.json" \

@@ -21,6 +21,9 @@ use wasmtime::{Caller, Extern, ExternType, Func, Instance, Store, TypedFunc, Val
 #[path = "numeric_chain_test.rs"]
 mod numeric_chain_test;
 #[cfg(test)]
+#[path = "numeric_event_lib_test.rs"]
+mod numeric_event_lib_test;
+#[cfg(test)]
 #[path = "numeric_event_test.rs"]
 mod numeric_event_test;
 #[cfg(test)]
@@ -249,6 +252,7 @@ struct LiveModule {
     close: TypedFunc<(), i32>,
     close_name: &'static str,
     wasi_slot: Option<usize>,
+    #[cfg(test)]
     is_app: bool,
     is_label_consumer: bool,
     #[cfg(test)]
@@ -328,6 +332,13 @@ fn close_event_checked(store: &mut Store<HostState>) -> Result<(), String> {
     }
 }
 
+fn close_consumer_adapters(store: &mut Store<HostState>) -> Result<(), String> {
+    close_event_checked(store)?;
+    store.data_mut().event = None;
+    store.data_mut().label = None;
+    Ok(())
+}
+
 fn rollback(
     store: &mut Store<HostState>,
     initialized: &mut Vec<LiveModule>,
@@ -351,7 +362,14 @@ fn rollback(
                     observe_event("core_shutdown");
                 }
                 if previous.is_label_consumer {
-                    store.data_mut().label = None;
+                    #[cfg(test)]
+                    if !previous.is_app {
+                        observe_event("consumer_close");
+                    }
+                    if let Err(message) = close_consumer_adapters(store) {
+                        failure.cleanup_errors.push(message);
+                        break;
+                    }
                 }
                 close_wasi_slot(store, previous.wasi_slot);
                 initialized.pop();
@@ -484,16 +502,15 @@ impl NumericEnvironment {
                     } else if module.close_name == "lvw_shutdown" {
                         observe_event("core_shutdown");
                     }
-                    if module.is_app {
+                    if module.is_label_consumer {
+                        #[cfg(test)]
+                        if !module.is_app {
+                            observe_event("consumer_close");
+                        }
                         let store = self.store.as_mut().expect("closing store");
-                        if let Err(message) = close_event_checked(store) {
+                        if let Err(message) = close_consumer_adapters(store) {
                             return Err(self.poison(message));
                         }
-                        store.data_mut().event = None;
-                    }
-                    if module.is_label_consumer {
-                        let store = self.store.as_mut().expect("closing store");
-                        store.data_mut().label = None;
                     }
                     close_wasi_slot(
                         self.store.as_mut().expect("closing store"),
@@ -753,6 +770,42 @@ pub fn load_lvgl_event_environment(
             label: Some(label),
             event: Some(event),
             consumer: None,
+        },
+    )
+}
+
+/// Load a trusted LVGL core with label and clicked-event adapters bound to one consumer.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "The trusted consumer, providers and output sink are configured explicitly."
+)]
+pub fn load_lvgl_event_environment_for_consumer(
+    input: &ModuleManifestInput<'_>,
+    profile: &NumericProfile,
+    allowed: &[&str],
+    factories: &mut [NumericHostBinding<'_>],
+    lvgl: &NumericLvglCoreOptions,
+    label: &NumericLabelOptions,
+    event: &NumericEventOptions,
+    consumer_id: &str,
+    wasi: Option<(&NumericWasiOptions, Box<dyn NumericWasiOutput>)>,
+) -> Result<NumericEnvironment, NumericEnvironmentError> {
+    let (wasi, output) = match wasi {
+        Some((wasi, output)) => (Some(wasi), Some(output)),
+        None => (None, None),
+    };
+    load_with_output(
+        input,
+        profile,
+        allowed,
+        factories,
+        wasi,
+        output,
+        LvglAdapters {
+            core: Some(lvgl),
+            label: Some(label),
+            event: Some(event),
+            consumer: Some(consumer_id),
         },
     )
 }
@@ -1112,17 +1165,11 @@ fn load_numeric_environment_internal(
                 if status != 0 {
                     let mut failure =
                         numeric_error(format!("{id:?}: {init_name} returned {status}"));
-                    if app_function.is_some() {
-                        if let Err(message) = close_event_checked(&mut store) {
-                            failure.cleanup_errors.push(message);
-                            failure.exit_code = store.data().exit_code;
-                            close_wasi_slot(&mut store, wasi_slot);
-                            return Err(failure);
-                        }
-                        store.data_mut().event = None;
-                    }
-                    if is_label_consumer {
-                        store.data_mut().label = None;
+                    if is_label_consumer && let Err(message) = close_consumer_adapters(&mut store) {
+                        failure.cleanup_errors.push(message);
+                        failure.exit_code = store.data().exit_code;
+                        close_wasi_slot(&mut store, wasi_slot);
+                        return Err(failure);
                     }
                     close_wasi_slot(&mut store, wasi_slot);
                     rollback(&mut store, &mut initialized, &mut failure);
@@ -1133,6 +1180,7 @@ fn load_numeric_environment_internal(
                     close,
                     close_name,
                     wasi_slot,
+                    #[cfg(test)]
                     is_app: app_function.is_some(),
                     is_label_consumer,
                     #[cfg(test)]
@@ -1164,8 +1212,8 @@ fn load_numeric_environment_internal(
         }),
         Err(mut failure) => {
             if rollback_permitted && store.data().failure.is_none() {
-                store.data_mut().event = None;
                 if !initialized.iter().any(|module| module.is_label_consumer) {
+                    store.data_mut().event = None;
                     store.data_mut().label = None;
                 }
                 close_wasi_slot(&mut store, pending_wasi_slot);

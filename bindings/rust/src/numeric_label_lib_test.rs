@@ -13,8 +13,8 @@ use serde_json::Value;
 use std::sync::{Arc, Mutex};
 
 #[derive(Clone, Default)]
-struct Trace(Arc<Mutex<Vec<String>>>);
-struct Factory(Trace);
+pub(super) struct Trace(pub(super) Arc<Mutex<Vec<String>>>);
+pub(super) struct Factory(pub(super) Trace);
 struct Host(Trace, String);
 impl NumericHostFactory for Factory {
     fn create(
@@ -40,14 +40,14 @@ impl NumericHostInstance for Host {
         Ok(())
     }
 }
-struct NoOutput;
+pub(super) struct NoOutput;
 impl NumericWasiOutput for NoOutput {
     fn write(&mut self, _: &str, _: u32, _: &[u8], _: NumericEnvironmentId) -> Result<(), String> {
         Err("unexpected WASI output".into())
     }
 }
 
-fn graph(case: &Value, core: &[u8], app_override: Option<Vec<u8>>) -> Fixture {
+pub(super) fn graph(case: &Value, core: &[u8], app_override: Option<Vec<u8>>) -> Fixture {
     let read = |id: &str| {
         let item = case["input"]["modules"]
             .as_array()
@@ -80,6 +80,17 @@ fn graph(case: &Value, core: &[u8], app_override: Option<Vec<u8>>) -> Fixture {
     let app_bytes = app_override.unwrap_or_else(|| read("app"));
     let cf = inspect_wasm_facts(&core_bytes).unwrap();
     let mf = inspect_wasm_facts(&middle_bytes).unwrap();
+    let middle_features: Vec<_> = case["input"]["modules"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|module| module["manifest"]["id"] == "middle")
+        .unwrap()["manifest"]["target"]["features"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|feature| feature.as_str().unwrap())
+        .collect();
     let af = inspect_wasm_facts(&app_bytes).unwrap();
     let wasi = requirement(&cf, "wasi_snapshot_preview1", "host.wasi", "wasi");
     let lvw = requirement(&cf, "lvw", "host.lvw", "lvw");
@@ -122,7 +133,7 @@ fn graph(case: &Value, core: &[u8], app_override: Option<Vec<u8>>) -> Fixture {
                 "middle",
                 ModuleRole::Lib,
                 &mf,
-                &[],
+                &middle_features,
                 vec![requirement(&mf, "lvcore", "lvcore", "lvcore"), label, trace],
             ),
             middle_bytes,

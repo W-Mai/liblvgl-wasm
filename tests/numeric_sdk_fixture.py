@@ -214,6 +214,8 @@ def run_library_consumer(package, project, graph, environment, fixture, package_
     (consumer / "src/fixtures/host-sdk").mkdir(parents=True)
     shutil.copyfile(ROOT / "tests/fixtures/host-sdk" / fixture, consumer / "src/fixtures/host-sdk" / fixture)
     (consumer / "src/main.rs").write_text('#[path = "fixtures/host-sdk/' + fixture + '"]\nmod consumer;\nfn main() { consumer::main(); }\n')
+    if fixture == "event-lib-runtime.rs":
+        shutil.copyfile(ROOT / "tests/fixtures/host-sdk/event-lib-preflight.rs", consumer / "src/fixtures/host-sdk/event-lib-preflight.rs")
     install(consumer / "src")
     (consumer / "Cargo.toml").write_text('[package]\nname=' + json.dumps(package_name) + '\n'
         'version="0.1.0"\nedition="2024"\n[dependencies]\nliblvgl-wasm-host={path='
@@ -230,5 +232,5 @@ def run_label_consumer(package, project, graph, environment):
     run_library_consumer(package, project, graph, environment, "label-consumer.rs", "lvw-label-consumer")
 
 
-def run_event_consumer_preflight(package, project, graph, environment):
-    run_library_consumer(package, project, graph, environment, "event-lib-preflight.rs", "lvw-event-lib-preflight")
+def run_event_library_consumer(package, project, graph, environment):
+    run_library_consumer(package, project, graph, environment, "event-lib-runtime.rs", "lvw-event-library-consumer")

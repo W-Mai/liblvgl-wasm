@@ -1,4 +1,4 @@
-//! Private clicked-event adapter for an isolated LVGL core and application.
+//! Private clicked-event adapter for an isolated LVGL core and consumer.
 
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
@@ -43,11 +43,11 @@ pub(crate) struct EventState {
     send: TypedFunc<(i32, i32, i32), i32>,
 }
 
-/// Bind the selected core and app. A zero clicked code is a recoverable status failure.
+/// Bind the selected core and consumer. A zero clicked code is a recoverable status failure.
 pub(crate) fn bind_event(
     store: &mut Store<HostState>,
     core: Instance,
-    app: Instance,
+    consumer: Instance,
     options: &NumericEventOptions,
 ) -> Result<Option<EventState>, String> {
     let clicked = core
@@ -68,7 +68,7 @@ pub(crate) fn bind_event(
     let send = core
         .get_typed_func::<(i32, i32, i32), i32>(&mut *store, "lv_obj_send_event")
         .map_err(|error| error.to_string())?;
-    let dispatch = app
+    let dispatch = consumer
         .get_typed_func::<(i32, i32), ()>(&mut *store, "app_event_dispatch")
         .map_err(|error| error.to_string())?;
     let clicked = guest_call(store, &clicked, ())? as u32;

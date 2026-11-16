@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+- Run synchronous clicked events in a selected Rust library consumer with its own callback table and lifecycle.
 - Validate trusted library event consumers in the Rust host without instantiation.
 - Run synchronous clicked events in a trusted library consumer with its own callback table and lifecycle.
 - Bound TypeScript event registration and reject reentrant event validation and removal.
