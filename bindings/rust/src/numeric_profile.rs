@@ -16,7 +16,7 @@ use crate::numeric_event::{EVENT_DISPATCH, NumericEventOptions, event_signature}
 use crate::numeric_label::{NumericLabelOptions, label_signature};
 use crate::numeric_lvgl::{LVGL_LIFECYCLE, NumericLvglCoreOptions, bridge_signature};
 use crate::numeric_wasi::{NumericWasiOptions, NumericWasiService};
-use crate::wasm_facts::{WasmExternal, WasmValueType};
+use crate::wasm_facts::{WasmExternal, WasmReferenceType, WasmValueType};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum NumericResult {
@@ -295,7 +295,7 @@ fn check_profile<'a>(
     if event.is_some_and(|event| !event.valid() || label.is_none() || lvgl.is_none()) {
         return Err(fail("invalid LVGL event options"));
     }
-    if label_consumer.is_some_and(|id| !valid_name(id) || label.is_none() || event.is_some()) {
+    if label_consumer.is_some_and(|id| !valid_name(id) || label.is_none()) {
         return Err(fail("invalid LVGL label consumer"));
     }
     if modules.len() != prepared.modules.len()
@@ -319,6 +319,7 @@ fn check_profile<'a>(
         }
     }
     let mut app = None;
+    let mut dispatcher_exports = HashSet::new();
     let mut found_lvgl = false;
     let mut memory_total = 0u64;
     let mut table_total = 0u64;
@@ -353,19 +354,47 @@ fn check_profile<'a>(
                     return Err(fail("label app must depend on its LVGL core"));
                 }
             }
-            if event.is_some() {
-                use WasmValueType::I32;
-                entrypoint(module, EVENT_DISPATCH, &[I32, I32], &[], true)?;
-                if module.facts.tables.len() != 1 || module.facts.tables[0].imported {
-                    return Err(fail("LVGL event app requires its own table"));
+        }
+        if event.is_some()
+            && label_consumer.map_or(module.manifest.role == ModuleRole::App, |owner| owner == id)
+        {
+            use WasmValueType::I32;
+            entrypoint(module, EVENT_DISPATCH, &[I32, I32], &[], true)?;
+            let index = module
+                .facts
+                .exports
+                .iter()
+                .find_map(|item| match item.external {
+                    WasmExternal::Function { index, .. } if item.name == EVENT_DISPATCH => {
+                        Some(index)
+                    }
+                    _ => None,
+                })
+                .ok_or_else(|| fail("LVGL event dispatcher is unavailable"))?;
+            dispatcher_exports.extend(module.facts.exports.iter().filter_map(|item| {
+                match item.external {
+                    WasmExternal::Function { index: other, .. } if index == other => {
+                        Some(item.name.as_str())
+                    }
+                    _ => None,
                 }
-                if contract
-                    .exports
-                    .iter()
-                    .any(|item| item.name == EVENT_DISPATCH)
-                {
-                    return Err(fail("LVGL event dispatcher cannot be a business export"));
-                }
+            }));
+            if module.facts.tables.len() != 1 || module.facts.tables[0].imported {
+                return Err(fail(if module.manifest.role == ModuleRole::App {
+                    "LVGL event app requires its own table"
+                } else {
+                    "LVGL event consumer requires its own table"
+                }));
+            }
+            if module.facts.tables[0].ty.element != WasmReferenceType::FuncRef {
+                return Err(fail("LVGL event consumer requires a function table"));
+            }
+            if contract
+                .exports
+                .iter()
+                .any(|item| dispatcher_exports.contains(item.name.as_str()))
+            {
+                return Err(fail("LVGL event dispatcher cannot be a business export"));
             }
         }
         if module.facts.start.is_some() {
@@ -567,6 +596,9 @@ fn check_profile<'a>(
             return Err(fail("LVGL label imports cannot be re-exported"));
         }
     }
+    if event.is_some() && dispatcher_exports.is_empty() {
+        return Err(fail("LVGL event dispatcher is unavailable"));
+    }
     if memory_total > limits.max_total_memory_pages || table_total > limits.max_total_table_elements
     {
         return Err(fail("numeric environment resource limit exceeded"));
@@ -700,10 +732,13 @@ fn check_profile<'a>(
                     }
                     continue;
                 }
+                if event.is_some()
+                    && requirement.provider == consumer
+                    && dispatcher_exports.contains(item.provider_export.as_str())
+                {
+                    return Err(fail("LVGL event dispatcher cannot be imported"));
+                }
                 if reserved(&item.provider_export)
-                    || event.is_some()
-                        && requirement.provider == app
-                        && item.provider_export == EVENT_DISPATCH
                     || lvgl.is_some_and(|lvgl| {
                         requirement.provider == lvgl.module
                             && LVGL_LIFECYCLE.contains(&item.provider_export.as_str())
@@ -914,6 +949,34 @@ pub fn preflight_lvgl_event_graph(
         Some(lvgl),
         Some(label),
         Some(event),
+    )?
+    .report)
+}
+
+/// Validate and compile an event graph for one trusted consumer without running guest code. The report does not authorize loading.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "The trusted consumer and providers are configured explicitly."
+)]
+pub fn preflight_lvgl_event_graph_for_consumer(
+    input: &ModuleManifestInput<'_>,
+    profile: &NumericProfile,
+    allowed: &[&str],
+    lvgl: &NumericLvglCoreOptions,
+    wasi: Option<&NumericWasiOptions>,
+    label: &NumericLabelOptions,
+    event: &NumericEventOptions,
+    consumer_id: &str,
+) -> Result<NumericPreflightReport> {
+    Ok(prepare_numeric_graph_with_consumer(
+        input,
+        profile,
+        allowed,
+        wasi,
+        Some(lvgl),
+        Some(label),
+        Some(event),
+        Some(consumer_id),
     )?
     .report)
 }

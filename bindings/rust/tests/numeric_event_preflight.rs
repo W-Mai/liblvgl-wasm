@@ -108,7 +108,7 @@ fn shared_real_and_synthetic_event_graph_preflight() {
                     "missing-dispatch" => "missing app_event_dispatch",
                     "bad-dispatch" => "invalid app_event_dispatch signature",
                     "imported-dispatch" => "app_event_dispatch must be an owned function",
-                    "dispatch-alias" => "numeric export contract differs",
+                    "dispatch-alias" => "LVGL event dispatcher cannot be a business export",
                     "missing-table" | "imported-table" | "multiple-tables" => {
                         "LVGL event app requires its own table"
                     }

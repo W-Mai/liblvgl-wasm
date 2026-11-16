@@ -209,13 +209,13 @@ def run_chain_consumer(package, project, graph, environment):
                    env=environment, check=True)
 
 
-def run_label_consumer(package, project, graph, environment):
-    consumer = Path(project) / "rust-label-consumer"
+def run_library_consumer(package, project, graph, environment, fixture, package_name):
+    consumer = Path(project) / package_name
     (consumer / "src/fixtures/host-sdk").mkdir(parents=True)
-    shutil.copyfile(ROOT / "tests/fixtures/host-sdk/label-consumer.rs", consumer / "src/fixtures/host-sdk/label-consumer.rs")
-    (consumer / "src/main.rs").write_text('#[path = "fixtures/host-sdk/label-consumer.rs"]\nmod label;\nfn main() { label::main(); }\n')
+    shutil.copyfile(ROOT / "tests/fixtures/host-sdk" / fixture, consumer / "src/fixtures/host-sdk" / fixture)
+    (consumer / "src/main.rs").write_text('#[path = "fixtures/host-sdk/' + fixture + '"]\nmod consumer;\nfn main() { consumer::main(); }\n')
     install(consumer / "src")
-    (consumer / "Cargo.toml").write_text('[package]\nname="lvw-label-consumer"\n'
+    (consumer / "Cargo.toml").write_text('[package]\nname=' + json.dumps(package_name) + '\n'
         'version="0.1.0"\nedition="2024"\n[dependencies]\nliblvgl-wasm-host={path='
         + json.dumps(str(Path(package) / "rust")) + '}\nserde_json="=1.0.151"\nsha2="=0.10.9"\n')
     shutil.copyfile(Path(package) / "rust/Cargo.lock", consumer / "Cargo.lock")
@@ -224,3 +224,11 @@ def run_label_consumer(package, project, graph, environment):
                    env=environment, stdout=subprocess.DEVNULL, check=True)
     subprocess.run(["cargo", "run", "--locked", "--offline", "--manifest-path", str(manifest), "--", str(graph)],
                    env=environment, check=True)
+
+
+def run_label_consumer(package, project, graph, environment):
+    run_library_consumer(package, project, graph, environment, "label-consumer.rs", "lvw-label-consumer")
+
+
+def run_event_consumer_preflight(package, project, graph, environment):
+    run_library_consumer(package, project, graph, environment, "event-lib-preflight.rs", "lvw-event-lib-preflight")

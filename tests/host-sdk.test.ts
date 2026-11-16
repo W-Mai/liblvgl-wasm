@@ -116,3 +116,8 @@ test("exported host packages resolve types and bindings outside the checkout", a
   if (!sdkReady) throw new Error("host SDK setup did not complete");
   await runConsumer(["--label-consumer-only", output], 280_000);
 }, 300_000);
+
+(Bun.env.LVW_TEST_BUILD ? test.skip : test)("relocated host packages preflight the event library consumer", async () => {
+  if (!sdkReady) throw new Error("host SDK setup did not complete");
+  await runConsumer(["--event-consumer-preflight-only", output], 280_000);
+}, 300_000);

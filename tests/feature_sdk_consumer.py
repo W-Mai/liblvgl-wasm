@@ -20,7 +20,7 @@ from lvw import file_inventory
 from host_sdk import verify_feature_validator, verify_rust_validator
 from feature_sdk_browser import run_browser
 from bounded_core import MAX_API_BYTES, MAX_CORE_BYTES, check_proof, read
-from numeric_sdk_fixture import install as install_numeric_fixture, prepare as prepare_numeric_fixture, prepare_chain, prepare_event, prepare_event_lib, prepare_label, prepare_label_lib, prepare_lvgl, prepare_wasi, run_chain_consumer, run_event_consumer, run_label_consumer
+from numeric_sdk_fixture import install as install_numeric_fixture, prepare as prepare_numeric_fixture, prepare_chain, prepare_event, prepare_event_lib, prepare_label, prepare_label_lib, prepare_lvgl, prepare_wasi, run_chain_consumer, run_event_consumer, run_event_consumer_preflight, run_label_consumer
 
 
 def run(*command, cwd=None, env=None):
@@ -385,6 +385,7 @@ def check(sdk, ndk, chromium=None):
             run_event_consumer(moved, project, event_graph, rust_env)
             run_chain_consumer(moved, project, chain_graph, rust_env)
             run_label_consumer(moved, project, label_lib_graph, rust_env)
+            run_event_consumer_preflight(moved, project, event_lib_graph, rust_env)
             (project / "package.json").write_text('{"type":"module"}\n')
             (project / "node_modules").mkdir()
             (project / "node_modules/liblvgl-wasm").symlink_to(typescript, target_is_directory=True)
