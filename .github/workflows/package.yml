@@ -75,6 +75,7 @@ jobs:
           python3 -B toolchains/lvw.py export-package --cache "$RUNNER_TEMP/lvw-tools" \
             --output target/feature-package --with-validator --json
           python3 -B toolchains/lvw.py verify-package --package target/feature-package --json
+          ./scripts/build-bounded-core.sh
           python3 -B tests/feature_sdk_consumer.py target/feature-package/host-sdk \
             --ndk target/feature-package/ndk --chromium "$LVW_TEST_BROWSER"
       - name: Archive package

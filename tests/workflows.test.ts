@@ -57,6 +57,24 @@ test("package publication requires the same-commit default quality workflow", ()
   }
 });
 
+test("optional package acceptance prepares its bounded core after export", () => {
+  const steps = release.jobs.package.steps.filter((step: any) =>
+    step.run?.includes("tests/feature_sdk_consumer.py"));
+  expect(steps).toHaveLength(1);
+  const step = steps[0];
+  const script = step.run as string;
+  const exported = script.indexOf("--with-validator");
+  const verified = script.indexOf("verify-package");
+  const bounded = script.indexOf("./scripts/build-bounded-core.sh");
+  const exercised = script.indexOf("tests/feature_sdk_consumer.py");
+  expect(exported).toBeGreaterThanOrEqual(0);
+  expect(verified).toBeGreaterThan(exported);
+  expect(bounded).toBeGreaterThan(verified);
+  expect(exercised).toBeGreaterThan(bounded);
+  expect(step.if).toBeUndefined();
+  expect(step["continue-on-error"]).toBeUndefined();
+});
+
 test("legacy compatibility checks require an explicit workflow input", () => {
   for (const event of ["workflow_call", "workflow_dispatch"]) {
     expect(quality.on[event].inputs.legacy_checks.type).toBe("boolean");
