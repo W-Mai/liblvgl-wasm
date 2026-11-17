@@ -108,7 +108,7 @@ def run_rust(package, work):
         '[dependencies]\nliblvgl-wasm-host = { path = '
         + json.dumps(str(host)) + ' }\n'
     )
-    environment = {**os.environ, "CARGO_TARGET_DIR": str(work / "cargo-target")}
+    environment = {**os.environ, "CARGO_TARGET_DIR": os.environ.get("CARGO_TARGET_DIR") or str(work / "cargo-target")}
     environment.pop("LVW_RUST_BINDINGS", None)
     original_lock = host / "Cargo.lock"
     consumer_lock = project / "Cargo.lock"
