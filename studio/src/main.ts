@@ -1333,7 +1333,7 @@ for (const button of workspaceButtons) button.addEventListener("click", () => {
   for (const control of workspaceButtons) control.setAttribute("aria-pressed", String(control === button));
   for (const selector of ["#run-button", "#reset-button"]) element<HTMLButtonElement>(selector).disabled = false;
   updateWorkspaceLabels();
-  void (modulesActive() ? moduleWorkspace.run() : run());
+  void (modulesActive() ? moduleWorkspace.open() : run());
 });
 updateWorkspaceLabels();
 void moduleWorkspace.run();

@@ -38,12 +38,15 @@ export function createModuleWorkspace(options: {
   source(file: WorkspaceFile, siblings: WorkspaceFile[]): void;
 }) {
   let project: Project | undefined, report: Report | undefined, state: ModuleState | undefined;
+  let profile: string | null = null, reason = "", hasFrame = false;
   let selected = "middle", diagnostic = "", executable = false, busy = false, acting = false, revision = 0;
   const control = new ModuleController((output) => {
     if (!options.active()) return;
-    if (output.type === "frame") { options.frame(output); return; }
+    if (output.type === "frame") {
+      hasFrame = true; document.body.dataset.moduleDisplay = "frame"; options.frame(output); return;
+    }
     if (output.type === "module-inspected") {
-      report = output.report; executable = output.executable;
+      report = output.report; executable = output.executable; profile = output.profile; reason = output.reason ?? "";
       render();
     } else if (output.type === "module-ready" || output.type === "module-state" || output.type === "module-closed") {
       state = output.snapshot;
@@ -53,11 +56,17 @@ export function createModuleWorkspace(options: {
 
   function fail(message: string) {
     if (diagnostic !== message) options.log(message, "error");
-    diagnostic = message; state = undefined; executable = false;
+    diagnostic = message; state = undefined; hasFrame = false;
     options.status("error", t("status.error")); render();
   }
   function renderState() {
     const ready = state?.state === "ready" && !busy && !acting;
+    document.body.dataset.moduleDisplay = project?.local && !hasFrame ? "none" : "frame";
+    get("module-sample-controls").hidden = !!project?.local;
+    get("module-call").hidden = !project?.local;
+    get<HTMLInputElement>("module-argument").disabled = !ready;
+    get<HTMLButtonElement>("module-invoke").disabled = !ready;
+    get("module-result").textContent = state?.result != null ? String(state.result) : "—";
     get("module-default").setAttribute("aria-pressed", String(project !== undefined && !project.local));
     get("module-upload").setAttribute("aria-pressed", String(!!project?.local));
     get<HTMLButtonElement>("module-event").disabled = !ready;
@@ -65,10 +74,13 @@ export function createModuleWorkspace(options: {
     subscription.disabled = !ready; subscription.checked = state?.subscribed ?? false;
     get("module-count").textContent = state ? String(state.count) : "—";
     get("module-nested").textContent = state?.nested.length ? state.nested.join(" → ") : "—";
-    get("module-trace").textContent = state?.trace.length ? state.trace.map(({ module, code }) => `${module} · ${code === 10 || code === 20 ? "init" : "close"} (${code})`).join("\n") : "—";
-    get("module-project-status").textContent = diagnostic || (busy ? t("status.loading") : !project ? "—" : `${project.local ? project.name : t("modules.example")} · ${state?.state === "ready" ? t("status.running") : state?.state === "closed" ? t("status.stopped") : report ? executable ? text("Verified", "已核验") : text("Inspect only", "仅检查") : text("Not inspected", "尚未检查")}`);
-    get<HTMLButtonElement>("run-button").disabled = !!project?.local && !executable;
-    get<HTMLButtonElement>("reset-button").disabled = !!project?.local && !executable;
+    get("module-trace").textContent = state?.trace.length ? state.trace.map(({ module, code }) => project?.local
+      ? `${module} · ${code}` : `${module} · ${code === 10 || code === 20 ? "init" : "close"} (${code})`).join("\n") : "—";
+    get("module-project-status").textContent = diagnostic || reason || (busy ? t("status.loading") : !project ? "—" : [project.local ? project.name : t("modules.example"), profile,
+      state?.state === "ready" ? t("status.running") : state?.state === "closed" ? t("status.stopped") : executable ? text("Ready to run", "可以运行") : text("Not runnable", "不可运行")].filter(Boolean).join(" · "));
+    const blocked = busy || acting || !project || !executable;
+    get<HTMLButtonElement>("run-button").disabled = blocked;
+    get<HTMLButtonElement>("reset-button").disabled = blocked;
   }
   function render() {
     if (!options.active()) return;
@@ -121,15 +133,15 @@ export function createModuleWorkspace(options: {
     return { name: t("modules.example"), local: false, input, sources: ["source/events.c", "source/app.c", "source/build.sh", "project.json"].map((path) => ({ name: path.split("/").at(-1)!, path: assetBase + path })) };
   }
   async function start(replace?: () => Promise<Project>, inspect = false) {
-    const ticket = ++revision; busy = true; acting = false; diagnostic = "";
+    const ticket = ++revision; busy = true; acting = false; diagnostic = ""; renderState();
     try {
       await control.close(); if (ticket !== revision || !options.active()) return;
       if (replace) project = undefined;
-      report = undefined; state = undefined; executable = false;
+      report = undefined; state = undefined; executable = false; hasFrame = false; profile = null; reason = "";
       options.clear(); render(); options.status("starting", t("status.loading"));
       const next = replace ? await replace() : project ?? await builtIn();
       if (ticket !== revision || !options.active()) return;
-      project = next; await control.start(next.input, ...options.dimensions(), inspect ? "inspect" : "run");
+      project = next; renderState(); await control.start(next.input, ...options.dimensions(), inspect ? "inspect" : "run");
       if (ticket !== revision || !options.active()) return;
       options.status(inspect ? "stopped" : "running", inspect ? t("modules.preflight") : t("status.running"));
     } catch (error) { if (ticket === revision && options.active()) fail(error instanceof Error ? error.message : String(error)); }
@@ -141,17 +153,22 @@ export function createModuleWorkspace(options: {
     catch (error) { if (ticket === revision && options.active()) fail(String(error)); }
     finally { if (ticket === revision) { busy = false; render(); } }
   }
-  async function act(action: "event" | "subscribe" | "unsubscribe") {
+  async function act(action: "event" | "subscribe" | "unsubscribe" | "invoke", value?: number) {
     const ticket = revision; acting = true; renderState();
-    try { await control.action(action); }
+    try { await control.action(action, value); }
     catch (error) { if (ticket === revision && options.active()) fail(error instanceof Error ? error.message : String(error)); }
     finally { if (ticket === revision) { acting = false; renderState(); } }
   }
   const files = get<HTMLInputElement>("module-files");
+  get<HTMLFormElement>("module-call").onsubmit = (event) => {
+    event.preventDefault();
+    const input = get<HTMLInputElement>("module-argument");
+    if (project?.local && state?.state === "ready" && !busy && !acting && input.reportValidity()) void act("invoke", input.valueAsNumber);
+  };
   get("module-upload").onclick = () => files.click();
   files.onchange = () => { const selectedFiles = Array.from(files.files ?? []); files.value = ""; if (selectedFiles.length) void start(() => readLocal(selectedFiles), true); };
   get("module-default").onclick = () => { void start(builtIn); };
   get("module-event").onclick = () => { void act("event"); };
   get<HTMLInputElement>("module-subscription").onchange = (event) => { void act((event.currentTarget as HTMLInputElement).checked ? "subscribe" : "unsubscribe"); };
-  return { run: () => start(undefined, !!project?.local && !executable), stop, render, activeRun: () => busy || state?.state === "ready" };
+  return { run: () => start(), open: () => start(undefined, !!project?.local), stop, render, activeRun: () => state?.state === "ready" };
 }

@@ -149,6 +149,10 @@ body:not([data-workspace="modules"]) [data-workspace-only="modules"] { display: 
 .module-trace { white-space: pre-line; }
 .module-event-strip { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 18px; padding: 12px clamp(16px, 2.3vw, 30px); border-top: 1px solid var(--line); background: var(--panel); }
 .module-event-strip .editor-action:disabled { opacity: .5; cursor: default; }
+.module-event-strip[hidden],
+body[data-workspace="modules"][data-module-display="none"] .preview-panel > :is(.stage, .viewport-toolbar) { display: none; }
+#module-call label, #module-argument { font: 12px var(--mono); }
+#module-argument { width: 14ch; padding: 6px; border: 1px solid var(--line-strong); color: var(--ink); background: var(--field); }
 .module-count { display: inline-flex; gap: 6px; color: var(--muted); font: 10px var(--mono); }
 .module-count output { color: var(--ink); }
 body.zen-editor[data-workspace="modules"] .toolchain-panel { overflow: auto; }

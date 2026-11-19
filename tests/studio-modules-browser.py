@@ -79,13 +79,13 @@ try {
       manifest, bytes: new Uint8Array(await (await fetch("/" + name + "/" + manifest.artifact.path)).arrayBuffer())
     }))) };
   };
-  const custom = await upload("custom");
+  const custom = await upload("custom"), headless = await upload("headless");
   const customApp = custom.modules.find(item => item.manifest.role === "app").manifest;
   check(customApp.id === "meter" && customApp.artifact.sha256 !== input.modules.find(item =>
     item.manifest.role === "app").manifest.artifact.sha256, "Custom C app reused the sample's identity");
   for (const [graph, expectedProfile, codes] of [
     [custom, "lvgl-event-v1", [10, 30]],
-    [await upload("headless"), "numeric-v1", [30]]
+    [headless, "numeric-v1", [30]]
   ]) {
     outputs[0].length = 0;
     await controllers[0].start(graph, 120, 48, "inspect");
@@ -139,10 +139,11 @@ try {
   check((await controllers[0].action("event")).count === 2, "The latest restart did not create a fresh environment");
   await controllers[0].close();
   check(errors.length === 0, errors.join("\n"));
+  const uploadedWorkspace = await (await import("/studio-upload-test.js")).checkStudioUpload();
   await fetch(ENDPOINT, { method: "POST", body: JSON.stringify({
-    ok: true, preflight: true, opaqueSandbox: true, realCEvents: true, frameChanged: true,
+    ok: true, uploadedWorkspace, preflight: true, opaqueSandbox: true, realCEvents: true, frameChanged: true,
     independentEnvironments: true, subscriptions: true, reverseClose: true,
-    customCApp: customApp.artifact.sha256, headlessApp: true, unsupportedHostRejected: true,
+    customCApp: customApp.artifact.sha256, headlessApp: headless.modules[0].manifest.artifact.sha256, unsupportedHostRejected: true,
     wrongDigestRejected: true, resolutionRestart: true, latestRestartWins: true, errors, browser: navigator.userAgent,
     modules: project.modules.map(item => ({ id: item.manifest.id, sha256: item.manifest.artifact.sha256 }))
   }) });
@@ -211,6 +212,13 @@ def check(chromium):
         server.result = None
         server.endpoint = endpoint
         server.routes = {"/studio/": (html, "text/html; charset=utf-8")}
+        for route, source in {
+                "/studio/index.html": ROOT / "studio/index.html",
+                "/studio/style.css": ROOT / "studio/style.css",
+                "/studio/favicon.svg": ROOT / "studio/favicon.svg",
+                "/target/studio/main.js": ROOT / "target/studio/main.js",
+                "/studio-upload-test.js": ROOT / "tests/studio-modules-ui.js"}.items():
+            server.routes[route] = (source, mimetypes.guess_type(route)[0])
         for name in metadata["runtime_files"]:
             server.routes["/target/studio/modules/" + name] = (ASSETS / name, mimetypes.guess_type(name)[0] or "application/octet-stream")
         for name in ("custom", "headless"):

@@ -152,12 +152,19 @@
             <div class="stage-hint" data-workspace-only="application" data-i18n="studio.pointerHint">Click or drag to send pointer input</div>
           </div>
 
-          <section class="module-event-strip" data-workspace-only="modules" aria-label="Event controls" data-i18n-aria-label="modules.eventControls">
+          <section id="module-sample-controls" class="module-event-strip" data-workspace-only="modules" aria-label="Event controls" data-i18n-aria-label="modules.eventControls">
             <button id="module-event" class="editor-action" type="button" disabled data-i18n="modules.sendEvent">Send CLICKED</button>
             <label class="editor-native-toggle"><input id="module-subscription" type="checkbox" role="switch" disabled><span class="editor-native-switch" aria-hidden="true"></span><span data-i18n="modules.subscription">Subscription</span></label>
             <span class="module-count"><span data-i18n="modules.count">Count</span> <output id="module-count">—</output></span>
             <span class="module-count"><span data-i18n="modules.nested">Callback order</span> <output id="module-nested">—</output></span>
           </section>
+
+          <form id="module-call" class="module-event-strip" data-workspace-only="modules" hidden>
+            <label for="module-argument"><code>app_run(i32)</code></label>
+            <input id="module-argument" type="number" value="0" step="1" min="-2147483648" max="2147483647" required>
+            <button id="module-invoke" class="editor-action" type="submit" disabled data-i18n="modules.invoke">Call</button>
+            <span class="module-count"><span data-i18n="modules.result">Return value</span> <output id="module-result" for="module-argument">—</output></span>
+          </form>
 
           <section class="console-panel" aria-labelledby="console-title">
             <div class="console-heading"><h3 id="console-title"><span class="console-chevron">&gt;_</span> <span data-i18n="studio.runtimeConsole">Runtime console</span></h3><button id="clear-log" type="button" data-i18n="studio.clear">Clear</button></div>
