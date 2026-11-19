@@ -8,6 +8,8 @@
 
 ## Build
 
+Studio module assets include the feature validator helper and require Rust 1.92.0 with the Wasm target; its Cargo dependencies use the checked-in lockfile.
+
 Requires CMake 3.25+, Ninja, Python 3.9+, Bun, Rust 1.92+ with the `wasm32-unknown-unknown` target, and the complete wasi-sdk 34 distribution for macOS or Linux. The quality checks for the feature validator helper additionally use Rust 1.92.0 and its `wasm32-unknown-unknown` target. API generation loads the SDK's bundled libclang and uses Python's standard library; keep the SDK's libraries and sysroot together. Set `WASI_SDK_PATH` to the SDK root or add its `bin` directory to `PATH`. Existing builds can reuse the SDK path recorded in `target/wasm/CMakeCache.txt`. CMake downloads the official LVGL 9.6.0 lite and FreeType 2.14.3 source archives and verifies their pinned SHA-256 values; set `LVGL_SOURCE_DIR` to use an existing LVGL source tree.
 
 The core and C demo require standard WebAssembly exception handling for FreeType's font validation, ThorVG's rasterizer, and the C++ runtime. The Rust host enables this feature in Wasmtime. The build uses the SDK's exception-enabled C++ libraries, `setjmp`, and `unwind`. FreeType uses LVGL's memory and resource filesystem, with host environment configuration and external zlib, bzip2, PNG, HarfBuzz, and Brotli dependencies disabled. Its bundled zlib remains enabled. WASI environment queries return an empty environment in both hosts; `proc_exit` fails the current instance without exiting the host process. WASI realtime and monotonic clocks use host time; LVGL time advances through the explicit `step` interval.
@@ -427,6 +429,8 @@ The generator's Wasm reader records every imported and defined memory with its i
 
 ## Quality checks
 
+Studio module checks launch an installed Chromium or Google Chrome. Set LVW_TEST_BROWSER to select its executable.
+
 Native ABI checks require Zig 0.15.2. Run `python3 -B toolchains/lvw.py prepare --with-zig`, or set `LVW_ZIG` to an existing executable before running the quality command. Source-package checks also require Git.
 
 Install `wasm-tools`, `rustfmt`, and `clippy` in addition to the build prerequisites, then run:
@@ -446,6 +450,10 @@ The GitHub Actions quality workflow runs the same command on Ubuntu 24.04 with B
 Host SDK checks generate packages for the core and a separately linked native reactor. External consumers check both TypeScript resolution modes, browser bundles, exact identities, colors, wide integers, click callbacks, and shutdown. Rust build-script checks cover bundled input selection, missing-file errors, and explicit overrides.
 
 ## LVGL Studio
+
+The module runner builds separate liblvgl.wasm, events.wasm and app.wasm artifacts under target/studio/modules/. The C library owns its callback table and calls the original LVGL label and event APIs; the app imports its numeric business interface. The browser controller supports graph inspection, native frame output, event delivery, subscription removal/restoration and reverse close. Preflight reports retain not-run runtime checks. Arbitrary replacement bytes can be inspected but cannot acquire the built-in preset's execution authorization.
+
+After a core build, regenerate these assets with bun run build:studio-modules. The output includes controller.js, worker.js, project.json, the actual C sources, verification identity and validator attribution. The quality command exercises the real C modules in an opaque browser worker, including independent environments, changed native pixels, C callback nesting, subscription lifetime, close order and resolution restart.
 
 Start a static server from the repository root after building:
 

@@ -1,0 +1,8 @@
+{
+  "extends": "./tsconfig.bindings.json",
+  "compilerOptions": {
+    "lib": ["ES2022", "WebWorker"]
+  },
+  "files": ["studio/modules/worker.ts"],
+  "include": []
+}

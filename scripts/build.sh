@@ -15,3 +15,4 @@ bun run build:studio
 bun run build:apps
 bun run build:ts-app
 bun run build:ts-samples
+bun run build:studio-modules

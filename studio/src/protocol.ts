@@ -1,4 +1,5 @@
 import type { CoreReport } from "./core.ts";
+import type { ModuleRun, ModuleCommand, ModuleOutput } from "../modules/protocol.ts";
 
 export type AppSource = { kind: "js"; source: string } | { kind: "wasm"; bytes: ArrayBuffer };
 
@@ -26,7 +27,8 @@ export interface LvglAppRun {
 }
 
 export type RunnerInput =
-  | ({ type: "start" } & (FirmwareRun | LvglAppRun))
+  | ({ type: "start" } & (FirmwareRun | LvglAppRun | ModuleRun))
+  | ModuleCommand
   | { type: "pointer"; x: number; y: number; pressed: boolean }
   | { type: "resize"; width: number; height: number }
   | { type: "stop" };
@@ -53,6 +55,7 @@ export interface RunnerError {
 }
 
 export type RunnerOutput =
+  | ModuleOutput
   | { type: "ready"; mode: "lvgl-app"; width: number; height: number; core: CoreReport }
   | { type: "ready"; mode: "firmware"; width: number; height: number; firmware: FirmwareRuntimeReport }
   | { type: "frame"; width: number; height: number; frameId: number; pixels: ArrayBuffer }

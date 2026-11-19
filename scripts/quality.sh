@@ -10,6 +10,8 @@ sh "$root/validator/build.sh"
 sh "$root/validator/build-data.sh"
 sh "$root/validator/build-worker.sh"
 bun run typecheck
+bun ./node_modules/typescript/bin/tsc --project tsconfig.studio-modules.json
+python3 -B tests/studio-modules-browser.py
 
 for module in \
     target/wasm/liblvgl.wasm \

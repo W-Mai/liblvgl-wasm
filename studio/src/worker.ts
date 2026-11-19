@@ -200,6 +200,7 @@ async function runApplication(app: AppSource, api: AppApi, allowNativeApi?: bool
 }
 
 async function start(input: Extract<RunnerInput, { type: "start" }>): Promise<void> {
+  if (input.mode === "modules") throw new Error("Module projects require the module runner");
   let info;
   try {
     if (input.mode === "firmware") {

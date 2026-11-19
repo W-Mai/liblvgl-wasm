@@ -1,7 +1,8 @@
 import type { LvglAppRun, RunnerError, RunnerInput, RunnerOutput, FirmwareRun } from "./protocol.ts";
 import { assetUrl } from "./paths.ts";
+import type { ModuleRun } from "../modules/protocol.ts";
 
-export type RunConfig = LvglAppRun | FirmwareRun;
+export type RunConfig = LvglAppRun | FirmwareRun | ModuleRun;
 
 type FrameMessage =
   | { token: string; type: "frame-ready" }
@@ -20,12 +21,13 @@ export class StudioController {
     this.startTimeout = undefined;
   }
 
-  constructor(private readonly onOutput: (output: RunnerOutput) => void) {}
+  constructor(private readonly onOutput: (output: RunnerOutput) => void,
+    private readonly workerPath = "/target/studio/worker.js") {}
 
   async start(config: RunConfig): Promise<void> {
     this.stop();
     const generation = this.generation;
-    const response = await fetch(assetUrl("/target/studio/worker.js"), { cache: "no-store" });
+    const response = await fetch(assetUrl(this.workerPath), { cache: "no-store" });
     if (!response.ok) throw new Error(`Unable to load runner (${response.status})`);
     const workerSource = await response.text();
     if (generation !== this.generation) throw new DOMException("Run cancelled", "AbortError");
@@ -101,7 +103,8 @@ export class StudioController {
           boot();
         } else if (event.data.type === "runner") {
           const output = event.data.data;
-          if (output.type === "ready") {
+          if (output.type === "ready" || output.type === "module-ready"
+              || output.type === "module-inspected" && config.mode === "modules" && config.operation === "inspect") {
             this.clearStartTimeout();
             this.rejectStart = undefined;
             resolve();
@@ -129,16 +132,16 @@ export class StudioController {
     });
   }
 
-  private command(command: RunnerInput): void {
+  send(command: RunnerInput): void {
     this.frame?.contentWindow?.postMessage({ token: this.token, type: "command", command }, "*");
   }
 
   pointer(x: number, y: number, pressed: boolean): void {
-    this.command({ type: "pointer", x, y, pressed });
+    this.send({ type: "pointer", x, y, pressed });
   }
 
   resize(width: number, height: number): void {
-    this.command({ type: "resize", width, height });
+    this.send({ type: "resize", width, height });
   }
 
   stop(): void {
