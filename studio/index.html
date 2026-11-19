@@ -28,13 +28,17 @@
       }
     </script>
   </head>
-  <body>
+  <body data-workspace="modules">
     <div class="app-shell">
       <header class="topbar">
         <a class="brand" href="./" aria-label="LVGL Studio home">
           <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
           <span class="brand-name">LVGL<span>Studio</span></span>
         </a>
+        <div class="workspace-switch" role="group" aria-label="Workspace" data-i18n-aria-label="modules.workspace">
+          <button id="workspace-modules" data-workspace-choice="modules" type="button" aria-pressed="true" data-i18n="modules.modules">Modules</button>
+          <button id="workspace-application" data-workspace-choice="application" type="button" aria-pressed="false" data-i18n="modules.application">Application</button>
+        </div>
         <div class="topbar-actions">
           <div class="language-switch" role="group" aria-label="Language" data-i18n-aria-label="locale.english">
             <button type="button" data-locale-choice="en" aria-pressed="false">EN</button>
@@ -49,7 +53,19 @@
       </header>
 
       <div class="workspace">
-        <aside class="setup-panel" aria-label="Project setup" data-i18n-aria-label="studio.projectFiles">
+        <aside class="setup-panel" aria-label="Project files" data-i18n-aria-label="studio.projectFiles">
+          <section class="module-setup" data-workspace-only="modules" aria-labelledby="module-project-title">
+            <header class="panel-heading"><h1 id="module-project-title" data-i18n="modules.project">Module project</h1></header>
+            <div class="source-switch module-project-switch">
+              <button id="module-default" type="button" data-i18n="modules.example">C event sample</button>
+              <button id="module-upload" type="button" data-i18n="modules.open">Open files…</button>
+            </div>
+            <label for="module-files" class="sr-only" data-i18n="modules.chooseFiles">Choose project.json and Wasm files</label>
+            <input id="module-files" type="file" multiple accept=".wasm,.json" hidden>
+            <p id="module-project-status" role="status" class="artifact-status"></p>
+            <h2 class="module-caption" data-i18n="modules.dependencies">Dependencies</h2>
+            <ol id="module-stack" class="module-stack"></ol>
+          </section>
           <div class="panel-heading">
             <h1 data-i18n="studio.projectFiles">Project files</h1>
             <p data-i18n="studio.projectFilesHint">Choose the LVGL library, application, and resource files.</p>
@@ -133,8 +149,15 @@
               <div class="device-screen"><canvas id="screen" width="320" height="240" aria-label="Interactive LVGL application preview" data-i18n-aria-label="studio.interactivePreview"></canvas></div>
               <div class="device-bottom"><span></span><span></span><span></span><span></span><span></span><span></span></div>
             </div>
-            <div class="stage-hint" data-i18n="studio.pointerHint">Click or drag to send pointer input</div>
+            <div class="stage-hint" data-workspace-only="application" data-i18n="studio.pointerHint">Click or drag to send pointer input</div>
           </div>
+
+          <section class="module-event-strip" data-workspace-only="modules" aria-label="Event controls" data-i18n-aria-label="modules.eventControls">
+            <button id="module-event" class="editor-action" type="button" disabled data-i18n="modules.sendEvent">Send CLICKED</button>
+            <label class="editor-native-toggle"><input id="module-subscription" type="checkbox" role="switch" disabled><span class="editor-native-switch" aria-hidden="true"></span><span data-i18n="modules.subscription">Subscription</span></label>
+            <span class="module-count"><span data-i18n="modules.count">Count</span> <output id="module-count">—</output></span>
+            <span class="module-count"><span data-i18n="modules.nested">Callback order</span> <output id="module-nested">—</output></span>
+          </section>
 
           <section class="console-panel" aria-labelledby="console-title">
             <div class="console-heading"><h3 id="console-title"><span class="console-chevron">&gt;_</span> <span data-i18n="studio.runtimeConsole">Runtime console</span></h3><button id="clear-log" type="button" data-i18n="studio.clear">Clear</button></div>
@@ -142,7 +165,14 @@
           </section>
         </main>
 
-        <aside class="toolchain-panel" aria-labelledby="toolchain-title">
+        <aside class="toolchain-panel">
+          <section id="module-inspector" class="module-inspector" data-workspace-only="modules" aria-labelledby="module-inspector-title">
+            <header class="module-inspector-head"><h2 id="module-inspector-title" data-i18n="modules.inspector">Module inspector</h2><button id="module-zen" class="icon-button editor-zen" type="button" aria-label="Enter Zen mode" title="Enter Zen mode" aria-pressed="false">⛶</button></header>
+            <div id="module-detail" class="module-detail"></div>
+            <h3 class="module-caption" data-i18n="modules.preflight">Preflight</h3><div id="module-checks" class="module-checks"></div>
+            <h3 class="module-caption" data-i18n="modules.lifecycle">Lifecycle</h3><div id="module-trace" class="module-trace"></div>
+            <h3 class="module-caption" data-i18n="modules.files">Project files</h3><div id="module-sources" class="template-links"></div>
+          </section>
           <h2 id="toolchain-title" data-i18n="studio.toolchains">Application toolchains</h2>
           <p class="toolchain-intro" data-i18n="studio.toolchainHint">View starter files, copy a build command, or load a sample. Upload the resulting <code>.js</code> or <code>.wasm</code> file on the left.</p>
           <div class="language-picker" role="group" aria-label="Choose a toolchain" data-i18n-aria-label="studio.chooseToolchain">

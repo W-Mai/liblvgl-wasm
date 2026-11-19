@@ -15,9 +15,13 @@ test("Pages includes its runtime assets and excludes build caches", async () => 
   const paths = new Set<string>();
   for (const name of sourceFiles) {
     const text = readFileSync(name, "utf8");
-    for (const match of text.matchAll(/["'](?:\.\.\/|\/)(target\/[A-Za-z0-9_./-]+)["']/g)) paths.add(match[1]!);
+    for (const match of text.matchAll(/["'](?:\.\.\/|\/)(target\/[A-Za-z0-9_./-]+)["']/g)) {
+      if (!match[1]!.endsWith("/")) paths.add(match[1]!);
+    }
   }
   expect(paths.size).toBeGreaterThan(0);
+  const modules = JSON.parse(readFileSync("target/studio/modules/build.json", "utf8"));
+  for (const name of modules.runtime_files) paths.add("target/studio/modules/" + name);
   const temp = mkdtempSync(join(tmpdir(), "lvw-pages-"));
   try {
     const source = join(temp, "source"), site = join(temp, "site");

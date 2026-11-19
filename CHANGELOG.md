@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+- Studio opens a three-module C demo with a dependency inspector, native event controls and a shutdown trace. The Application workspace retains single-app and firmware uploads.
 - Browser module runner for separate LVGL, C library and application artifacts, with graph preflight, native frames, subscriptions and reverse shutdown.
 - Run synchronous clicked events in a selected Rust library consumer with its own callback table and lifecycle.
 - Validate trusted library event consumers in the Rust host without instantiation.

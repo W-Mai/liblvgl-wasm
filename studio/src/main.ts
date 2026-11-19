@@ -1,4 +1,5 @@
 import { StudioController } from "./controller.ts";
+import { createModuleWorkspace, type WorkspaceFile } from "./module-workspace.ts";
 import { startCDemo, type CDemo } from "./c-demo.ts";
 import { inspectCore, type CoreReport } from "./core.ts";
 import { inspectArtifact, type ArtifactReport } from "./artifacts.ts";
@@ -19,6 +20,7 @@ document.addEventListener("lvgl-locale-change", () => {
   setEditorState(editorSaved ? "saved" : "dirty");
   updateNativeApiControl();
   updateZenLabel();
+  moduleWorkspace.render();
 });
 
 type Language = "js" | "ts" | "c" | "cpp" | "rust";
@@ -267,7 +269,7 @@ function setZenMode(enabled: boolean): void {
   updateZenLabel(enabled);
   window.requestAnimationFrame(() => {
     fitDevice();
-    if (enabled) codeEditor.focus();
+    if (enabled && !modulesActive()) codeEditor.focus();
   });
   window.setTimeout(fitDevice, 480);
 }
@@ -276,6 +278,10 @@ function updateZenLabel(enabled: boolean = document.body.classList.contains("zen
   const label = t(enabled ? "studio.editorZenExit" : "studio.editorZenEnter");
   editorZen.setAttribute("aria-label", label);
   editorZen.setAttribute("title", label);
+  const moduleZen = element<HTMLButtonElement>("#module-zen");
+  moduleZen.setAttribute("aria-label", label);
+  moduleZen.title = label;
+  moduleZen.setAttribute("aria-pressed", String(enabled));
 }
 
 function editorSource(): Source {
@@ -415,6 +421,7 @@ function artifactSummary(report: ArtifactReport): string {
 }
 
 function onOutput(message: RunnerOutput): void {
+  if (modulesActive() && message.type !== "frame") return;
   if (message.type === "ready") {
     running = true;
     if (selectedApp.origin === "LOCAL EDITOR") setEditorState(editorSaved ? "saved" : "dirty");
@@ -485,6 +492,7 @@ function stop(): void {
 }
 
 async function run(): Promise<"started" | "failed" | "cancelled"> {
+  if (modulesActive()) return "cancelled";
   stop();
   const runId = generation;
   const source = selectedApp;
@@ -866,9 +874,9 @@ resourceCard.addEventListener("drop", (event) => {
   if (event.dataTransfer?.files.length) void chooseResources(Array.from(event.dataTransfer.files));
 });
 element<HTMLButtonElement>("#app-reset").addEventListener("click", () => { void chooseSample("js"); });
-element<HTMLButtonElement>("#run-button").addEventListener("click", () => { void run(); });
-element<HTMLButtonElement>("#reset-button").addEventListener("click", () => { void run(); });
+for (const selector of ["#run-button", "#reset-button"]) element<HTMLButtonElement>(selector).addEventListener("click", () => { void (modulesActive() ? moduleWorkspace.run() : run()); });
 element<HTMLButtonElement>("#stop-button").addEventListener("click", () => {
+  if (modulesActive()) { void moduleWorkspace.stop(); return; }
   stop();
   appendLog(t("status.stopped"));
 });
@@ -881,6 +889,7 @@ viewportSelect.addEventListener("change", () => {
   fitDevice();
   canvas.width = width;
   canvas.height = height;
+  if (modulesActive()) { if (moduleWorkspace.activeRun()) void moduleWorkspace.run(); return; }
   if (running) {
     if (selectedAppReport?.mode === "firmware") void run();
     else controller.resize(width, height);
@@ -912,6 +921,11 @@ let demoAbort: AbortController | undefined;
 let stopDemo: (() => void) | undefined;
 let sourceAbort: AbortController | undefined;
 let nestedSourceAbort: AbortController | undefined;
+let primaryFile: WorkspaceFile | undefined;
+let nestedFile: WorkspaceFile | undefined;
+const siblingLinks = document.createElement("nav");
+siblingLinks.className = "template-links";
+panelSource.prepend(siblingLinks);
 type PanelEntry = {
   panel: HTMLElement;
   returnFocus?: HTMLElement;
@@ -1094,6 +1108,8 @@ function showPanel(): void {
   pushPanel(sidePanel, panelTrigger, stopPanelContent);
 }
 function stopPanelContent(): void {
+  primaryFile = undefined;
+  siblingLinks.replaceChildren();
   sourceAbort?.abort();
   sourceAbort = undefined;
   demoAbort?.abort();
@@ -1139,6 +1155,10 @@ async function openCDemo(): Promise<void> {
     failed(error);
   }
 }
+function showSourceText(code: HTMLElement, name: string, source: string): void {
+  if (source.length > 128 * 1024) code.textContent = source;
+  else renderHighlighted(code, source, name);
+}
 async function loadSource(name: string, path: string, code: HTMLElement, errorMessage: HTMLElement,
                           signal: AbortSignal, refresh = false): Promise<void> {
   if (!refresh) code.textContent = "Loading…";
@@ -1148,7 +1168,7 @@ async function loadSource(name: string, path: string, code: HTMLElement, errorMe
     const response = await fetch(assetUrl(path), { signal, cache: "no-store" });
     if (!response.ok) throw new Error(`Could not load ${name} (${response.status})`);
     const source = await response.text();
-    if (!signal.aborted && code.textContent !== source) renderHighlighted(code, source, name);
+    if (!signal.aborted && code.textContent !== source) showSourceText(code, name, source);
   } catch (error) {
     if (signal.aborted) return;
     if (!refresh) code.textContent = "";
@@ -1158,17 +1178,17 @@ async function loadSource(name: string, path: string, code: HTMLElement, errorMe
 }
 function refreshVisibleSource(): void {
   if (document.hidden) return;
-  if (panelStack.at(-1)?.panel === nestedSourcePanel) {
+  if (panelStack.at(-1)?.panel === nestedSourcePanel && nestedFile && nestedFile.content === undefined) {
     nestedSourceAbort?.abort();
     const abort = new AbortController();
     nestedSourceAbort = abort;
-    void loadSource("direct_api.c", "/examples/c/direct_api.c",
+    void loadSource(nestedFile.name, nestedFile.path,
       nestedSourceCode, nestedSourceError, abort.signal, true);
-  } else if (panelStack.at(-1)?.panel === sidePanel && !panelSource.hidden) {
+  } else if (panelStack.at(-1)?.panel === sidePanel && !panelSource.hidden && primaryFile && primaryFile.content === undefined) {
     sourceAbort?.abort();
     const abort = new AbortController();
     sourceAbort = abort;
-    void loadSource(panelTitle.textContent || "source", `/${sourcePath.textContent}`,
+    void loadSource(primaryFile.name, primaryFile.path,
       sourceCode, sourceError, abort.signal, true);
   }
 }
@@ -1177,7 +1197,7 @@ if (location.hostname === "localhost" || location.hostname === "127.0.0.1") {
   window.addEventListener("focus", refreshVisibleSource);
   document.addEventListener("visibilitychange", refreshVisibleSource);
 }
-async function openSource(name: string, path: string): Promise<void> {
+async function openSource(name: string, path: string, content?: string, siblings: WorkspaceFile[] = []): Promise<void> {
   stopPanelContent();
   showPanel();
   panelTitle.textContent = name;
@@ -1185,21 +1205,31 @@ async function openSource(name: string, path: string): Promise<void> {
   panelDemoFooter.hidden = true;
   panelSource.hidden = false;
   panelLibrary.hidden = true;
-  sourcePath.textContent = path.slice(1);
+  primaryFile = { name, path, content };
+  sourcePath.textContent = path.replace(/^\//, "");
+  for (const file of siblings.filter((file) => file.path !== path)) {
+    const button = document.createElement("button"); button.type = "button"; button.textContent = file.name;
+    button.onclick = () => { void openNestedSource(file, button); }; siblingLinks.append(button);
+  }
   const abort = new AbortController();
   sourceAbort = abort;
-  await loadSource(name, path, sourceCode, sourceError, abort.signal);
+  if (content === undefined) await loadSource(name, path, sourceCode, sourceError, abort.signal);
+  else { sourceError.hidden = true; showSourceText(sourceCode, name, content); }
 }
-async function openNestedSource(): Promise<void> {
+async function openNestedSource(file: WorkspaceFile = { name: "direct_api.c", path: "/examples/c/direct_api.c" }, trigger = element<HTMLButtonElement>("#panel-demo-source")): Promise<void> {
   if (panelStack.at(-1)?.panel === nestedSourcePanel) return;
-  pushPanel(nestedSourcePanel, element<HTMLButtonElement>("#panel-demo-source"), () => {
+  nestedFile = file;
+  element<HTMLElement>("#nested-source-title").textContent = file.name;
+  element<HTMLElement>("#nested-source-panel .source-path").textContent = file.path.replace(/^\//, "");
+  pushPanel(nestedSourcePanel, trigger, () => {
+    nestedFile = undefined;
     nestedSourceAbort?.abort();
     nestedSourceAbort = undefined;
   });
   const abort = new AbortController();
   nestedSourceAbort = abort;
-  await loadSource("direct_api.c", "/examples/c/direct_api.c",
-    nestedSourceCode, nestedSourceError, abort.signal);
+  if (file.content === undefined) await loadSource(file.name, file.path, nestedSourceCode, nestedSourceError, abort.signal);
+  else { nestedSourceError.hidden = true; showSourceText(nestedSourceCode, file.name, file.content); }
 }
 function closeNestedSource(): void {
   if (panelStack.at(-1)?.panel === nestedSourcePanel) popPanelsTo(panelStack.length - 1);
@@ -1249,20 +1279,24 @@ function point(event: PointerEvent): { x: number; y: number } {
   };
 }
 canvas.addEventListener("pointerdown", (event) => {
+  if (modulesActive()) return;
   canvas.setPointerCapture(event.pointerId);
   const { x, y } = point(event);
   controller.pointer(x, y, true);
 });
 canvas.addEventListener("pointermove", (event) => {
+  if (modulesActive()) return;
   if (!(event.buttons & 1)) return;
   const { x, y } = point(event);
   controller.pointer(x, y, true);
 });
 canvas.addEventListener("pointerup", (event) => {
+  if (modulesActive()) return;
   const { x, y } = point(event);
   controller.pointer(x, y, false);
 });
 canvas.addEventListener("pointercancel", (event) => {
+  if (modulesActive()) return;
   const { x, y } = point(event);
   controller.pointer(x, y, false);
 });
@@ -1270,4 +1304,36 @@ canvas.addEventListener("pointercancel", (event) => {
 showToolchain("js");
 fitDevice();
 requestAnimationFrame(() => device.classList.add("resizable"));
-void run();
+function modulesActive(): boolean { return document.body.dataset.workspace === "modules"; }
+function clearPreview(): void {
+  context!.clearRect(0, 0, canvas.width, canvas.height);
+  const count = element<HTMLElement>("#frame-count"); count.dataset.i18nFrame = "0"; count.textContent = t("studio.frame", { frame: 0 });
+}
+const moduleWorkspace = createModuleWorkspace({ active: modulesActive, dimensions: () => [width, height], frame: onOutput, status: setStatus, log: appendLog,
+  clear: clearPreview, source: (file, siblings) => { void openSource(file.name, file.path, file.content, siblings); } });
+const workspaceButtons = document.querySelectorAll<HTMLButtonElement>("[data-workspace-choice]");
+element<HTMLButtonElement>("#module-zen").addEventListener("click", () => setZenMode(!document.body.classList.contains("zen-editor")));
+function updateWorkspaceLabels(): void {
+  const runLabel = element<HTMLElement>("#run-button [data-i18n]");
+  runLabel.dataset.i18n = modulesActive() ? "modules.run" : "studio.runApp";
+  runLabel.textContent = t(runLabel.dataset.i18n);
+  for (const [selector, action] of [["#reset-button", "restart"], ["#stop-button", "stop"]] as const) {
+    const button = element<HTMLButtonElement>(selector);
+    const key = `${modulesActive() ? "modules" : "studio"}.${action}`;
+    button.dataset.i18nAriaLabel = button.dataset.i18nTitle = key;
+    button.setAttribute("aria-label", button.title = t(key));
+  }
+}
+for (const button of workspaceButtons) button.addEventListener("click", () => {
+  const choice = button.dataset.workspaceChoice!;
+  if (choice === document.body.dataset.workspace) return;
+  if (modulesActive()) void moduleWorkspace.stop(); else stop();
+  popPanelsTo(0); setZenMode(false); clearPreview(); consoleOutput.replaceChildren();
+  document.body.dataset.workspace = choice;
+  for (const control of workspaceButtons) control.setAttribute("aria-pressed", String(control === button));
+  for (const selector of ["#run-button", "#reset-button"]) element<HTMLButtonElement>(selector).disabled = false;
+  updateWorkspaceLabels();
+  void (modulesActive() ? moduleWorkspace.run() : run());
+});
+updateWorkspaceLabels();
+void moduleWorkspace.run();

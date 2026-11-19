@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Copy the browser runtime artifacts required by Pages."""
 
+import json
 import shutil
 import sys
 from pathlib import Path
@@ -25,6 +26,15 @@ ASSETS = (
 )
 
 
+def module_assets():
+    notices = Path(__file__).resolve().parents[1] / "third_party/validator/manifest.json"
+    names = ["app.wasm", "events.wasm", "liblvgl.wasm", "worker.js", "controller.js",
+             "project.json", "verification.json", "source/app.c", "source/events.c", "source/build.sh",
+             "LICENSE-noble-hashes.txt", "licenses/validator/manifest.json"]
+    names.extend("licenses/validator/" + name for name in json.loads(notices.read_bytes())["files"])
+    return tuple("studio/modules/" + name for name in names)
+
+
 def main(source, destination):
     source = Path(source) / "target"
     destination = Path(destination) / "target"
@@ -32,7 +42,8 @@ def main(source, destination):
         raise ValueError(f"Pages target already exists: {destination}")
     if source.is_symlink():
         raise ValueError(f"Pages artifact contains a symlink: {source}")
-    for asset in ASSETS:
+    assets = ASSETS + module_assets()
+    for asset in assets:
         path = source
         for part in Path(asset).parts:
             path = path / part
@@ -40,7 +51,7 @@ def main(source, destination):
                 raise ValueError(f"Pages artifact contains a symlink: {path}")
         if not path.is_file():
             raise FileNotFoundError(f"missing Pages artifact: {path}")
-    for asset in ASSETS:
+    for asset in assets:
         output = destination / asset
         output.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(source / asset, output)
