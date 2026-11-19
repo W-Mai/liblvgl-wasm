@@ -11,6 +11,7 @@ function send(message: ModuleWorkerOutput, transfer: Transferable[] = []): void 
 
 function frame(): void {
   const value = runtime!.frame();
+  if (!value) return;
   send({ type: "frame", width: value.width, height: value.height, frameId: value.frameId,
     pixels: value.rgba.buffer }, [value.rgba.buffer]);
 }
@@ -26,17 +27,17 @@ scope.onmessage = async (event: MessageEvent<({ type: "start" } & ModuleRun) | M
     if (message.type === "start") {
       if (started || message.mode !== "modules") throw new Error("A module worker accepts one project");
       started = true;
-      runtime = new ModuleRuntime(message.input, message.width, message.height);
+      runtime = new ModuleRuntime(message.input, message.width, message.height, message.sample === true);
       const inspected = await runtime.inspect();
       send({ type: "module-inspected", ...inspected });
       if (message.operation === "inspect") return;
-      if (message.operation !== "run" || !inspected.executable) throw new Error("The selected modules do not match the built-in runtime preset");
+      if (message.operation !== "run" || !inspected.executable) throw new Error(inspected.reason ?? "Unsupported module operation");
       await runtime.start();
       send({ type: "module-ready", width: message.width, height: message.height, snapshot: runtime.snapshot() });
       frame();
     } else if (message.type === "module-action") {
       if (!Number.isSafeInteger(message.id) || message.id < 1) throw new Error("Invalid module command identity");
-      const snapshot = runtime!.action(message.action);
+      const snapshot = runtime!.action(message.action, message.value);
       send({ type: "module-state", id: message.id, snapshot });
       frame();
     } else if (message.type === "module-close") {

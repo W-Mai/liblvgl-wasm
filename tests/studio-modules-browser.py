@@ -34,8 +34,11 @@ const wait = async predicate => {
 };
 const frame = index => outputs[index].filter(item => item.type === "frame").at(-1);
 const equal = (a, b) => a.every((value, index) => value === b[index]);
-const rejects = async operation => {
-  try { await operation(); } catch { return; }
+const rejects = async (operation, pattern) => {
+  try { await operation(); } catch (error) {
+    check(pattern.test(String(error)), "Unexpected rejection: " + error);
+    return;
+  }
   throw new Error("Expected module rejection");
 };
 try {
@@ -70,19 +73,57 @@ try {
   await controllers[1].close();
   check(document.querySelectorAll("iframe").length === 0, "Closed runner retained its iframe");
 
-  const changed = structuredClone(input), app = changed.modules.find(item => item.manifest.id === "app");
-  const bytes = new Uint8Array(app.bytes.length + 4);
-  bytes.set(app.bytes); bytes.set([0, 2, 1, 120], app.bytes.length);
-  check(WebAssembly.validate(bytes), "Identity control is not a valid module");
-  app.bytes = bytes;
-  app.manifest.artifact.sha256 = Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", bytes)),
-    value => value.toString(16).padStart(2, "0")).join("");
+  const upload = async name => {
+    const project = await (await fetch("/" + name + "/project.json")).json();
+    return { hosts: project.hosts, modules: await Promise.all(project.modules.map(async ({manifest}) => ({
+      manifest, bytes: new Uint8Array(await (await fetch("/" + name + "/" + manifest.artifact.path)).arrayBuffer())
+    }))) };
+  };
+  const custom = await upload("custom");
+  const customApp = custom.modules.find(item => item.manifest.role === "app").manifest;
+  check(customApp.id === "meter" && customApp.artifact.sha256 !== input.modules.find(item =>
+    item.manifest.role === "app").manifest.artifact.sha256, "Custom C app reused the sample's identity");
+  for (const [graph, expectedProfile, codes] of [
+    [custom, "lvgl-event-v1", [10, 30]],
+    [await upload("headless"), "numeric-v1", [30]]
+  ]) {
+    outputs[0].length = 0;
+    await controllers[0].start(graph, 120, 48, "inspect");
+    const inspected = outputs[0].find(item => item.type === "module-inspected");
+    check(inspected?.executable && inspected.profile === expectedProfile, inspected?.reason || "Custom preflight failed");
+    check(!outputs[0].some(item => item.type === "frame" || item.type === "module-ready"), "Inspect executed a custom app");
+    await controllers[0].start(graph, 120, 48);
+    const ready = outputs[0].find(item => item.type === "module-ready").snapshot;
+    check(ready.result === null && ready.trace.map(entry => entry.code).join() === codes.join(), "Startup called app_run implicitly");
+    for (const input of [-37, 12]) {
+      const reply = await controllers[0].action("invoke", input);
+      codes.push(input);
+      check(reply.result === input + 100 && reply.trace.map(entry => entry.code).join() === codes.join(),
+        "app_run did not receive the selected i32 exactly once");
+    }
+    const closed = await controllers[0].close();
+    check(closed.trace.map(item => item.code).join() === codes.concat(expectedProfile === "numeric-v1" ? [31] : [31, 11]).join(),
+      "Custom project did not close in reverse dependency order");
+    check(Boolean(frame(0)) === (expectedProfile === "lvgl-event-v1"), "Unexpected frame capability");
+  }
+
+  const unsupported = structuredClone(custom);
+  const host = unsupported.hosts.find(host => host.interface.name === "trace");
+  host.interface.name = "missing-device";
+  for (const { manifest } of unsupported.modules) for (const edge of manifest.requires) {
+    if (edge.provider === host.id) edge.interface = host.interface.name;
+  }
   outputs[0].length = 0;
-  await controllers[0].start(changed, 120, 48, "inspect");
-  check(outputs[0].find(item => item.type === "module-inspected")?.executable === false, "Custom bytes received built-in execution authorization");
-  await rejects(() => controllers[0].start(changed, 120, 48));
-  check(!outputs[0].some(item => item.type === "module-ready" || item.type === "frame"), "Rejected modules ran");
-  controllers[0].stop();
+  await controllers[0].start(unsupported, 120, 48, "inspect");
+  const missing = outputs[0].find(item => item.type === "module-inspected");
+  check(missing?.executable === false && missing.reason.includes("missing-device"), "Unsupported host was not reported");
+  await rejects(() => controllers[0].start(unsupported, 120, 48), /missing-device/);
+  check(!outputs[0].some(item => item.type === "module-ready" || item.type === "frame"), "Unsupported imports ran");
+  const corrupted = structuredClone(custom);
+  corrupted.modules.find(item => item.manifest.role === "app").manifest.artifact.sha256 = "0".repeat(64);
+  outputs[0].length = 0;
+  await rejects(() => controllers[0].start(corrupted, 120, 48), /SHA-256 mismatch/i);
+  check(!outputs[0].some(item => item.type === "module-ready" || item.type === "frame"), "A mismatched artifact ran");
 
   outputs[0].length = 0;
   await controllers[0].start(input, 160, 80);
@@ -101,7 +142,8 @@ try {
   await fetch(ENDPOINT, { method: "POST", body: JSON.stringify({
     ok: true, preflight: true, opaqueSandbox: true, realCEvents: true, frameChanged: true,
     independentEnvironments: true, subscriptions: true, reverseClose: true,
-    customExecutionBlocked: true, resolutionRestart: true, latestRestartWins: true, errors, browser: navigator.userAgent,
+    customCApp: customApp.artifact.sha256, headlessApp: true, unsupportedHostRejected: true,
+    wrongDigestRejected: true, resolutionRestart: true, latestRestartWins: true, errors, browser: navigator.userAgent,
     modules: project.modules.map(item => ({ id: item.manifest.id, sha256: item.manifest.artifact.sha256 }))
   }) });
 } catch (error) {
@@ -109,6 +151,46 @@ try {
   await fetch(ENDPOINT, { method: "POST", body: JSON.stringify({ ok: false, error: String(error.stack || error), errors }) });
 }
 </script>'''
+
+
+def custom_project(work, headless=False):
+    """Compile a different app, retaining only the graph contracts it actually imports."""
+    project = json.loads((ASSETS / "project.json").read_bytes())
+    app = next(item["manifest"] for item in project["modules"] if item["manifest"]["role"] == "app")
+    source = r'''
+#include <stdint.h>
+__attribute__((import_module("trace"), import_name("lifecycle"))) extern void trace(int32_t);
+#ifdef HEADLESS
+static int32_t active(void) { return 1; }
+static int32_t update(int32_t value) { return value; }
+#else
+__attribute__((import_module("middle"), import_name("middle_active"))) extern int32_t active(void);
+__attribute__((import_module("middle"), import_name("middle_update"))) extern int32_t update(int32_t);
+#endif
+__attribute__((export_name("module_init"))) int32_t init(void) { trace(30); return !active(); }
+__attribute__((export_name("app_run"))) int32_t run(int32_t value) {
+    trace(value);
+    return (uint32_t)value + 100u + (uint32_t)update(0);
+}
+__attribute__((export_name("module_close"))) int32_t close_app(void) { trace(31); return 0; }
+'''
+    sdk = Path(subprocess.check_output(["sh", str(ROOT / "scripts/resolve-wasi-sdk.sh"), str(ROOT)], text=True).strip())
+    artifact = work / "meter.wasm"
+    subprocess.run([str(sdk / "bin/clang"), "--target=wasm32-wasip1", "-std=c11", "-O2", "-nostdlib",
+                    "-Wall", "-Wextra", "-Werror", "-Wl,--no-entry", "-Wl,--export-memory", "-Wl,--max-memory=2097152",
+                    *(["-DHEADLESS"] if headless else []), "-x", "c", "-", "-o", str(artifact)], input=source, text=True, check=True)
+    app["artifact"] = {"path": artifact.name, "sha256": hashlib.sha256(artifact.read_bytes()).hexdigest()}
+    app["id"] = app["interface"]["name"] = "meter"
+    if headless:
+        app["requires"] = [entry for entry in app["requires"] if entry["interface"] == "trace"]
+        project["hosts"] = [entry for entry in project["hosts"] if entry["interface"]["name"] == "trace"]
+        project["modules"] = [{"manifest": app}]
+    for item in project["modules"]:
+        item.pop("source", None)
+    project["files"] = {entry["manifest"]["artifact"]["path"]: entry["manifest"]["artifact"]["sha256"] for entry in project["modules"]}
+    manifest = work / "project.json"
+    manifest.write_text(json.dumps(project))
+    return {**{name: ASSETS / name for name in project["files"]}, artifact.name: artifact, manifest.name: manifest}
 
 
 def check(chromium):
@@ -131,6 +213,11 @@ def check(chromium):
         server.routes = {"/studio/": (html, "text/html; charset=utf-8")}
         for name in metadata["runtime_files"]:
             server.routes["/target/studio/modules/" + name] = (ASSETS / name, mimetypes.guess_type(name)[0] or "application/octet-stream")
+        for name in ("custom", "headless"):
+            directory = work / name
+            directory.mkdir()
+            for filename, path in custom_project(directory, headless=name == "headless").items():
+                server.routes["/" + name + "/" + filename] = (path, "application/json" if filename.endswith(".json") else "application/wasm")
         environment = dict(os.environ, TMPDIR=profile)
         for key in ("DISPLAY", "WAYLAND_DISPLAY", "XAUTHORITY", "DBUS_SESSION_BUS_ADDRESS"):
             environment.pop(key, None)

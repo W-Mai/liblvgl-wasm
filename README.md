@@ -451,7 +451,7 @@ Host SDK checks generate packages for the core and a separately linked native re
 
 ## LVGL Studio
 
-The module runner builds separate liblvgl.wasm, events.wasm and app.wasm artifacts under target/studio/modules/. The C library owns its callback table and calls the original LVGL label and event APIs; the app imports its numeric business interface. The browser controller supports graph inspection, native frame output, event delivery, subscription removal/restoration and reverse close. Preflight reports retain not-run runtime checks. Arbitrary replacement bytes can be inspected but cannot acquire the built-in preset's execution authorization.
+The module runner builds separate liblvgl.wasm, events.wasm and app.wasm artifacts under target/studio/modules/. The C library owns its callback table and calls the original LVGL label and event APIs; the app imports its numeric business interface. The browser controller supports graph inspection, native frame output, event delivery, subscription removal/restoration and reverse close. Preflight reports retain not-run runtime checks. For uploaded projects, the runner checks each Wasm file against its own manifest and matches the declared imports to Studio host implementations. A matching graph can start; its initialization can still fail.
 
 After a core build, regenerate these assets with bun run build:studio-modules. The output includes controller.js, worker.js, project.json, the actual C sources, verification identity and validator attribution. The quality command exercises the real C modules in an opaque browser worker, including independent environments, changed native pixels, C callback nesting, subscription lifetime, close order and resolution restart.
 

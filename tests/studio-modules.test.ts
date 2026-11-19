@@ -2,7 +2,6 @@ import { expect, test } from "bun:test";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { inspectWasmFacts } from "../bindings/typescript/src/wasm-facts.ts";
-import { PRESET } from "../target/studio/modules/preset.ts";
 
 test("Studio's C library callback and application remain separate Wasm modules", async () => {
   const root = "target/studio/modules/";
@@ -23,7 +22,8 @@ test("Studio's C library callback and application remain separate Wasm modules",
   expect(facts.get("middle")!.exports.some((item) => item.name === "app_event_dispatch" && item.kind === "function")).toBe(true);
   expect(facts.get("middle")!.tables).toHaveLength(1);
   expect(typeof facts.get("middle")!.tables[0]!.type.maximum).toBe("number");
-  expect([...PRESET.wasi].sort()).toEqual([...new Set(facts.get("lvcore")!.imports
+  const wasi = project.hosts.find((host: { interface: { name: string } }) => host.interface.name === "wasi");
+  expect(wasi.exports.map((item: { name: string }) => item.name).sort()).toEqual([...new Set(facts.get("lvcore")!.imports
     .filter((item) => item.module === "wasi_snapshot_preview1").map((item) => item.name))].sort());
   for (const [path, sha] of Object.entries(build.files)) {
     expect(path.startsWith("/") || path.split("/").some((part) => part === "..")).toBe(false);

@@ -180,58 +180,60 @@ export async function inspectFeatureModuleGraph(input: ModuleManifestInput, opti
   }
 }
 
-/** Validate a trusted label consumer without creating an environment. The report does not authorize loading. */
-export async function preflightLvglLabelGraphForConsumer(input: ModuleManifestInput, options: NumericEnvironmentOptions): Promise<NumericLabelConsumerPreflightReport> {
-  if (activeGraphs >= MAX_WORKERS) throw new FeatureValidationError("busy", "module graph inspection concurrency limit reached");
-  activeGraphs++;
-  try {
-    const prepared = prepareModuleManifests(input);
-    const profile = prepareNumericProfile(prepared, options);
-    if (!profile.label || profile.event || profile.labelConsumer === undefined) throw new Error("label consumer preflight requires lvgl-label-v1");
-    const checks = prepareFeatureChecks(prepared, profile.featureOptions);
-    await verifyFeatureChecks(checks);
-    compileNumericModules(prepared);
-    return { consumer: profile.labelConsumer, graph: featureGraphReport(prepared, checks) };
-  } finally {
-    activeGraphs--;
-  }
+type NumericProfile = ReturnType<typeof prepareNumericProfile>;
+interface CheckedNumericGraph {
+  prepared: PreparedModuleGraph;
+  profile: NumericProfile;
+  compiled: ReturnType<typeof compileNumericModules>;
+  report: () => FeatureModuleGraphReport;
 }
 
-/** Validate a trusted event consumer without creating an environment. The report does not authorize loading. */
-export async function preflightLvglEventGraphForConsumer(input: ModuleManifestInput, options: NumericEnvironmentOptions): Promise<NumericEventConsumerPreflightReport> {
+async function withNumericGraph<T>(input: ModuleManifestInput, options: NumericEnvironmentOptions,
+  consumer: "label" | "event" | undefined, use: (checked: CheckedNumericGraph) => T): Promise<T> {
   if (activeGraphs >= MAX_WORKERS) throw new FeatureValidationError("busy", "module graph inspection concurrency limit reached");
   activeGraphs++;
   try {
     const prepared = prepareModuleManifests(input);
     const profile = prepareNumericProfile(prepared, options);
-    if (!profile.label || !profile.event || profile.labelConsumer === undefined) throw new Error("event consumer preflight requires lvgl-event-v1");
-    const checks = prepareFeatureChecks(prepared, profile.featureOptions);
-    await verifyFeatureChecks(checks);
-    compileNumericModules(prepared);
-    return { consumer: profile.labelConsumer, graph: featureGraphReport(prepared, checks) };
-  } finally {
-    activeGraphs--;
-  }
-}
-
-/** Load a trusted numeric-only graph. The returned environment does not expose Wasm resources. */
-export async function loadNumericEnvironment(input: ModuleManifestInput, options: NumericEnvironmentOptions): Promise<NumericEnvironment> {
-  if (activeGraphs >= MAX_WORKERS) throw new FeatureValidationError("busy", "module graph inspection concurrency limit reached");
-  activeGraphs++;
-  try {
-    const prepared = prepareModuleManifests(input);
-    const profile = prepareNumericProfile(prepared, options);
+    if (consumer === "label" && (!profile.label || profile.event || profile.labelConsumer === undefined)) {
+      throw new Error("label consumer preflight requires lvgl-label-v1");
+    }
+    if (consumer === "event" && (!profile.event || profile.labelConsumer === undefined)) {
+      throw new Error("event consumer preflight requires lvgl-event-v1");
+    }
     const checks = prepareFeatureChecks(prepared, profile.featureOptions);
     await verifyFeatureChecks(checks);
     const compiled = compileNumericModules(prepared);
+    return use({ prepared, profile, compiled, report: () => featureGraphReport(prepared, checks) });
+  } finally {
+    activeGraphs--;
+  }
+}
+
+/** Check graph bytes and numeric host contracts without creating hosts or guest instances. */
+export function preflightNumericEnvironment(input: ModuleManifestInput, options: NumericEnvironmentOptions): Promise<FeatureModuleGraphReport> {
+  return withNumericGraph(input, options, undefined, ({ report }) => report());
+}
+
+/** Validate a trusted label consumer without creating an environment. The report does not authorize loading. */
+export function preflightLvglLabelGraphForConsumer(input: ModuleManifestInput, options: NumericEnvironmentOptions): Promise<NumericLabelConsumerPreflightReport> {
+  return withNumericGraph(input, options, "label", ({ profile, report }) => ({ consumer: profile.labelConsumer!, graph: report() }));
+}
+
+/** Validate a trusted event consumer without creating an environment. The report does not authorize loading. */
+export function preflightLvglEventGraphForConsumer(input: ModuleManifestInput, options: NumericEnvironmentOptions): Promise<NumericEventConsumerPreflightReport> {
+  return withNumericGraph(input, options, "event", ({ profile, report }) => ({ consumer: profile.labelConsumer!, graph: report() }));
+}
+
+/** Load a trusted numeric-only graph. The returned environment does not expose Wasm resources. */
+export function loadNumericEnvironment(input: ModuleManifestInput, options: NumericEnvironmentOptions): Promise<NumericEnvironment> {
+  return withNumericGraph(input, options, undefined, ({ prepared, profile, compiled }) => {
     const beforeGuest = () => {
       if (profile.featureOptions.signal && signalAborted.call(profile.featureOptions.signal)) throw new FeatureValidationError("aborted", "feature validation aborted");
     };
     beforeGuest();
     return instantiateNumericEnvironment(prepared, profile, compiled, beforeGuest);
-  } finally {
-    activeGraphs--;
-  }
+  });
 }
 
 /** Validate an owned copy of the input against an explicit feature upper bound. This report does not authorize module loading. */

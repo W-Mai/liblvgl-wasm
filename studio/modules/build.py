@@ -73,15 +73,6 @@ def build():
             shutil.copyfile(ROOT / "node_modules/@noble/hashes/LICENSE", package / "LICENSE-noble-hashes.txt")
             notices.copy_notices(ROOT, package / "LICENSE-noble-hashes.txt", package / "licenses/validator")
 
-            wasi = next(host for host in graph["input"]["hosts"] if host["id"] == "host.wasi")
-            allowed = [item["name"] for item in wasi["exports"]]
-            if not set(allowed).issubset({"environ_get", "environ_sizes_get", "clock_time_get", "fd_close",
-                                        "fd_seek", "fd_write", "proc_exit"}):
-                raise ValueError("Studio module core requires an unsupported WASI capability")
-            preset = {"modules": graph["profile"]["modules"], "hosts": graph["profile"]["hosts"], "wasi": allowed,
-                      "limits": graph["profile"]["limits"], "label": graph["label"],
-                      "event": graph["event"], "allowedFeatures": graph["allowedFeatures"]}
-            (package / "preset.ts").write_text("export const PRESET = " + json.dumps(preset) + " as const;\n")
             modules = []
             source = package / "source"
             source.mkdir()
@@ -103,11 +94,10 @@ def build():
 
             staged = work / "worker-source"
             staged.mkdir()
-            for name in ("protocol.ts", "runtime.ts", "worker.ts"):
+            for name in ("protocol.ts", "profile.ts", "runtime.ts", "worker.ts"):
                 text = snapshot[ROOT / "studio/modules" / name].decode()
-                for relative in ("sdk/feature-validator.js", "preset.ts"):
-                    text = text.replace(json.dumps("../../target/studio/modules/" + relative),
-                                        json.dumps((package / relative).as_posix()))
+                text = text.replace(json.dumps("../../target/studio/modules/sdk/feature-validator.js"),
+                                    json.dumps((package / "sdk/feature-validator.js").as_posix()))
                 (staged / name).write_text(text)
             config = work / "tsconfig.json"
             config.write_text(json.dumps({"extends": str(ROOT / "tsconfig.studio-modules.json"),
@@ -123,7 +113,7 @@ def build():
                     raise ValueError("Studio module bundle contains a local build path")
 
             public_files = {name: sha for name, sha in inventory(package).items()
-                            if not name.startswith("sdk/") and name != "preset.ts"}
+                            if not name.startswith("sdk/")}
             project = {"schema_version": 1, "kind": "studio-module-project", "modules": modules,
                        "hosts": graph["input"]["hosts"], "files": public_files}
             (package / "project.json").write_text(json.dumps(project, indent=2) + "\n")

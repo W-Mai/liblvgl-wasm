@@ -1,7 +1,9 @@
 import { StudioController } from "../src/controller.ts";
 import { assetUrl } from "../src/paths.ts";
 import type { RunnerOutput } from "../src/protocol.ts";
-import type { ModuleGraphInput, ModuleRun, ModuleState } from "./protocol.ts";
+import type { ModuleAction, ModuleGraphInput, ModuleRun, ModuleState } from "./protocol.ts";
+
+const samples = new WeakSet<ModuleGraphInput>();
 
 export interface ModuleProject {
   schema_version: 1;
@@ -26,7 +28,9 @@ export async function loadModuleProject(): Promise<{ project: ModuleProject; inp
     if (bytes.byteLength > 32 * 1024 * 1024) throw new Error("Module input exceeds the upload limit");
     return { manifest, bytes };
   }));
-  return { project, input: { modules, hosts: project.hosts } };
+  const input = { modules, hosts: project.hosts };
+  samples.add(input);
+  return { project, input };
 }
 
 export class ModuleController {
@@ -62,17 +66,17 @@ export class ModuleController {
     const revision = ++this.revision;
     await this.closeEnvironment();
     if (revision !== this.revision) throw new DOMException("Module run cancelled", "AbortError");
-    await this.transport.start({ mode: "modules", input, width, height, operation });
+    await this.transport.start({ mode: "modules", input, width, height, operation, sample: samples.has(input) });
     if (revision !== this.revision) throw new DOMException("Module run cancelled", "AbortError");
   }
 
-  action(action: "event" | "subscribe" | "unsubscribe"): Promise<ModuleState> {
+  action(action: ModuleAction, value?: number): Promise<ModuleState> {
     if (!this.ready || this.pending || this.closing || !Number.isSafeInteger(this.nextId)) return Promise.reject(new Error("The module environment is not ready"));
     const id = this.nextId++;
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => { this.stop(); }, 5000);
       this.pending = { id, resolve, reject, timer };
-      this.transport.send({ type: "module-action", id, action });
+      this.transport.send({ type: "module-action", id, action, value });
     });
   }
 

@@ -1,59 +1,45 @@
-import { inspectFeatureModuleGraph, preflightLvglEventGraphForConsumer, loadNumericEnvironment,
+import { inspectFeatureModuleGraph, preflightNumericEnvironment, loadNumericEnvironment,
   type NumericEnvironment, type NumericEnvironmentOptions } from "../../target/studio/modules/sdk/feature-validator.js";
-import { PRESET } from "../../target/studio/modules/preset.ts";
-import type { ModuleGraphInput, ModuleState, ModuleTrace } from "./protocol.ts";
+import { FEATURE_POLICY, studioProfile } from "./profile.ts";
+import type { ModuleAction, ModuleGraphInput, ModuleState, ModuleTrace } from "./protocol.ts";
 
 export class ModuleRuntime {
   private environment?: NumericEnvironment;
   private count = 0;
-  private subscribed = true;
+  private subscribed = false;
+  private result: number | null = null;
   private nested: number[] = [];
   private readonly trace: ModuleTrace[] = [];
 
-  constructor(private readonly input: ModuleGraphInput, private readonly width: number, private readonly height: number) {}
+  constructor(private readonly input: ModuleGraphInput, private readonly width: number, private readonly height: number, private readonly sample: boolean) {}
 
   private options(): NumericEnvironmentOptions {
-    return {
-      profile: "lvgl-event-v1",
-      lvgl: { module: "lvcore", id: "host.lvw", interface: { name: "lvw", version: 1 }, abiVersion: 1 },
-      label: { ...PRESET.label, width: this.width, height: this.height },
-      event: PRESET.event,
-      modules: PRESET.modules,
-      hosts: PRESET.hosts.map((host) => ({
-        ...host,
-        create: (module: string) => ({
-          exports: { lifecycle: (code: number) => { this.trace.push({ module, code }); } },
-          close: () => {},
-        }),
-      })),
-      wasi: {
-        id: "host.wasi", interface: { name: "wasi", version: 1 },
-        allowed: PRESET.wasi,
-        outputFds: [], maxIovecs: 16, maxWriteBytes: 4096, maxOutputBytes: 4096,
-        clock: { realtimeNs: 0n, monotonicNs: 0n },
-        onWrite: () => { throw new Error("The module preset does not allow WASI output"); },
-      },
-      ...PRESET.limits,
-      allowedFeatures: PRESET.allowedFeatures,
-      startupTimeoutMs: 10_000,
-      executionTimeoutMs: 10_000,
-    };
+    return studioProfile(this.input, this.width, this.height, (item) => {
+      if (this.trace.length >= 256) throw new Error("Module lifecycle trace limit exceeded");
+      this.trace.push(item);
+    });
   }
 
   async inspect() {
-    const options = this.options();
-    const report = await inspectFeatureModuleGraph(this.input, options);
-    const executable = this.input.modules.length === PRESET.modules.length
-      && PRESET.modules.every((contract) => this.input.modules.some(({ manifest }) =>
-        manifest.id === contract.id && manifest.artifact.sha256 === contract.sha256));
-    if (executable) await preflightLvglEventGraphForConsumer(this.input, options);
-    return { report, executable };
+    let profile: NumericEnvironmentOptions["profile"] | null = null;
+    try {
+      const options = this.options();
+      profile = options.profile;
+      return { report: await preflightNumericEnvironment(this.input, options), profile, executable: true };
+    } catch (error) {
+      // A valid graph can still be inspected when Studio lacks a requested host contract.
+      const report = await inspectFeatureModuleGraph(this.input, FEATURE_POLICY);
+      return { report, profile, executable: false, reason: error instanceof Error ? error.message : String(error) };
+    }
   }
 
   async start(): Promise<void> {
     if (this.environment) throw new Error("The module environment has already started");
     this.environment = await loadNumericEnvironment(this.input, this.options());
-    this.count = this.environment.run(0);
+    if (this.sample) {
+      this.count = this.environment.run(0);
+      this.subscribed = true;
+    }
   }
 
   snapshot(): ModuleState {
@@ -62,12 +48,17 @@ export class ModuleRuntime {
     }
     return { state: this.environment?.state === "poisoned" ? "poisoned"
       : this.environment?.state === "closed" ? "closed" : "ready",
-    count: this.count, subscribed: this.subscribed, nested: [...this.nested], trace: this.trace.map((item) => ({ ...item })) };
+    result: this.result, count: this.count, subscribed: this.subscribed, nested: [...this.nested], trace: this.trace.map((item) => ({ ...item })) };
   }
 
-  action(action: "event" | "subscribe" | "unsubscribe"): ModuleState {
+  action(action: ModuleAction, value?: number): ModuleState {
     if (!this.environment) throw new Error("The module environment has not started");
-    if (action === "event") {
+    if (action === "invoke") {
+      if (value === undefined || !Number.isInteger(value) || (value | 0) !== value) throw new Error("app_run requires a signed i32");
+      this.result = this.environment.run(value);
+    } else if (!this.sample) {
+      throw new Error("Event controls require the built-in C sample");
+    } else if (action === "event") {
       this.count = this.environment.run(1);
       this.nested = [5, 6, 7, 8].map((value) => this.environment!.run(value));
     } else if (action === "subscribe") {
@@ -83,8 +74,7 @@ export class ModuleRuntime {
   }
 
   frame() {
-    if (!this.environment?.readFrame) throw new Error("The module environment has no frame");
-    return this.environment.readFrame();
+    return this.environment?.readFrame?.();
   }
 
   close(): ModuleState {
