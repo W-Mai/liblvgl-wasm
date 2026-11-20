@@ -1,11 +1,17 @@
-# Lottie fixture
+# Lottie: translation and opacity
 
-`translation-opacity.json` is an original 32×24 composition with one rectangle, a solid fill, linear position, and linear opacity keyframes. It contains no external assets, fonts, effects, or expressions. `expected.json` records its SHA-256, timing, geometry, and row-major RGBA values on the background `[16, 32, 48]`. Expected pixels come from equations, not rendered snapshots.
+[translation-opacity.json](translation-opacity.json) is an original, self-contained 32 × 24 animation. An orange rectangle moves right and fades in over one second. [expected.json](expected.json) contains the source hash and expected RGBA pixels for five points in that animation.
 
-The composition runs at 16 frames per second over `[0, 16)`, giving a duration of 1000 ms. LVGL's linear path uses `floor(active_ms × 1024 / 1000)`, then `floor(step × 16 / 1024)` for the frame value. Checkpoints at 0, 250, 500, and 750 ms therefore render frames 0, 4, 8, and 12 exactly. At 1000 ms the requested value is 16; the native builder clamps it to the last visible frame, 15.
+| Time (ms) | Visible frame | Rectangle left edge | Alpha |
+| ---: | ---: | ---: | ---: |
+| 0 | 0 | 4 | 63 |
+| 250 | 4 | 8 | 111 |
+| 500 | 8 | 12 | 159 |
+| 750 | 12 | 16 | 207 |
+| 1000 | 15 | 19 | 243 |
 
-At frame `f`, the rectangle occupies `[4+f, 12+f) × [4, 12)`. All checkpoint edges coincide with integer pixel boundaries, so coverage is exactly zero or one. Fill color `[1, 0.5, 0]` converts to `[255, 128, 0]`. The opacity endpoints truncate from percentages to 63 and 255 before interpolation, giving `alpha = floor(63 + 192 × f / 16)`: 63, 111, 159, 207, and 243 at the five checkpoints. This path passes Lottie paint directly to ThorVG; it does not apply LVGL vector's extra `255 × 255 / 256` opacity conversion.
+## Reading the pixel reference
 
-The color reference is `floor((foreground × alpha + background × (255 − alpha)) / 255)`. Painted RGB channels allow two levels for native premultiplication and integer composition. Background pixels remain exact, including the old location after movement and the area outside the widget. ABI 1 XRGB output is treated as opaque; its unused byte is not source alpha. `rgba_min` and `rgba_max` coincide for this integer-edge geometry.
+At frame `f`, the rectangle covers `[4+f, 12+f) × [4, 12)`. The composition runs at 16 fps over `[0, 16)`; at the end of playback LVGL requests frame 16 and the renderer holds frame 15. Every edge falls on a whole pixel at these checkpoints.
 
-Both hosts use this reference for immediate loading, pause/resume, repeat delay, finite completion, source replacement, and separately timed instances. A recolored source uses `[0, 128, 255]` with the same equation; its recursively sorted JSON keys check order-independent shape parsing. Shared uppercase `.JSON` paths check scene ownership independent of filename spelling. The checks also cover copied resource bytes, released input/path allocations, rejected/truncated replacement input, both buffer setters, source-before-buffer rendering, incompatible stride rejection, and deletion before caller-owned storage is released. These cases do not establish general Lottie conformance or safe rejection of every malformed input.
+The fill is RGB `[255, 128, 0]` with alpha `floor(63 + 192 × f / 16)`. Composite each channel over the background `[16, 32, 48]` with `floor((foreground × alpha + background × (255 − alpha)) / 255)`. Painted channels allow two levels for premultiplication and rounding; background channels are exact. The recolored variant substitutes `[0, 128, 255]`. The display's XRGB output is opaque.

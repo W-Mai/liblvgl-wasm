@@ -151,10 +151,9 @@ def collect(source, materials, report, output):
         components["thorvg"] = thorvg
 
     (runtime / "README.md").write_text(
-        "# Runtime and selected-source notices\n\n"
-        "The LVGL files are copied from the selected source. Complete native source files retain embedded copyright and license statements; this collection is broader than the linked code.\n\n"
-        "WASI, LLVM, Zig, font supplements, and optional native dependencies retain their recorded origins. The manifest identifies source bytes and supplemental material separately. Component paths are relative to the parent licenses directory.\n\n"
-        "This collection records supplied materials and verified font supplements; it does not establish license completeness for arbitrary modified source or custom fonts.\n")
+        "# Runtime licenses and attribution\n\n"
+        "Look in `lvgl/` for the notices from the LVGL source used to build this package. Some notices are embedded in the original C files. Runtime licenses are grouped under `wasi-libc/`, `llvm/`, and `zig/`.\n\n"
+        "See [manifest.json](manifest.json) for the source revisions, file hashes, and any supplemental font notices. Paths for optional components such as FreeType and ThorVG are relative to the parent `licenses/` directory.\n")
     version = report["version"]
     manifest = {"schema_version": 2, "wasi_libc": pinned["wasi_libc"], "llvm": pinned["llvm"],
                 "lvgl": {"version": ".".join(str(version[part]) for part in ("major", "minor", "patch")),

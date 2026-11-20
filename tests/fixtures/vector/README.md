@@ -1,19 +1,23 @@
-# Vector geometry reference
+# Vector paths, fills, and transforms
 
-`expected.json` defines the shared TypeScript and Rust framebuffer inputs. Coordinates describe mathematical path edges, independently of any rendered image. The display is opaque RGB `[24, 32, 40]`; each pixel occupies `[x, x + 1] × [y, y + 1]`.
+[expected.json](expected.json) defines a scene on an opaque RGB `[24, 32, 40]` background. It supplies the geometric inputs used by the TypeScript and Rust rendering tests. Each pixel is the unit square from `(x, y)` to `(x+1, y+1)`.
 
-The solid rectangle covers whole pixels. The right triangle has perpendicular edges of length 16 and a 45-degree diagonal: pixels with local integer coordinates `x + y < 15` have full coverage, `x + y = 15` have half coverage, and the rest have zero coverage. The nested rectangles use equal winding directions, a 1.5 scale and separate translations. Nonzero fill covers the outer rectangle; even-odd fill subtracts the inner rectangle. Boundary coverage is the exact intersection area with the pixel square.
+| Shape | Expected result |
+| --- | --- |
+| Solid rectangle | Integer edges cover whole pixels. |
+| Right triangle | With perpendicular sides of length 16, local cells with `x+y < 15` are full; `x+y = 15` gives half coverage. |
+| Nested rectangles | Same winding direction and 1.5× scale. Nonzero fills the outer rectangle; even-odd cuts out the inner one. Boundary coverage is the area inside each pixel. |
+| Horizontal gradient | Interpolate straight RGB and opacity between two stops at the pixel center, then composite over the background. |
+| Quarter turn | The matrix `[0, −1, 24; 1, 0, 8; 0, 0, 1]` maps `(2, 3)` to `(21, 10)` and the rectangle `[2, 8] × [3, 7]` to `[17, 21] × [10, 16]`. The transform in a drawing descriptor places the same shape 32 pixels farther right. |
 
-Solid fills first combine the color's alpha of 255 with the requested opacity using LVGL's `LV_OPA_MIX2`: `floor(255 * opacity / 256)`. Requested opacity 255 therefore reaches the renderer as 254. The reference multiplies this effective alpha by mathematical pixel coverage and composites using `floor((source * alpha + background * (255 - alpha)) / 255)`. Solid and fill-rule pixels allow one channel value of error because ThorVG separately premultiplies and blends with `(alpha + 1) / 256`. Uncovered background pixels are exact.
+## Comparing channels
 
-The horizontal gradient interpolates straight RGB and opacity between its two stops at the pixel center, then uses the same reference source-over expression. Gradient pixels allow three channel values of error for the fixed renderer's 1024-entry table, 8-bit interpolation, premultiplication and blending. For example, at x=36, ideal `t=28.5/32` gives blue 198.125 and alpha 206.5, producing blue 168 after composition. Table entry 911 samples `911.5/1024`, uses interpolation weight 226, and quantizes blue/alpha to 197/205. Premultiplication produces `floor(197 * 206 / 256)=158`; background blending adds `floor(40 * 51 / 256)=7`, producing 165. This bound is specific to gradient pixels; it does not relax the solid-fill or background checks.
+For solid fills, LVGL combines color alpha 255 with the requested opacity as `floor(255 × opacity / 256)`. Multiply by pixel coverage, then composite each channel with `floor((source × alpha + background × (255 − alpha)) / 255)`. Solid and fill-rule cells allow one level for the renderer's separate premultiplication and blending; untouched background is exact.
 
-The fixtures exercise copied path/style state, copied gradient stops, deletion of submitted source descriptors, repeat refresh, fill rules, fractional transforms, and floating-point API/layout lowering. `lv_matrix_transform_precise_point` rounds its result to pixel coordinates; `lv_matrix_transform_point` retains the fractional result. They do not claim complete SVG support or equivalence to every native blend mode.
+Gradient cells allow three levels. For example, at x = 36 the ideal gradient gives blue 198.125 and alpha 206.5, or blue 168 after composition. Entry 911 in the renderer's 1024-entry lookup table samples at `911.5/1024`; its 8-bit interpolation gives blue 197 and alpha 205. Premultiplication contributes 158 and the background contributes 7, giving 165.
 
-LVGL 9.0.0 and 9.1.0 use their native `lv_vector_dsc_*`, inclusive-area rectangle, and inline gradient descriptor APIs. The shared fixtures retain the same geometric inputs. ThorVG 0.11.99 computes premultiplication and blend terms with `(value * alpha + 255) >> 8`, including coverage quantized to `floor(coverage * 255)`. Legacy solid references evaluate those source-defined integer operations; their tolerance remains one channel value and background checks remain exact. Both versions' gradient checks retain the three-value bound.
+On LVGL 9.0.0 and 9.1.0, the ThorVG 0.11.99 reference uses `floor(coverage × 255)` and computes premultiplication and blending with `(value × alpha + 255) >> 8`. The tolerances are unchanged. The point/path rotation case requires the corresponding transform functions.
 
-The layer contract draws beyond a child object's bounds at `(7, 5)` with size `24 × 20`, both directly and through a layer at opacity 128. A third case starts with a translucent background in that layer. Expected pixels come from source-over composition of fill opacity 159, background opacity 96, and the layer opacity. Painted pixels allow three channel values for premultiplication, unpremultiplication, and final layer blending; pixels outside the object remain exact. Repeated refresh verifies that old buffer contents are not accumulated. No framebuffer snapshots define the reference.
+## Clipping and layers
 
-Native C/C++ consumers separately load the same `W:` SVG into two ThorVG canvases, overwrite temporary paths, render each after destroying the previous canvas, and check exact rectangle/background pixels. This exercises the legacy resource loader without claiming support for LVGL's newer SVG image or DOM APIs.
-
-The rotation contract applies the row-major matrix `[0, -1, 24; 1, 0, 8; 0, 0, 1]` to point `(2, 3)`, yielding `(21, 10)`. The rectangle with edges `[2, 8] × [3, 7]` becomes `[17, 21] × [10, 16]`. One shape transforms its stored path; another uses the same matrix in its drawing descriptor, translated 32 pixels farther right. Both must match these mathematical rectangles, with the existing solid-fill and exact-background bounds. LVGL 9.0 lacks point/path transforms, so this contract runs on sources that provide them.
+The clipping case draws beyond a 24 × 20 child at (7, 5), directly and through a layer with opacity 128. The translucent variant uses fill opacity 159 over background opacity 96 before applying layer opacity. Painted pixels allow three levels for premultiplication, unpremultiplication, and blending. Pixels outside the child retain the background color.

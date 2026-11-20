@@ -1,15 +1,24 @@
-# FreeType fixtures
+# FreeType: geometric glyphs
 
-`expected.json` references the original geometric fonts in `../tinyttf/`. It records their SHA-256 hashes, source contours, character mappings, and bitmap expectations at 16 and 32 pixels per em. Font bytes are shared between both backends.
+[expected.json](expected.json) describes the original [primary](../tinyttf/geometry.ttf) and [fallback](../tinyttf/fallback.ttf) fonts shared with the TinyTTF fixtures. The primary font contains space, A, B, and Á. The fallback supplies Ω. Use the [curved glyph fixtures](../freetype-outline/) for quadratic and cubic outlines.
 
-Coverage is computed by clipping each scaled source polygon against pixel squares and measuring the intersection area with exact rational arithmetic. Values are rounded to 8 bits. Bitmap bounds use the floor and ceiling of the scaled contours; empty space has a zero-sized bitmap. No renderer output is used to generate expected pixels. Tests require exact transparent and opaque coverage, allow one level for intermediate A8 coverage, and allow two levels for partially covered framebuffer pixels.
+## Metrics
 
-Both fonts use 1024 units per em, ascent 896, descent -128, and zero line gap. At the tested sizes, line heights are 16 and 32, baselines are 2 and 4, normal advances are 12 and 24, and space advances are 8 and 16. The AB pair has -128 font units of kerning. FreeType's `FT_KERNING_DEFAULT` scales kerning below 25 pixels per em before pixel rounding, giving reductions of 1 pixel at size 16 and 4 pixels at size 32. The `kerning` field stores these positive reductions.
+Both fonts use 1024 units per em, ascent 896, descent −128, and zero line gap. The AB kerning pair subtracts 128 font units. The reference records the resulting reduction as a positive pixel count under `kerning`.
 
-The `rejected` entries define a fixed invalid signature and a truncated SFNT header. Tests upload their actual byte lengths through the resource filesystem and verify that font creation fails without preventing subsequent valid font loading.
+| Size (ppem) | Line height | Baseline | Normal advance | Space advance | AB reduction |
+| ---: | ---: | ---: | ---: | ---: | ---: |
+| 16 | 16 | 2 | 12 | 8 | 1 |
+| 32 | 32 | 4 | 24 | 16 | 4 |
 
-The 9.0.0 bitmap checks use the same geometry and metrics with no kerning, matching that version's native font callbacks. Its shared cache acquisitions are released through the resolved font; native C/C++ checks retain a glyph while deleting another font and verify that fallback rendering leaves no outstanding acquisition. The 9.0.0 software renderer has no outline-font branch. Outline and explicit kerning checks run on the 9.6.0 configuration that enables them.
+The 16 ppem kerning value includes FreeType's `FT_KERNING_DEFAULT` adjustment below 25 ppem. LVGL 9.0.0's native bitmap font callbacks use the same geometry without kerning.
 
-`cmap_recovery` changes the format 4 character map's segment count to exceed its table length. FreeType's validator rejects that map through its exception-based `longjmp` path, then builds a replacement map from the font's glyph names. Font creation and the original A and Á geometry must remain valid, followed by a successful load of the unmodified font.
+## Pixel reference
 
-Outline tests reuse the same polygon coverage and metrics at 16 and 32 pixels. The fonts contain no TrueType glyph programs or font-wide hint programs. LVGL combines the color alpha of 255 with text opacity using `floor(255 * opacity / 256)` before rasterization; the reference multiplies this effective opacity by the geometric coverage and performs one source-over composition. Uncovered background is exact, and covered framebuffer channels allow two levels for coverage and blending quantization. Tests include opacity 255 and 128, mixed bitmap/outline fallback, shared fonts at different sizes, manual opaque path borrowing after a label refresh, and releasing glyph draw data before deleting fonts. Outline glyph pointers are not A8 buffers.
+Clip each scaled polygon to a unit pixel square, compute the intersection area as a fraction, and round to 8-bit coverage. The glyph box extends from the floor to the ceiling of the scaled contour; a space has a zero-sized bitmap. Transparent and opaque coverage are exact. Intermediate coverage allows one A8 level and blended channels allow two.
+
+In outline mode, LVGL uses `floor(255 × text_opacity / 256)` before multiplying by coverage. The reference composites once over an opaque background. The fonts contain no hinting programs.
+
+## Damaged inputs
+
+`rejected` contains an invalid signature and a truncated SFNT header; both fail to load. In `cmap_recovery`, the format 4 character map declares more segments than its table holds. FreeType recovers the map from glyph names, so A and Á still have their original outlines.

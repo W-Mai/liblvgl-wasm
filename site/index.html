@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="theme-color" content="#efeeeb">
-    <meta name="description" content="liblvgl-wasm runs LVGL as a WASI WebAssembly module with browser, TypeScript, Rust, C, and C++ host support.">
+    <meta name="description" content="Run LVGL apps in a browser or test them with TypeScript and Rust. Studio accepts compiled applications, firmware, and multi-module projects.">
     <meta name="robots" content="index,follow">
     <link rel="canonical" href="https://w-mai.github.io/liblvgl-wasm/">
     <link rel="icon" href="./studio/favicon.svg" type="image/svg+xml">
@@ -15,7 +15,7 @@
     <meta property="og:site_name" content="liblvgl-wasm">
     <meta name="twitter:card" content="summary">
     <meta name="twitter:title" content="liblvgl-wasm — LVGL WebAssembly runtime">
-    <meta name="twitter:description" content="A versioned LVGL WebAssembly runtime with browser, TypeScript, Rust, C, and C++ host support.">
+    <meta name="twitter:description" content="Run LVGL in Studio or render a frame from TypeScript or Rust.">
     <script type="application/ld+json">
       {
         "@context": "https://schema.org",
@@ -64,8 +64,8 @@
         <section class="hero" aria-labelledby="hero-title">
           <div class="hero-copy" data-reveal="hero-copy">
             <p class="eyebrow"><span class="eyebrow-mark" aria-hidden="true"></span> LVGL / WASI / WEBASSEMBLY</p>
-            <h1 id="hero-title" data-i18n="hero.title">LVGL, running where the browser can see it.</h1>
-            <p class="hero-lede" data-i18n="hero.lede">A versioned LVGL WebAssembly runtime with a browser studio and host SDKs for TypeScript, Rust, C, and C++.</p>
+            <h1 id="hero-title" data-i18n="hero.title">Run LVGL in your browser.</h1>
+            <p class="hero-lede" data-i18n="hero.lede">Click a widget in Studio, then run the same interface from a TypeScript or Rust test.</p>
             <div class="hero-actions">
               <a class="run-button" href="./studio/"><span aria-hidden="true">▶</span> <span data-i18n="hero.open">Open LVGL Studio</span></a>
               <a class="outline-button" href="https://github.com/W-Mai/liblvgl-wasm" rel="noopener noreferrer"><span data-i18n="hero.source">View source</span> <span aria-hidden="true">↗</span></a>
@@ -73,7 +73,7 @@
             <dl class="hero-facts">
               <div><dt data-i18n="hero.core">CORE</dt><dd>WASI reactor</dd></div>
               <div><dt data-i18n="hero.default">DEFAULT</dt><dd>LVGL 9.6.0</dd></div>
-              <div><dt data-i18n="hero.license">LICENSE</dt><dd>MIT</dd></div>
+              <div><dt data-i18n="hero.hosts">HOSTS</dt><dd>JS / Rust</dd></div>
             </dl>
           </div>
 
@@ -90,23 +90,22 @@
                 <div class="device-bottom"><span></span><span></span><span></span><span></span><span></span></div>
               </div>
             </div>
-            <div class="preview-foot"><span>liblvgl.wasm</span><span>ABI 1 · 2102 exports</span></div>
+            <div class="preview-foot"><span>liblvgl.wasm</span><span>WASI Preview 1 · ABI 1</span></div>
           </div>
         </section>
 
         <section class="section" aria-labelledby="included-title" data-reveal="section">
-          <div class="section-heading"><p class="eyebrow" data-i18n="workspace.eyebrow">THE WORKSPACE</p><h2 id="included-title" data-i18n="workspace.title">One core, several ways to use it.</h2></div>
+          <div class="section-heading"><p class="eyebrow" data-i18n="workspace.eyebrow">THE WORKSPACE</p><h2 id="included-title" data-i18n="workspace.title">Work with an LVGL app</h2></div>
           <div class="feature-grid">
-            <article class="feature-card" data-reveal="card"><span class="feature-index">01</span><h3 data-i18n="workspace.browser.title">Browser studio</h3><p data-i18n="workspace.browser.body">Load the default core or a compatible local Wasm artifact, run an application, and inspect rendered frames in a contained workspace.</p><a href="./studio/"><span data-i18n="workspace.browser.link">Launch Studio</span> <span aria-hidden="true">→</span></a></article>
-            <article class="feature-card" data-reveal="card"><span class="feature-index">02</span><h3 data-i18n="workspace.sdk.title">Generated SDKs</h3><p data-i18n="workspace.sdk.body">TypeScript and Rust bindings are generated from the selected core's API, layout, constants, and signature proof.</p><a href="https://github.com/W-Mai/liblvgl-wasm/tree/main/bindings" rel="noopener noreferrer"><span data-i18n="workspace.sdk.link">Browse bindings</span> <span aria-hidden="true">→</span></a></article>
-            <article class="feature-card" data-reveal="card"><span class="feature-index">03</span><h3 data-i18n="workspace.host.title">Host applications</h3><p data-i18n="workspace.host.body">Versioned application ABIs keep C, C++, Rust, and JavaScript samples on the same runtime boundary.</p><a href="https://github.com/W-Mai/liblvgl-wasm/tree/main/toolchains" rel="noopener noreferrer"><span data-i18n="workspace.host.link">See toolchains</span> <span aria-hidden="true">→</span></a></article>
+            <article class="feature-card" data-reveal="card"><span class="feature-index">01</span><h3 data-i18n="workspace.browser.title">Browser studio</h3><p data-i18n="workspace.browser.body">Open the C demo or load your own Wasm app and its libraries. Send input and see the result on the canvas.</p><a href="./studio/"><span data-i18n="workspace.browser.link">Launch Studio</span> <span aria-hidden="true">→</span></a></article>
+            <article class="feature-card" data-reveal="card"><span class="feature-index">02</span><h3 data-i18n="workspace.sdk.title">TypeScript and Rust hosts</h3><p data-i18n="workspace.sdk.body">Create a display, send a pointer event, and read the rendered frame in a test.</p><a href="https://github.com/W-Mai/liblvgl-wasm/blob/main/docs/hosts.md" rel="noopener noreferrer"><span data-i18n="workspace.sdk.link">Use a host SDK</span> <span aria-hidden="true">→</span></a></article>
+            <article class="feature-card" data-reveal="card"><span class="feature-index">03</span><h3 data-i18n="workspace.host.title">Application examples</h3><p data-i18n="workspace.host.body">Start with a C, C++, Rust, JavaScript, or TypeScript app and run it in Studio.</p><a href="https://github.com/W-Mai/liblvgl-wasm/blob/main/docs/studio.md" rel="noopener noreferrer"><span data-i18n="workspace.host.link">Build an app</span> <span aria-hidden="true">→</span></a></article>
           </div>
         </section>
 
         <section class="section quickstart" aria-labelledby="quickstart-title" data-reveal="section">
-          <div class="quickstart-copy"><p class="eyebrow" data-i18n="start.eyebrow">START HERE</p><h2 id="quickstart-title" data-i18n="start.title">Open the studio or build the core locally.</h2><p data-i18n="start.body">The browser demo starts with a working LVGL core and sample application. Local builds expose the same module to native and browser hosts.</p></div>
-          <div class="command-card" data-reveal="command"><div class="command-head"><span data-i18n="start.terminal">TERMINAL</span><button type="button" data-i18n="start.copy" data-copy="bun install --frozen-lockfile\nbun run quality">Copy</button></div><pre><code><span class="prompt">$</span> bun install --frozen-lockfile
-<span class="prompt">$</span> bun run quality</code></pre><a href="https://github.com/W-Mai/liblvgl-wasm#build" rel="noopener noreferrer"><span data-i18n="start.guide">Read the build guide</span> <span aria-hidden="true">↗</span></a></div>
+          <div class="quickstart-copy"><p class="eyebrow" data-i18n="start.eyebrow">START HERE</p><h2 id="quickstart-title" data-i18n="start.title">Build Studio locally</h2><p data-i18n="start.body">From the repository root, prepare the Wasm tools. The build guide lists the prerequisites and the command to start Studio.</p></div>
+          <div class="command-card" data-reveal="command"><div class="command-head"><span data-i18n="start.terminal">TERMINAL</span><button type="button" data-i18n="start.copy" data-copy="python3 toolchains/lvw.py prepare">Copy</button></div><pre><code><span class="prompt">$</span> python3 toolchains/lvw.py prepare</code></pre><a href="https://github.com/W-Mai/liblvgl-wasm/blob/main/docs/build.md" rel="noopener noreferrer"><span data-i18n="start.guide">Read the build guide</span> <span aria-hidden="true">↗</span></a></div>
         </section>
       </main>
 
