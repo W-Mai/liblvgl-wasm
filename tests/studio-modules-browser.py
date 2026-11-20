@@ -11,9 +11,8 @@ import secrets
 import shutil
 import subprocess
 import tempfile
-import time
 
-from package_browser import Handler, browser_directory, stop
+from package_browser import Handler, browser_directory, stop, wait_for_report
 
 ROOT = Path(__file__).resolve().parent.parent
 ASSETS = ROOT / "target/studio/modules"
@@ -235,14 +234,11 @@ def check(chromium):
             flags.append("--no-sandbox")
         process = None
         try:
-            with (work / "browser.log").open("w") as log:
+            browser_log = work / "browser.log"
+            with browser_log.open("w") as log:
                 process = subprocess.Popen([*flags, "http://127.0.0.1:" + str(server.server_port) + "/studio/"],
                                            env=environment, stdout=log, stderr=log, start_new_session=True)
-                deadline = time.monotonic() + 120
-                while server.result is None:
-                    if process.poll() is not None or time.monotonic() > deadline:
-                        raise TimeoutError("Studio module browser did not report")
-                    server.handle_request()
+                wait_for_report(server, process, chromium, browser_log)
             if not server.result.get("ok"):
                 raise RuntimeError(json.dumps(server.result))
             result = {"build_sha256": hashlib.sha256((ASSETS / "build.json").read_bytes()).hexdigest(), **server.result}

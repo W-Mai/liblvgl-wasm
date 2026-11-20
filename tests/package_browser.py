@@ -134,6 +134,20 @@ def browser_directory():
     return tempfile.TemporaryDirectory(prefix="lvw-browser-", dir="/tmp")
 
 
+def wait_for_report(server, process, chromium, log):
+    deadline = time.monotonic() + 120
+    while server.result is None:
+        code = process.poll()
+        if code is not None or time.monotonic() >= deadline:
+            with log.open("rb") as output:
+                output.seek(max(0, log.stat().st_size - 16000))
+                diagnostic = output.read().decode(errors="replace").strip()
+            if code is not None:
+                raise RuntimeError(f"{chromium} exited with status {code} before reporting\n{diagnostic}")
+            raise TimeoutError(f"{chromium} did not report within 120 seconds\n{diagnostic}")
+        server.handle_request()
+
+
 def run_browser(package, work, project, identity, chromium):
     with browser_directory() as directory:
         return _run_browser(package, work, project, identity, chromium, Path(directory))
@@ -192,25 +206,10 @@ def _run_browser(package, work, project, identity, chromium, browser_dir):
                 f"http://127.0.0.1:{server.server_port}/browser.html"],
                 cwd=work, env=env, stdin=subprocess.DEVNULL, stdout=output,
                 stderr=subprocess.STDOUT, start_new_session=True)
-            deadline = time.monotonic() + 120
-            while server.result is None:
-                if process.poll() is not None:
-                    raise RuntimeError(f"browser exited before reporting: {process.returncode}")
-                if time.monotonic() >= deadline:
-                    raise TimeoutError("browser did not report within 120 seconds")
-                server.handle_request()
+            wait_for_report(server, process, chromium, log)
         if not server.result["ok"]:
             raise RuntimeError(f"browser acceptance failed: {json.dumps(server.result)}")
         return {"version": version, **server.result}
-    except Exception:
-        if process is not None:
-            stop(process)
-            process = None
-        if log.exists():
-            with log.open("rb") as output:
-                output.seek(max(0, log.stat().st_size - 16000))
-                print(output.read().decode(errors="replace"), file=sys.stderr)
-        raise
     finally:
         if process is not None:
             stop(process)

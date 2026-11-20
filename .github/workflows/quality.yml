@@ -66,6 +66,11 @@ jobs:
           subprocess.run([sys.executable, "-B", "toolchains/lvw.py", "doctor", "--cache", cache,
                           "--with-zig"], check=True)
       - name: Check
+        env:
+          LVW_TEST_BROWSER: /usr/bin/google-chrome-stable
+          CARGO_PROFILE_DEV_OPT_LEVEL: "1"
+          CARGO_PROFILE_DEV_DEBUG: "0"
+          CARGO_INCREMENTAL: "0"
         run: bun run quality
       - name: Check LVGL configurations and callbacks
         if: ${{ inputs.legacy_checks }}

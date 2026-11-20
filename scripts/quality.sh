@@ -27,6 +27,9 @@ done
 wasm-tools validate --features=wasm1,bulk-memory,reference-types,sign-extension \
     target/validator/feature-validator.wasm
 
+# Prepare Wasmtime outside the timed, offline SDK consumer checks.
+cargo fetch --locked --manifest-path bindings/rust/Cargo.toml
+CARGO_TARGET_DIR="$root/target/rust" cargo test --locked --offline --no-run --lib --manifest-path bindings/rust/Cargo.toml
 bun run test
 python3 -B validator/fixtures.py
 python3 -B validator/numeric-fixtures.py
